@@ -1,0 +1,690 @@
+<script lang="ts">
+    import Button from '$lib5/button/Button.svelte';
+    import { onMount, untrack } from 'svelte';
+    import Input from '$lib5/form/Input.svelte';
+    import { useI18n } from '$state/i18n.svelte.js';
+    import { useSession } from '$state/session.svelte.js';
+    import { fetchDelete, fetchGet, fetchPost } from '$api/fetch';
+    import type { PasskeyResponse, WebauthnDeleteRequest } from '$api/types/webauthn.ts';
+    import type { UserResponse } from '$api/types/user.ts';
+    import { PATTERN_USER_NAME } from '$utils/patterns';
+    import { webauthnReg } from '$mfa/webauthn/registration';
+    import WebauthnRequest from '$lib5/WebauthnRequest.svelte';
+    import type { WebauthnAdditionalData, WebauthnServiceReq } from '$mfa/webauthn/types.ts';
+    import UserPasskey from '$lib5/UserPasskey.svelte';
+    import type { MfaModTokenResponse, UserMfaTokenRequest } from '$api/types/mfa_mod_token';
+    import Modal from '$lib/Modal.svelte';
+    import InputPassword from '$lib/form/InputPassword.svelte';
+    import Form from '$lib/form/Form.svelte';
+    import IconArrowPathSquare from '$icons/IconArrowPathSquare.svelte';
+    import Template from '$lib5/Template.svelte';
+    import { TPL_OTP_LENGTH, TPL_IS_OTP_ENABLED } from '$utils/constants';
+    import type { OtpResponse } from '$api/types/otp';
+    import { deleteOtp, postOtp, putOtp } from '$mfa/otp/mod';
+    import type { MfaPurpose } from '$api/types/mfa';
+    import type { OtpAdditionalData, OtpKind, OtpServiceReq } from '$mfa/otp/types';
+    import UserOtp from '$lib5/UserOtp.svelte';
+    import OtpRequest from '$lib5/OtpRequest.svelte';
+    import InputOtp from '$lib5/form/InputOtp.svelte';
+    import IconCheck from '$icons/IconCheck.svelte';
+    import PasskeyTypeSelect from '$lib/PasskeyTypeSelect.svelte';
+
+    let { user = $bindable() }: { user: UserResponse } = $props();
+
+    const isWebauthnSupported = 'credentials' in navigator;
+
+    let t = useI18n();
+    let session = useSession('account');
+    let userId = $derived(session.get()?.user_id);
+
+    let refInput: undefined | HTMLInputElement = $state();
+    let refPkAuthBtn: undefined | HTMLButtonElement = $state();
+
+    let err = $state(false);
+    let pwdErr = $state('');
+    let msg = $state('');
+    let showPasskeyInput = $state(false);
+    let showOtpInput = $state(false);
+    let showDelete = $state(untrack(() => user.account_type) === 'password');
+
+    let mfaPurpose: undefined | MfaPurpose = $state();
+    let mfaKind: undefined | 'webauthn' | 'otp' = $state();
+    let passkeyName = $state('');
+    let isInputError = $state(false);
+    let isLoading = $state(false);
+    let testSuccess = $state(false);
+
+    let showModal = $state(false);
+    let closeModal: undefined | (() => void) = $state();
+
+    let passkeys: PasskeyResponse[] = $state([]);
+    let residentKey = $state(false);
+    let mfaModToken: undefined | MfaModTokenResponse = $state();
+    let mfaModSecs: undefined | number = $state();
+    let interval: undefined | number;
+
+    let isOtpEnabled = $state(false);
+    let otpSize = $state(6);
+    let otps: OtpResponse[] = $state([]);
+    let otpKind: undefined | OtpKind = $state();
+    let otpName: undefined | string = $state();
+    let otpId: undefined | string = $state();
+    let otpValueNew = $state('');
+    let hasOtp = $state(false);
+
+    let isUserFederatedOnly = $derived(user.account_type === 'federated');
+
+    type RegType = undefined | 'passkey' | 'otp';
+    // Saves the type of the reg button the user clicked before fetching an MFA mod token, so that
+    // we can show the correct input after a successful fetch.
+    let requestedBeforeTokenFetch: RegType = $state(undefined);
+
+    onMount(() => {
+        fetchPasskeys();
+    });
+
+    $effect(() => {
+        if (isOtpEnabled) {
+            fetchOtps();
+        }
+    });
+
+    $effect(() => {
+        if (passkeys.length > 0 && user.account_type === 'passkey') {
+            showDelete = passkeys.length > 1;
+        }
+    });
+
+    $effect(() => {
+        if (refInput) {
+            requestAnimationFrame(() => {
+                refInput?.focus();
+            });
+        }
+    });
+
+    $effect(() => {
+        if (refPkAuthBtn) {
+            requestAnimationFrame(() => {
+                refPkAuthBtn?.focus();
+            });
+        }
+    });
+
+    $effect(() => {
+        if (mfaModToken && otpValueNew.replaceAll(' ', '').length === otpSize) {
+            handleActivateOtp();
+        }
+    });
+
+    function calcModSecs() {
+        let modSecs = 0;
+        if (mfaModToken) {
+            let ts = new Date().getTime() / 1000;
+            modSecs = Math.floor(mfaModToken.exp - ts);
+        }
+        if (modSecs > 0) {
+            mfaModSecs = modSecs;
+        } else {
+            mfaModSecs = undefined;
+            mfaModToken = undefined;
+            clearInterval(interval);
+            interval = undefined;
+        }
+    }
+
+    function resetMsgErr() {
+        err = false;
+        msg = '';
+    }
+
+    async function fetchPasskeys() {
+        err = false;
+
+        let res = await fetchGet<PasskeyResponse[]>(
+            `/auth/v1/users/${session.get()?.user_id}/webauthn`,
+        );
+        if (res.body) {
+            passkeys = res.body;
+        } else {
+            err = true;
+        }
+    }
+
+    // `webauthn_user_id` is set by the backend with the very first passkey, and reset with the
+    // last deletion. Refetch so the MFA indicator updates without a manual page reload.
+    async function fetchUser() {
+        let res = await fetchGet<UserResponse>(`/auth/v1/users/${user.id}`);
+        if (res.body) {
+            user = res.body;
+        }
+    }
+
+    async function handleRegisterPasskey() {
+        resetMsgErr();
+
+        if (isInputError || !userId) {
+            return;
+        }
+        if (passkeyName.length < 1) {
+            err = true;
+            msg = t.mfa.passkeyNameErr;
+            return;
+        }
+
+        let tokenId = mfaModToken?.id;
+        if (!tokenId) {
+            showModal = true;
+            return;
+        }
+
+        let res = await webauthnReg(
+            userId,
+            passkeyName,
+            t.authorize.invalidKeyUsed,
+            t.authorize.requestExpired,
+            undefined,
+            undefined,
+            tokenId,
+            residentKey,
+        );
+        if (res.error) {
+            console.log(res.error.toLowerCase());
+            // Either completely missing attestation or no matching requirements.
+            if (res.error.toLowerCase().includes('missing attestation')) {
+                msg = t.account.passkeys.missingAttestation;
+            } else {
+                msg = `${t.mfa.errorReg} - ${res.error}`;
+            }
+            err = true;
+        } else {
+            showPasskeyInput = false;
+            passkeyName = '';
+            await fetchPasskeys();
+            await fetchUser();
+        }
+    }
+
+    async function handleDeletePasskey(name: string) {
+        if (!mfaModToken) {
+            showModal = true;
+            return;
+        }
+
+        let payload: WebauthnDeleteRequest = {
+            mfa_mod_token_id: mfaModToken.id,
+        };
+        let res = await fetchDelete(
+            `/auth/v1/users/${user.id}/webauthn/delete/${encodeURIComponent(name)}`,
+            payload,
+        );
+        if (res.status === 200) {
+            await fetchPasskeys();
+            await fetchUser();
+        } else {
+            msg = res.error?.message || 'Error';
+        }
+    }
+
+    async function onRegisterPasskeyClick(ty: RegType) {
+        isInputError = false;
+        requestedBeforeTokenFetch = ty;
+
+        if (mfaModToken) {
+            requestedBeforeTokenFetch = undefined;
+            showPasskeyInput = true;
+        } else if (isUserFederatedOnly) {
+            // A federated user account does neither have a password, nor a passkey. We cannot
+            // request additional authentication to get an MFA mod token, because there is none.
+            // In this special case, the user is allowed to fetch such a token directly. Without it
+            // it would be impossible to go from a federated to a federated_passkey account. You
+            // would always need to add a password beforehand only to be able to authenticate
+            // locally here.
+            //
+            // Note: a "perfect" solution would be to send this user an OTP, even when it's not
+            // registered yet, or maybe a variant of it with some callback link. But this requires
+            // a bigger setup that is not implemented so far for this special case. That could be
+            // improved in the future.
+            await fetchMfaToken({});
+            if (mfaModToken) {
+                showPasskeyInput = true;
+            } else {
+                console.error('Could not fetch MFA mod token for federated user');
+            }
+        } else {
+            showModal = true;
+        }
+    }
+
+    async function fetchOtps() {
+        err = false;
+
+        let res = await fetchGet<OtpResponse[]>(`/auth/v1/users/${session.get()?.user_id}/otp`);
+        if (res.body) {
+            otps = res.body;
+            res.body.forEach(otp => {
+                if (otp.is_active) {
+                    hasOtp = true;
+                    return;
+                }
+            });
+        } else {
+            err = true;
+        }
+    }
+
+    async function handleCreateOtp() {
+        // 'email' is the only implemented type for now
+        otpKind = 'email';
+
+        resetMsgErr();
+        if (!userId || !otpKind) {
+            console.error('missing create OTP data', isInputError, userId, otpKind);
+            return;
+        }
+
+        let tokenId = mfaModToken?.id;
+        if (!tokenId) {
+            requestedBeforeTokenFetch = 'otp';
+            if (isUserFederatedOnly) {
+                await fetchMfaToken({});
+                if (mfaModToken) {
+                    tokenId = mfaModToken.id;
+                } else {
+                    console.error('Error fetching MFA mod token for federated-only user');
+                    return;
+                }
+            } else {
+                showModal = true;
+                return;
+            }
+        }
+
+        let res = await postOtp(userId, otpKind, otpName, tokenId);
+        if (res.data) {
+            otps.push(res.data);
+            showOtpInput = true;
+            otpKind = undefined;
+            otpName = '';
+        } else {
+            err = true;
+            msg = `${t.mfa.errorReg} - ${res.error}`;
+        }
+    }
+
+    async function handleActivateOtp(form?: HTMLFormElement, params?: URLSearchParams) {
+        // 'email' is the only implemented type for now
+        otpId = otps[0].id.toString();
+        resetMsgErr();
+
+        if (isInputError || !userId || !showOtpInput || !otpId) {
+            return;
+        }
+
+        let tokenId = mfaModToken?.id;
+        if (!tokenId) {
+            showModal = true;
+            showOtpInput = false;
+            return;
+        }
+
+        let res = await putOtp(userId, otpId, otpValueNew.replaceAll(' ', '') || '', tokenId);
+        if (res.error) {
+            err = true;
+            msg = res.error || 'Error';
+        } else {
+            showOtpInput = false;
+            otpValueNew = '';
+
+            for (let otp of otps) {
+                if (otp.id == otpId) {
+                    otp.is_active = true;
+                    hasOtp = true;
+                    return;
+                }
+            }
+        }
+    }
+
+    async function handleDeleteOtp(otpId: string) {
+        resetMsgErr();
+
+        if (isInputError || !userId || !otpId) {
+            return;
+        }
+
+        let tokenId = mfaModToken?.id;
+        if (!tokenId) {
+            showModal = true;
+            return;
+        }
+
+        let res = await deleteOtp(userId, otpId, tokenId);
+        if (res.error) {
+            err = true;
+            msg = res.error || 'Error';
+        } else {
+            await fetchOtps();
+            if (otps.length == 0) {
+                hasOtp = false;
+            }
+        }
+    }
+
+    async function onMfaTokenSubmit(_form: HTMLFormElement, params: URLSearchParams) {
+        pwdErr = '';
+        isLoading = true;
+
+        let payload: UserMfaTokenRequest = {
+            password: params.get('password') || '',
+        };
+        await fetchMfaToken(payload);
+        isLoading = false;
+    }
+
+    async function fetchMfaToken(payload: UserMfaTokenRequest) {
+        let res = await fetchPost<MfaModTokenResponse>(
+            `/auth/v1/users/${user.id}/mfa_token`,
+            payload,
+        );
+        if (res.body) {
+            mfaModToken = res.body;
+            closeModal?.();
+
+            if (interval) {
+                clearInterval(interval);
+            }
+
+            calcModSecs();
+            interval = window.setInterval(() => {
+                calcModSecs();
+            }, 1000);
+
+            if (requestedBeforeTokenFetch == 'passkey') {
+                showPasskeyInput = true;
+            } else if (requestedBeforeTokenFetch == 'otp') {
+                showOtpInput = true;
+            }
+        } else {
+            pwdErr = t.mfa.passwordInvalid;
+        }
+    }
+
+    async function mfaTokenRefresh() {
+        requestedBeforeTokenFetch = undefined;
+        mfaModToken = undefined;
+
+        if (isUserFederatedOnly) {
+            await fetchMfaToken({});
+            if (!mfaModToken) {
+                console.error('Could not fetch MFA mod token for federated user');
+            }
+            return;
+        }
+
+        showModal = true;
+    }
+
+    async function onMfaTokenWebauthnSubmit() {
+        closeModal?.();
+        mfaPurpose = 'MfaModToken';
+        mfaKind = 'webauthn';
+    }
+
+    async function onMfaTokenOtpSubmit() {
+        closeModal?.();
+        mfaPurpose = 'MfaModToken';
+        mfaKind = 'otp';
+    }
+
+    function onMfaError(error: string) {
+        console.log('mfa err', error);
+        err = true;
+        msg = error;
+        mfaPurpose = undefined;
+        mfaKind = undefined;
+        setTimeout(() => {
+            err = false;
+            msg = '';
+        }, 5000);
+    }
+
+    function onMfaSuccess(data?: WebauthnAdditionalData | OtpAdditionalData) {
+        if (mfaPurpose === 'MfaModToken' && mfaKind === 'webauthn') {
+            if (!data) {
+                console.error('did not receive WebauthnData after SvcReq');
+                return;
+            }
+            let svc = data as WebauthnServiceReq;
+            let payload: UserMfaTokenRequest = {
+                mfa_code: svc.code,
+            };
+            fetchMfaToken(payload);
+        } else if (mfaPurpose === 'MfaModToken' && mfaKind === 'otp') {
+            if (!data) {
+                console.error('did not receive OtpData after SvcReq');
+                return;
+            }
+            let svc = data as OtpServiceReq;
+            let payload: UserMfaTokenRequest = {
+                mfa_code: svc.code,
+            };
+            fetchMfaToken(payload);
+        } else {
+            testSuccess = true;
+            msg = t.mfa.testSuccess;
+            setTimeout(() => {
+                testSuccess = false;
+                msg = '';
+            }, 3000);
+        }
+
+        mfaKind = undefined;
+        mfaPurpose = undefined;
+    }
+</script>
+
+<Template id={TPL_IS_OTP_ENABLED} bind:value={isOtpEnabled} />
+<Template id={TPL_OTP_LENGTH} bind:value={otpSize} />
+
+<div class="grid max-w-2xl gap-5">
+    {#if mfaModSecs && mfaModSecs > 0}
+        <div class="bg-muted/40 flex items-center justify-between gap-2 rounded-xl border px-4 py-2 text-sm">
+            <div>
+                {t.account.canModifyFor}
+                <span class="text-primary font-semibold">
+                    {mfaModSecs}
+                    {t.common.seconds}
+                </span>
+            </div>
+            <Button ariaLabel={t.common.refresh} invisible onclick={mfaTokenRefresh}>
+                <IconArrowPathSquare width="1.25rem" />
+            </Button>
+        </div>
+    {/if}
+
+    {#if !isWebauthnSupported}
+        <p class="text-destructive font-semibold">{t.mfa.webauthn.unsupportedText}</p>
+    {:else}
+        <h3 class="text-lg font-semibold">{t.mfa.webauthn.title}</h3>
+
+        {#if mfaPurpose && mfaKind == 'webauthn'}
+            <WebauthnRequest purpose={mfaPurpose} onSuccess={onMfaSuccess} onError={onMfaError} />
+        {/if}
+
+        {#if showPasskeyInput}
+            <div class="text-muted-foreground grid gap-2 text-sm">
+                <p>{t.mfa.webauthn.p1}</p>
+                <p>{t.mfa.webauthn.p2}</p>
+                <p>
+                    {t.mfa.webauthn.p3}
+                    <a
+                        class="text-primary underline"
+                        href="https://sebadob.github.io/rauthy/config/passkeys.html"
+                    >{t.mfa.webauthn.docLinkText}</a>.
+                </p>
+            </div>
+
+            <div class="bg-card rounded-xl border p-4">
+                <Form action="" onSubmit={handleRegisterPasskey}>
+                    <PasskeyTypeSelect bind:residentKey />
+                    <Input
+                        bind:ref={refInput}
+                        bind:value={passkeyName}
+                        autocomplete="off"
+                        label={t.mfa.passkeyName}
+                        placeholder={t.mfa.passkeyName}
+                        maxLength={32}
+                        pattern={PATTERN_USER_NAME}
+                        bind:isError={isInputError}
+                        required
+                    />
+                    <div class="flex gap-2">
+                        <Button type="submit">
+                            {t.mfa.register}
+                        </Button>
+                        <Button level={3} onclick={() => (showPasskeyInput = false)}>{t.common.cancel}</Button>
+                    </div>
+                </Form>
+            </div>
+        {:else}
+            <div>
+                <Button
+                    level={passkeys.length === 0 ? 1 : 2}
+                    onclick={() => onRegisterPasskeyClick('passkey')}
+                >
+                    {t.mfa.webauthn.registerNew}
+                </Button>
+            </div>
+        {/if}
+    {/if}
+
+    {#if passkeys.length > 0}
+        <h4 class="font-semibold">{t.mfa.registeredKeys}</h4>
+    {/if}
+    <div class="grid gap-2">
+        {#each passkeys as passkey (passkey.name)}
+            <UserPasskey {passkey} {showDelete} onDelete={handleDeletePasskey} />
+        {/each}
+    </div>
+    {#if passkeys.length > 0}
+        <div class="flex items-center gap-3">
+            <Button
+                onclick={() => {
+                    mfaPurpose = 'Test';
+                    mfaKind = 'webauthn';
+                }}
+            >
+                {t.mfa.test}
+            </Button>
+
+            {#if testSuccess}
+                <IconCheck width="1.4rem" />
+            {/if}
+        </div>
+    {/if}
+
+    {#if isOtpEnabled}
+        <div class="grid gap-3 border-t pt-5">
+            <h3 class="text-lg font-semibold">{t.mfa.otp.title}</h3>
+
+            {#if mfaPurpose && mfaKind == 'otp'}
+                <OtpRequest
+                    activeOtps={otps}
+                    purpose={mfaPurpose}
+                    onSuccess={onMfaSuccess}
+                    onError={onMfaError}
+                />
+            {/if}
+
+            {#if mfaModToken && showOtpInput}
+                <p class="text-muted-foreground text-sm">{t.mfa.otp.activationCode}</p>
+                <Form action="" onSubmit={handleActivateOtp}>
+                    <InputOtp
+                        bind:ref={refInput}
+                        bind:isError={isInputError}
+                        bind:value={otpValueNew}
+                    />
+                    <div class="flex gap-2">
+                        <Button type="submit">{t.mfa.register}</Button>
+                        <Button level={3} onclick={() => (showOtpInput = false)}>
+                            {t.common.cancel}
+                        </Button>
+                    </div>
+                </Form>
+            {:else if !hasOtp}
+                <div>
+                    <Button level={2} onclick={handleCreateOtp}>
+                        {t.mfa.otp.registerNew}
+                    </Button>
+                </div>
+            {/if}
+
+            {#if hasOtp}
+                <h4 class="font-semibold">{t.mfa.registeredOtps}</h4>
+            {/if}
+            <div class="grid gap-2">
+                {#each otps as otp (otp.id)}
+                    <!-- Todo: inactive otp could be shown when having other kind of otp? -->
+                    <UserOtp {otp} showInactive={false} onDelete={handleDeleteOtp} />
+                {/each}
+            </div>
+        </div>
+    {/if}
+
+    {#if msg}
+        <p class="text-sm {err ? 'text-destructive' : 'text-primary'}" role="status">{msg}</p>
+    {/if}
+</div>
+
+<Modal bind:showModal bind:closeModal>
+    <div class="grid gap-4">
+        {#if user.webauthn_user_id}
+            <p class="text-sm">{t.mfa.reAuthenticatePasskey}</p>
+            <ul class="list-disc pl-5 text-sm">
+                {#each passkeys as pk (pk.name)}
+                    <li>{pk.name}</li>
+                {/each}
+            </ul>
+
+            <div>
+                <Button bind:ref={refPkAuthBtn} onclick={onMfaTokenWebauthnSubmit}>
+                    {t.common.authenticate}
+                </Button>
+            </div>
+        {:else if isOtpEnabled && hasOtp}
+            <p class="text-sm">{t.mfa.reAuthenticateOtp}</p>
+
+            <ul class="list-disc pl-5 text-sm">
+                {#each otps as otp (otp.id)}
+                    <li>{otp.kind}</li>
+                {/each}
+            </ul>
+
+            <div>
+                <Button bind:ref={refPkAuthBtn} onclick={onMfaTokenOtpSubmit}>
+                    {t.common.authenticate}
+                </Button>
+            </div>
+        {:else}
+            <p class="text-sm">{t.mfa.reAuthenticatePwd}</p>
+
+            <Form action="" onSubmit={onMfaTokenSubmit}>
+                <InputPassword
+                    bind:ref={refInput}
+                    name="password"
+                    autocomplete="current-password"
+                    label={t.account.passwordCurr}
+                    placeholder={t.account.passwordCurr}
+                    required
+                />
+                <div class="flex items-center gap-3">
+                    <Button type="submit" {isLoading}>{t.common.authenticate}</Button>
+                    {#if pwdErr}
+                        <p class="text-destructive text-sm">{pwdErr}</p>
+                    {/if}
+                </div>
+            </Form>
+        {/if}
+    </div>
+</Modal>

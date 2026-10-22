@@ -1,0 +1,648 @@
+<script lang="ts">
+    import Msg from '$lib5/Msg.svelte'
+    ;import FormSection from '$lib5/FormSection.svelte';
+    import Button from '$lib5/button/Button.svelte';
+    import Input from '$lib5/form/Input.svelte';
+    import IconCheck from '$icons/IconCheck.svelte';
+    import { useI18n } from '$state/i18n.svelte';
+    import { useI18nAdmin } from '$state/i18n_admin.svelte';
+    import { fetchGet, fetchPut } from '$api/fetch';
+    import Form from '$lib5/form/Form.svelte';
+    import LabeledValue from '$lib5/LabeledValue.svelte';
+    import {
+        PATTERN_CLIENT_NAME,
+        PATTERN_CLIENT_URI,
+        PATTERN_CONTACT,
+        PATTERN_GROUP,
+        PATTERN_ORIGIN,
+        PATTERN_RESOURCE,
+        PATTERN_URI,
+    } from '$utils/patterns';
+    import {
+        AuthFlowDeviceCode,
+        AuthFlowTokenExchange,
+        type ClientResponse,
+        type ScimClientRequestResponse,
+        type UpdateClientRequest,
+    } from '$api/types/clients';
+    import type { JwkKeyPairAlg } from '$api/types/oidc.ts';
+    import InputTags from '$lib5/form/InputTags.svelte';
+    import InputCheckbox from '$lib5/form/InputCheckbox.svelte';
+    import SelectList from '$lib5/select_list/SelectList.svelte';
+    import type { SelectItem } from '$lib5/select_list/props.ts';
+    import { slide } from 'svelte/transition';
+    import Options from '$lib5/Options.svelte';
+    import InputPassword from '$lib/form/InputPassword.svelte';
+    import InputArea from '$lib/form/InputArea.svelte';
+    import { parseJsonValue, stringifyJsonValue } from '$utils/jsonValue';
+    import { untrack } from 'svelte';
+    import {
+        invalidPostLogoutRedirectUrisMsg,
+        invalidRedirectUrisMsg,
+        postLogoutRedirectUriShapeErrorMsg,
+        redirectUriShapeErrorMsg,
+    } from '$utils/redirectUri';
+
+    let {
+        client = $bindable(),
+        clients,
+        scopesAll,
+        onSave,
+    }: {
+        client: ClientResponse;
+        clients: ClientResponse[];
+        scopesAll: string[];
+        onSave: () => void;
+    } = $props();
+
+    let t = useI18n();
+    let ta = useI18nAdmin();
+
+    const inputWidth = 'min(20rem, calc(100dvw - .5rem))';
+    let err = $state('');
+    let success = $state(false);
+
+    let name: string = $state(client.name || '');
+    let enabled = $state(client.enabled);
+    let confidential = $state(client.confidential);
+    let uri: string = $state(client.client_uri || '');
+    let contacts: string[] = $state(client.contacts ? Array.from(client.contacts) : []);
+    let origins: string[] = $state(
+        client.allowed_origins ? Array.from(client.allowed_origins) : [],
+    );
+    let redirectURIs: string[] = $state(Array.from(client.redirect_uris));
+    let postLogoutRedirectURIs: string[] = $state(
+        client.post_logout_redirect_uris ? Array.from(client.post_logout_redirect_uris) : [],
+    );
+    // A client stored before the stricter validation may still contain an invalid (post-logout)
+    // redirect URI, which must be replaced before the client can be saved.
+    let redirectURIsErr = $derived(
+        invalidRedirectUrisMsg(redirectURIs, ta.validation.redirectUri) || '',
+    );
+    let postLogoutRedirectURIsErr = $derived(
+        invalidPostLogoutRedirectUrisMsg(postLogoutRedirectURIs, ta.validation.redirectUri) || '',
+    );
+    let backchannel_logout_uri: string = $state(client.backchannel_logout_uri || '');
+    let restrict_group_prefix: string = $state(client.restrict_group_prefix || '');
+    let allowedResources: string[] = $state(
+        client.allowed_resources ? Array.from(client.allowed_resources) : [],
+    );
+    let defaultAud: string[] = $state(client.default_aud ? Array.from(client.default_aud) : []);
+
+    let scimEnabled = $state(client.scim !== undefined);
+    let scim: ScimClientRequestResponse = $state({
+        base_uri: client.scim?.base_uri || '',
+        bearer_token: client.scim?.bearer_token || '',
+        sync_groups: client.scim?.sync_groups === true || true,
+        group_sync_prefix: client.scim?.group_sync_prefix || '',
+    });
+
+    let flows = $state({
+        authorizationCode: client.flows_enabled.includes('authorization_code'),
+        clientCredentials: client.flows_enabled.includes('client_credentials'),
+        password: client.flows_enabled.includes('password'),
+        refreshToken: client.flows_enabled.includes('refresh_token'),
+        deviceCode: client.flows_enabled.includes(AuthFlowDeviceCode),
+        tokenExchange: client.flows_enabled.includes(AuthFlowTokenExchange),
+    });
+
+    const optionsAlgs: JwkKeyPairAlg[] = ['RS256', 'RS384', 'RS512', 'EdDSA', 'Ed25519'];
+    let accessTokenAlg: JwkKeyPairAlg = $state(client.access_token_alg);
+    let idTokenAlg: JwkKeyPairAlg = $state(client.id_token_alg);
+    let tokenLifetime: string = $state(client.access_token_lifetime.toString());
+    let authCodeLifetime: string = $state(client.auth_code_lifetime.toString());
+
+    let scopes: SelectItem[] = $state(
+        untrack(() =>
+            scopesAll.map(name => {
+                let i: SelectItem = {
+                    name,
+                    selected: client.scopes.includes(name) || false,
+                };
+                return i;
+            }),
+        ),
+    );
+    let defaultScopes: SelectItem[] = $state(
+        untrack(() =>
+            scopesAll.map(name => {
+                let i: SelectItem = {
+                    name,
+                    selected: client.default_scopes.includes(name) || false,
+                };
+                return i;
+            }),
+        ),
+    );
+    let challenges = $state({
+        plain: client.challenges?.includes('plain') || false,
+        s256: client.challenges?.includes('S256') || false,
+    });
+
+    let forceMfa = $state(client.force_mfa);
+
+    let jsonClaims = $state(untrack(() => stringifyJsonValue(client.claims) || ''));
+    let claimsAtRoot = $state(untrack(() => client.claims_at_root));
+
+    $effect(() => {
+        if (client.id) {
+            name = client.name || '';
+            enabled = client.enabled;
+            forceMfa = client.force_mfa;
+            confidential = client.confidential;
+            uri = client.client_uri || '';
+            backchannel_logout_uri = client.backchannel_logout_uri || '';
+            restrict_group_prefix = client.restrict_group_prefix || '';
+            contacts = client.contacts ? Array.from(client.contacts) : [];
+            origins = client.allowed_origins ? Array.from(client.allowed_origins) : [];
+            allowedResources = client.allowed_resources ? Array.from(client.allowed_resources) : [];
+            defaultAud = client.default_aud ? Array.from(client.default_aud) : [];
+            redirectURIs = Array.from(client.redirect_uris);
+            postLogoutRedirectURIs = client.post_logout_redirect_uris
+                ? Array.from(client.post_logout_redirect_uris)
+                : [];
+
+            flows.authorizationCode = client.flows_enabled.includes('authorization_code');
+            flows.clientCredentials = client.flows_enabled.includes('client_credentials');
+            flows.password = client.flows_enabled.includes('password');
+            flows.refreshToken = client.flows_enabled.includes('refresh_token');
+            flows.deviceCode = client.flows_enabled.includes(AuthFlowDeviceCode);
+            flows.tokenExchange = client.flows_enabled.includes(AuthFlowTokenExchange);
+
+            accessTokenAlg = client.access_token_alg;
+            idTokenAlg = client.id_token_alg;
+            tokenLifetime = client.access_token_lifetime.toString();
+            authCodeLifetime = client.auth_code_lifetime.toString();
+
+            scopes = scopesAll.map(name => {
+                let i: SelectItem = {
+                    name,
+                    selected: client.scopes.includes(name) || false,
+                };
+                return i;
+            });
+            defaultScopes = scopesAll.map(name => {
+                let i: SelectItem = {
+                    name,
+                    selected: client.default_scopes.includes(name) || false,
+                };
+                return i;
+            });
+            challenges.plain = client.challenges?.includes('plain') || false;
+            challenges.s256 = client.challenges?.includes('S256') || false;
+
+            jsonClaims = stringifyJsonValue(client.claims) || '';
+            claimsAtRoot = client.claims_at_root;
+
+            scim = {
+                base_uri: client.scim?.base_uri || '',
+                bearer_token: client.scim?.bearer_token || '',
+                sync_groups: client.scim?.sync_groups === true || true,
+                group_sync_prefix: client.scim?.group_sync_prefix || '',
+            };
+
+            fetchClientDetails();
+        }
+    });
+
+    async function fetchClientDetails() {
+        let res = await fetchGet<ClientResponse>(`/auth/v1/clients/${client.id}`);
+        if (res.body) {
+            let resp = res.body;
+            // The only real difference here can be the `client.scim`, as all the rest is already included in the
+            // GET all endpoint
+            scimEnabled = !!resp.scim;
+            if (resp.scim) {
+                scim = {
+                    base_uri: resp.scim.base_uri,
+                    bearer_token: resp.scim.bearer_token,
+                    sync_groups: resp.scim.sync_groups,
+                    group_sync_prefix: resp.scim.group_sync_prefix || '',
+                };
+            }
+        } else {
+            console.error(res.error);
+        }
+    }
+
+    async function onSubmit(form: HTMLFormElement, params: URLSearchParams) {
+        if (redirectURIsErr || postLogoutRedirectURIsErr) {
+            err = redirectURIsErr || postLogoutRedirectURIsErr;
+            return;
+        }
+        err = '';
+
+        let payload: UpdateClientRequest = {
+            name: name || undefined,
+            enabled,
+            confidential,
+            allowed_origins: origins.length > 0 ? origins : undefined,
+            redirect_uris: redirectURIs,
+            post_logout_redirect_uris:
+                postLogoutRedirectURIs.length > 0 ? postLogoutRedirectURIs : undefined,
+
+            flows_enabled: [],
+            access_token_alg: accessTokenAlg,
+            id_token_alg: idTokenAlg,
+            access_token_lifetime: Number.parseInt(tokenLifetime),
+            auth_code_lifetime: Number.parseInt(authCodeLifetime),
+
+            scopes: scopes.filter(s => s.selected).map(s => s.name),
+            default_scopes: defaultScopes.filter(s => s.selected).map(s => s.name),
+            challenges: undefined,
+
+            force_mfa: forceMfa,
+            client_uri: uri || undefined,
+            contacts: contacts.length > 0 ? contacts : undefined,
+            backchannel_logout_uri: backchannel_logout_uri || undefined,
+            restrict_group_prefix: restrict_group_prefix || undefined,
+            claims: parseJsonValue(jsonClaims),
+            claims_at_root: claimsAtRoot,
+            allowed_resources: allowedResources.length > 0 ? allowedResources : undefined,
+            default_aud: defaultAud.length > 0 ? defaultAud : undefined,
+        };
+
+        if (flows.authorizationCode) {
+            payload.flows_enabled.push('authorization_code');
+        }
+        if (flows.clientCredentials) {
+            payload.flows_enabled.push('client_credentials');
+        }
+        if (flows.password) {
+            payload.flows_enabled.push('password');
+        }
+        if (flows.refreshToken) {
+            payload.flows_enabled.push('refresh_token');
+        }
+        if (flows.deviceCode) {
+            payload.flows_enabled.push(AuthFlowDeviceCode);
+        }
+        if (flows.tokenExchange) {
+            payload.flows_enabled.push(AuthFlowTokenExchange);
+        }
+
+        if (challenges.plain) {
+            payload.challenges = ['plain'];
+        }
+        if (challenges.s256) {
+            if (payload.challenges) {
+                payload.challenges.push('S256');
+            } else {
+                payload.challenges = ['S256'];
+            }
+        }
+
+        if (scimEnabled) {
+            payload.scim = {
+                base_uri: scim.base_uri.trim(),
+                bearer_token: scim.bearer_token.trim(),
+                sync_groups: scim.sync_groups,
+                group_sync_prefix:
+                    scim.sync_groups && scim.group_sync_prefix?.length
+                        ? scim.group_sync_prefix
+                        : undefined,
+            };
+        }
+
+        let res = await fetchPut(form.action, payload);
+        if (res.error) {
+            err = res.error.message;
+        } else {
+            success = true;
+            onSave();
+            setTimeout(() => {
+                success = false;
+            }, 2000);
+        }
+    }
+</script>
+
+<div class="max-w-3xl">
+    <Form action={`/auth/v1/clients/${client.id}`} {onSubmit}>
+        <FormSection title={ta.common.information}>
+            <LabeledValue label="ID" mono copyToClip={client.id}>
+                {client.id}
+            </LabeledValue>
+
+            <p class="text-muted-foreground text-sm">{ta.clients.descName}</p>
+            <Input
+                bind:value={name}
+                autocomplete="off"
+                label={ta.clients.name}
+                placeholder={ta.clients.name}
+                width={inputWidth}
+                pattern={PATTERN_CLIENT_NAME}
+            />
+
+            <p class="text-muted-foreground text-sm">{ta.clients.descClientUri}</p>
+            <Input
+                typ="url"
+                bind:value={uri}
+                autocomplete="off"
+                label="URI"
+                placeholder="URI"
+                width={inputWidth}
+                pattern={PATTERN_CLIENT_URI}
+            />
+            <InputTags bind:values={contacts} label={ta.common.contact} pattern={PATTERN_CONTACT} />
+        </FormSection>
+
+        <FormSection title={ta.clients.config}>
+            <div class="flex flex-wrap gap-x-8 gap-y-3">
+                <InputCheckbox ariaLabel={ta.common.enabled} bind:checked={enabled}>
+                    {ta.common.enabled}
+                </InputCheckbox>
+                <InputCheckbox ariaLabel={ta.clients.confidential} bind:checked={confidential}>
+                    {ta.clients.confidential}
+                </InputCheckbox>
+                <InputCheckbox ariaLabel={ta.clients.forceMfa} bind:checked={forceMfa}>
+                    {ta.clients.forceMfa}
+                </InputCheckbox>
+            </div>
+            <p class="text-muted-foreground text-sm">{ta.clients.descGroupPrefix}</p>
+            <Input
+                bind:value={restrict_group_prefix}
+                autocomplete="off"
+                label={ta.clients.groupLoginPrefix}
+                placeholder={ta.clients.groupLoginPrefix}
+                width={inputWidth}
+                pattern={PATTERN_GROUP}
+            />
+        </FormSection>
+
+        <FormSection title="Authentication Flows">
+            <div class="grid gap-3 sm:grid-cols-2">
+                <InputCheckbox ariaLabel="authorization_code" bind:checked={flows.authorizationCode}>
+                    authorization_code
+                </InputCheckbox>
+                <InputCheckbox
+                    ariaLabel="urn:ietf:params:oauth:grant-type:device_code"
+                    bind:checked={flows.deviceCode}
+                >
+                    device_code
+                </InputCheckbox>
+                <InputCheckbox ariaLabel="client_credentials" bind:checked={flows.clientCredentials}>
+                    client_credentials
+                </InputCheckbox>
+                <InputCheckbox ariaLabel="password" bind:checked={flows.password}>password</InputCheckbox>
+                <InputCheckbox ariaLabel="refresh_token" bind:checked={flows.refreshToken}>
+                    refresh_token
+                </InputCheckbox>
+                <InputCheckbox
+                    ariaLabel="urn:ietf:params:oauth:grant-type:token-exchange"
+                    bind:checked={flows.tokenExchange}
+                >
+                    token_exchange
+                </InputCheckbox>
+            </div>
+            {#if forceMfa && flows.password}
+                <p class="text-sm text-amber-600 dark:text-amber-400" transition:slide={{ duration: 150 }}>
+                    {ta.clients.passwordFlowMfaWarn}
+                </p>
+            {/if}
+        </FormSection>
+
+        <FormSection title="PKCE">
+            <p class="text-muted-foreground text-sm">{ta.clients.descPKCE}</p>
+            <p class="text-sm font-semibold">{ta.clients.descPKCEEnforce}</p>
+            <div class="flex flex-wrap gap-x-8 gap-y-3">
+                <InputCheckbox ariaLabel="PKCE plain" bind:checked={challenges.plain}>plain</InputCheckbox>
+                <InputCheckbox ariaLabel="PKCE S256" bind:checked={challenges.s256}>S256</InputCheckbox>
+            </div>
+
+            {#if !confidential && !challenges.plain && !challenges.s256}
+                <p class="text-destructive text-sm" transition:slide={{ duration: 150 }}>
+                    {ta.clients.errConfidentialPKCE}
+                </p>
+            {/if}
+        </FormSection>
+
+        <FormSection title="Origin" desc={ta.clients.descOrigin}>
+            <InputTags
+                bind:values={origins}
+                label="Allowed Origins"
+                errMsg={ta.validation.origin}
+                pattern={PATTERN_ORIGIN}
+            />
+        </FormSection>
+
+        <FormSection title="Redirect URIs" desc={ta.clients.descUri}>
+            <InputTags
+                bind:values={redirectURIs}
+                label="Redirect URIs"
+                errMsg={ta.validation.uri}
+                required={flows.authorizationCode}
+                pattern={PATTERN_CLIENT_URI}
+                validate={uri => redirectUriShapeErrorMsg(uri, ta.validation.redirectUri)}
+            />
+            {#if redirectURIsErr}
+                <p class="text-destructive text-sm" transition:slide={{ duration: 150 }}>
+                    {redirectURIsErr}
+                </p>
+            {/if}
+            <InputTags
+                bind:values={postLogoutRedirectURIs}
+                label="Post Logout Redirect URIs"
+                errMsg={ta.validation.uri}
+                pattern={PATTERN_CLIENT_URI}
+                validate={uri => postLogoutRedirectUriShapeErrorMsg(uri, ta.validation.redirectUri)}
+            />
+            {#if postLogoutRedirectURIsErr}
+                <p class="text-destructive text-sm" transition:slide={{ duration: 150 }}>
+                    {postLogoutRedirectURIsErr}
+                </p>
+            {/if}
+        </FormSection>
+
+        <FormSection title="Resource Indicators" desc={ta.clients.descAllowedResources}>
+            <InputTags
+                bind:values={allowedResources}
+                label={ta.clients.allowedResources}
+                errMsg={ta.validation.uri}
+                pattern={PATTERN_RESOURCE}
+            />
+            <p class="text-muted-foreground text-sm">{ta.clients.descDefaultAud}</p>
+            <InputTags
+                bind:values={defaultAud}
+                label={ta.clients.defaultAud}
+                errMsg={ta.validation.uri}
+                pattern={PATTERN_RESOURCE}
+            />
+        </FormSection>
+
+        <FormSection title="Scopes" desc={ta.clients.scopes.desc}>
+            <SelectList bind:items={scopes}>
+                {ta.clients.scopes.allowed}
+            </SelectList>
+            <SelectList bind:items={defaultScopes}>
+                {ta.clients.scopes.default}
+            </SelectList>
+        </FormSection>
+
+        <FormSection title="Tokens">
+            <p class="text-muted-foreground text-sm">{ta.clients.tokenLifetime.p1}</p>
+            <Input
+                typ="number"
+                bind:value={tokenLifetime}
+                autocomplete="off"
+                label="Token Lifetime"
+                placeholder="Token Lifetime"
+                width={inputWidth}
+                min="10"
+                max="86400"
+                errMsg="10 <= Token Lifetime <= 86400"
+            />
+
+            <p class="text-muted-foreground text-sm">{ta.clients.tokenLifetime.p2}</p>
+            <p class="text-muted-foreground text-sm">{ta.clients.tokenLifetime.p3}</p>
+            <div class="grid gap-3 sm:grid-cols-2">
+                <LabeledValue label="Access Token Algorithm">
+                    <Options ariaLabel="Access Token Algorithm" options={optionsAlgs} bind:value={accessTokenAlg} />
+                </LabeledValue>
+                <LabeledValue label="ID Token Algorithm">
+                    <Options ariaLabel="ID Token Algorithm" options={optionsAlgs} bind:value={idTokenAlg} />
+                </LabeledValue>
+            </div>
+
+            <p class="text-muted-foreground text-sm">{ta.clients.descAuthCode}</p>
+            <Input
+                typ="number"
+                bind:value={authCodeLifetime}
+                autocomplete="off"
+                label="Auth Code Lifetime"
+                placeholder="Auth Code Lifetime"
+                width={inputWidth}
+                min="10"
+                max="300"
+                errMsg="10 <= Auth Code Lifetime <= 300"
+            />
+        </FormSection>
+
+        <FormSection title="Custom Claims" desc={ta.clients.claimsDesc}>
+            <InputArea
+                label={ta.clients.claims}
+                placeholder={ta.clients.claims}
+                rows={10}
+                fontMono
+                bind:value={jsonClaims}
+            />
+            <InputCheckbox ariaLabel={ta.clients.claimsAtRoot} bind:checked={claimsAtRoot}>
+                {ta.clients.claimsAtRoot}
+            </InputCheckbox>
+            {#if claimsAtRoot}
+                <p class="text-sm text-amber-600 dark:text-amber-400">
+                    {ta.clients.claimsAtRootWarning}
+                    <a
+                        class="underline"
+                        href="https://www.iana.org/assignments/jwt/jwt.xhtml"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        IANA JWT Claims Registry
+                    </a>
+                </p>
+            {/if}
+        </FormSection>
+
+        <FormSection
+            title="Backchannel Logout"
+            desc={ta.clients.backchannelLogout.replace(
+                '{{ OIDC_BCL }}',
+                '<a class="underline" href="https://openid.net/specs/openid-connect-backchannel-1_0.html" target="_blank">OpenID Connect Back-Channel Logout</a>',
+            )}
+        >
+            <Input
+                typ="url"
+                bind:value={backchannel_logout_uri}
+                autocomplete="off"
+                label="Backchannel Logout URI"
+                placeholder="Backchannel Logout URI"
+                width={inputWidth}
+                pattern={PATTERN_URI}
+                disabled={client.id === 'rauthy'}
+            />
+        </FormSection>
+
+        <FormSection
+            title="SCIM"
+            desc={ta.clients.scim.desc.replace(
+                '{{ SCIM_LINK }}',
+                '<a class="underline" href="https://www.rfc-editor.org/rfc/rfc7644" target="_blank">SCIM v2</a>',
+            )}
+        >
+            <InputCheckbox
+                ariaLabel={ta.clients.scim.enable}
+                disabled={client.id === 'rauthy'}
+                bind:checked={scimEnabled}
+            >
+                {ta.clients.scim.enable}
+            </InputCheckbox>
+            {#if scimEnabled}
+                <div class="grid gap-3" transition:slide={{ duration: 150 }}>
+                    <p class="text-muted-foreground text-sm">
+                        {ta.clients.scim.reqDesc}
+                    </p>
+                    <ul class="text-muted-foreground list-disc space-y-1 pl-5 text-sm">
+                        <li>{@html ta.clients.scim.reqLi1}</li>
+                        <li>{@html ta.clients.scim.reqLi2}</li>
+                        <li>{@html ta.clients.scim.reqLi3}</li>
+                    </ul>
+
+                    <p class="text-muted-foreground text-sm">
+                        {@html ta.clients.scim.baseUri}
+                    </p>
+                    <Input
+                        typ="url"
+                        bind:value={scim.base_uri}
+                        autocomplete="off"
+                        label="SCIM Base URI"
+                        placeholder="SCIM Base URI"
+                        width={inputWidth}
+                        pattern={PATTERN_CLIENT_URI}
+                        required={scimEnabled}
+                    />
+                    <InputPassword
+                        bind:value={scim.bearer_token}
+                        autocomplete="off"
+                        label="Bearer Token"
+                        placeholder="Bearer Token"
+                        width={inputWidth}
+                        pattern={PATTERN_URI}
+                        maxLength={2048}
+                        required={scimEnabled}
+                    />
+
+                    <InputCheckbox
+                        ariaLabel={ta.clients.scim.groupSync}
+                        disabled={client.id === 'rauthy'}
+                        bind:checked={scim.sync_groups}
+                    >
+                        {ta.clients.scim.groupSync}
+                    </InputCheckbox>
+                    {#if scim.sync_groups}
+                        <div class="grid gap-3" transition:slide={{ duration: 150 }}>
+                            <p class="text-muted-foreground text-sm">
+                                {@html ta.clients.scim.groupSyncPrefixDesc}
+                            </p>
+                            <Input
+                                bind:value={scim.group_sync_prefix}
+                                autocomplete="off"
+                                label={ta.clients.scim.groupSyncPrefix}
+                                placeholder={ta.clients.scim.groupSyncPrefix}
+                                width={inputWidth}
+                                pattern={PATTERN_GROUP}
+                            />
+                        </div>
+                    {/if}
+                </div>
+            {/if}
+        </FormSection>
+
+        <div class="flex items-center gap-3">
+            <Button type="submit">
+                {t.common.save}
+            </Button>
+            <Msg {success} {err} />
+        </div>
+    </Form>
+</div>

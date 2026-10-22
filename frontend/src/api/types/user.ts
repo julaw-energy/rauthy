@@ -34,6 +34,8 @@ export interface PreferredUsernameRequest {
 export interface UserValuesRequest {
     // Validation: PATTERN_DATE_STR
     birthdate?: string | null;
+    // Validation: `female` | `male` | `other`
+    gender?: string | null;
     // Validation: PATTERN_PHONE / 32
     phone?: string | null;
     // Validation: PATTERN_STREET / 48
@@ -132,6 +134,7 @@ export interface UserResponse {
 
 export interface UserValuesResponse {
     birthdate?: string;
+    gender?: string;
     phone?: string;
     street?: string;
     zip?: string;

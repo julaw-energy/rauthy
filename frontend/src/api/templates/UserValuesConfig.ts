@@ -4,6 +4,7 @@ export interface UserValuesConfig {
     given_name: UserValueConfigValue;
     family_name: UserValueConfigValue;
     birthdate: UserValueConfigValue;
+    gender: UserValueConfigValue;
     street: UserValueConfigValue;
     zip: UserValueConfigValue;
     city: UserValueConfigValue;

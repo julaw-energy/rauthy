@@ -1023,6 +1023,7 @@ pub struct AuthProviderIdClaims<'a> {
 
     pub address: Option<AuthProviderAddressClaims<'a>>,
     pub birthdate: Option<Cow<'a, str>>,
+    pub gender: Option<Cow<'a, str>>,
     pub locale: Option<Cow<'a, str>>,
     pub phone: Option<Cow<'a, str>>,
 
@@ -1413,6 +1414,7 @@ impl AuthProviderIdClaims<'_> {
         let mut user_values = match UserValues::find(&user.id).await? {
             Some(values) => UserValuesRequest {
                 birthdate: values.birthdate,
+                gender: values.gender,
                 phone: values.phone,
                 street: values.street,
                 zip: values.zip,
@@ -1422,6 +1424,7 @@ impl AuthProviderIdClaims<'_> {
             },
             None => UserValuesRequest {
                 birthdate: None,
+                gender: None,
                 phone: None,
                 street: None,
                 zip: None,
@@ -1432,6 +1435,15 @@ impl AuthProviderIdClaims<'_> {
         };
         if let Some(bday) = &self.birthdate {
             user_values.birthdate = Some(bday.to_string());
+            found_values = true;
+        }
+        // OIDC `gender` is free text; only `male` / `female` / `other` are stored
+        if let Some(gender) = &self.gender
+            && let Some(gender) = ["female", "male", "other"]
+                .into_iter()
+                .find(|g| gender.eq_ignore_ascii_case(g))
+        {
+            user_values.gender = Some(gender.to_string());
             found_values = true;
         }
         if let Some(phone) = &self.phone {

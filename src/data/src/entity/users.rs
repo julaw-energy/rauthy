@@ -723,7 +723,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)"#;
     ) -> Result<Vec<(Self, UserValues)>, ErrorResponse> {
         let sql = r#"
 SELECT u.id AS user_id, email, email_verified, given_name, family_name, roles, groups, enabled,
-    created_at, language, picture_id, birthdate, phone, street, zip, city, country,
+    created_at, language, picture_id, birthdate, gender, phone, street, zip, city, country,
     preferred_username, tz
 FROM users u
 LEFT JOIN users_values uv ON u.id = uv.id
@@ -763,6 +763,7 @@ LIMIT $2"#;
                 let values = UserValues {
                     id: user.id.clone(),
                     birthdate: row.get("birthdate"),
+                    gender: row.get("gender"),
                     phone: row.get("phone"),
                     street: row.get("street"),
                     zip: row.get("zip"),
@@ -802,6 +803,7 @@ LIMIT $2"#;
                 let values = UserValues {
                     id: user.id.clone(),
                     birthdate: row.get("birthdate"),
+                    gender: row.get("gender"),
                     phone: row.get("phone"),
                     street: row.get("street"),
                     zip: row.get("zip"),
@@ -1080,6 +1082,7 @@ LIMIT $2"#;
             (
                 Some(UserValuesRequest {
                     birthdate: uv.birthdate,
+                    gender: uv.gender,
                     phone: uv.phone,
                     street: uv.street,
                     zip: uv.zip,
@@ -1170,6 +1173,7 @@ LIMIT $2"#;
                     if let Some(key) = key.strip_prefix("user_values.") {
                         match key {
                             "birthdate" => uv.birthdate = put.value.as_str().map(String::from),
+                            "gender" => uv.gender = put.value.as_str().map(String::from),
                             "phone" => uv.phone = put.value.as_str().map(String::from),
                             "street" => uv.street = put.value.as_str().map(String::from),
                             "zip" => uv.zip = put.value.as_str().map(String::from),
@@ -1207,6 +1211,7 @@ LIMIT $2"#;
                     if let Some(key) = key.strip_prefix("user_values.") {
                         match key {
                             "birthdate" => uv.birthdate = None,
+                            "gender" => uv.gender = None,
                             "phone" => uv.phone = None,
                             "street" => uv.street = None,
                             "zip" => uv.zip = None,

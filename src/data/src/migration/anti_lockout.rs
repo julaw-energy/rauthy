@@ -13,12 +13,10 @@ pub async fn anti_lockout() -> Result<(), ErrorResponse> {
     let vars = &RauthyConfig::get().vars;
     let issuer = &RauthyConfig::get().issuer;
     let (redirect_uris, allowed_origins) = if vars.dev.dev_mode {
-        let (ip, _) = RauthyConfig::get()
-            .vars
-            .server
-            .pub_url
-            .split_once(':')
-            .expect("PUB_URL must have a port");
+        // the port is optional here, so `PUB_URL` can be the plain host (fork: local-dev behind
+        // a TLS proxy needs an issuer / WebID without `:443`)
+        let pub_url = &RauthyConfig::get().vars.server.pub_url;
+        let ip = pub_url.split_once(':').map_or(pub_url.as_str(), |(ip, _)| ip);
         let origin = if ip != "localhost" {
             format!("https://{ip}:5173")
         } else {

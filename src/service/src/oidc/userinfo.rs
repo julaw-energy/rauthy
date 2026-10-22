@@ -126,6 +126,7 @@ pub async fn get_userinfo(
         family_name: None,
         locale: None,
         birthdate: None,
+        gender: None,
         picture: None,
         zoneinfo: None,
 
@@ -155,6 +156,7 @@ pub async fn get_userinfo(
 
         if has_profile {
             userinfo.birthdate = values.birthdate;
+            userinfo.gender = values.gender;
             userinfo.zoneinfo = values.tz;
 
             if let Some(username) = values.preferred_username {

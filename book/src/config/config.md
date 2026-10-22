@@ -2577,6 +2577,17 @@ swagger_ui_enable = false
 # overwritten by: SWAGGER_UI_PUBLIC
 #swagger_ui_public = false
 
+# Can be set to `true` to enable the Scalar API reference at
+# `/docs/scalar`. It uses the same OpenAPI document as the
+# Swagger UI, but it is only a tiny HTML page that loads Scalar
+# from a CDN. Nothing is bundled or kept in memory, and the
+# OpenAPI document is built per request. It can be enabled
+# without `swagger_ui_enable`. Access follows `swagger_ui_public`.
+#
+# default: false
+# overwritten by: SCALAR_ENABLE
+#scalar_enable = false
+
 # The interval in which keep-alives should be sent to SSE
 # clients. Depending on your network setup, proxy timeouts,
 # ..., you may adjust this value to fit your needs.
@@ -2883,6 +2894,10 @@ storage_type = 'db'
 #family_name = 'optional'
 # default: 'optional'
 #birthdate = 'optional'
+# Allowed values to be stored: `female`, `male`, `other`. If set, it
+# is provided as the `gender` claim with the `profile` scope.
+# default: 'optional'
+#gender = 'optional'
 # default: 'optional'
 #street = 'optional'
 # default: 'optional'

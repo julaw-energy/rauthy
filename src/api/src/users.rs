@@ -39,6 +39,7 @@ use rauthy_data::entity::theme::ThemeCssFull;
 use rauthy_data::entity::tos::ToS;
 use rauthy_data::entity::tos_user_accept::ToSUserAccept;
 use rauthy_data::entity::user_attr::{UserAttrConfigEntity, UserAttrValueEntity};
+use rauthy_data::entity::user_clients::UserClient;
 use rauthy_data::entity::user_revoke::UserRevoke;
 use rauthy_data::entity::users::{AccountType, User};
 use rauthy_data::entity::users_values::UserValues;
@@ -665,6 +666,7 @@ pub async fn get_user_attr_editable(
 
     let mut combined = Vec::with_capacity(configs.len());
     for config in configs {
+        let options = config.options_vec();
         let default_value = if let Some(default) = config.default_value {
             Some(serde_json::from_slice(&default)?)
         } else {
@@ -683,6 +685,9 @@ pub async fn get_user_attr_editable(
             desc: config.desc,
             default_value,
             typ: config.typ,
+            regex: config.regex,
+            error_msg: config.error_msg,
+            options,
             value,
         });
     }
@@ -730,6 +735,17 @@ pub async fn put_user_attr(
         payload.values.retain(|v| allowed_keys.contains(&v.key));
     }
     payload.validate()?;
+
+    // enforce the configured attribute types - empty values just delete the attribute
+    let configs = UserAttrConfigEntity::find_all().await?;
+    for v in payload.values.iter_mut() {
+        let delete = v.value.is_null() || v.value.as_str() == Some("");
+        if let Some(cfg) = configs.iter().find(|c| c.name == v.key)
+            && !delete
+        {
+            v.value = cfg.validate_value(std::mem::take(&mut v.value))?;
+        }
+    }
 
     let user = User::find(user_id).await?;
     let values = UserAttrValueEntity::upsert_for_user(&user.id, payload)
@@ -1046,6 +1062,41 @@ pub async fn delete_user_picture(
     });
 
     Ok(HttpResponse::Ok().finish())
+}
+
+/// GET all clients this user has received tokens for, with the time of the last access
+#[utoipa::path(
+    get,
+    path = "/users/{id}/clients",
+    tag = "users",
+    responses(
+        (status = 200, description = "Ok", body = [UserClientResponse]),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[get("/users/{id}/clients")]
+pub async fn get_user_clients(
+    path: web::Path<String>,
+    principal: ReqPrincipal,
+) -> Result<HttpResponse, ErrorResponse> {
+    let user_id = path.into_inner();
+    principal.validate_user_or_admin(&user_id)?;
+
+    let resp = UserClient::find_for_user(&user_id)
+        .await?
+        .into_iter()
+        .map(|c| UserClientResponse {
+            client_id: c.client_id,
+            client_name: c.client_name,
+            first_at: c.first_at,
+            last_at: c.last_at,
+            scope: c.scope,
+            logins: c.logins,
+        })
+        .collect::<Vec<_>>();
+
+    Ok(HttpResponse::Ok().json(resp))
 }
 
 /// GET all devices for this user linked via the `device_code` flow

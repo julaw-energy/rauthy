@@ -41,6 +41,7 @@ pub mod oidc;
 pub mod openapi;
 pub mod pam;
 pub mod roles;
+pub mod scalar;
 pub mod scopes;
 pub mod sessions;
 pub mod swagger_ui;

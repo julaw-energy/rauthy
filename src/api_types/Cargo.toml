@@ -11,6 +11,8 @@ rauthy-derive = { path = "../macros" }
 rauthy-error = { path = "../error" }
 
 actix-web = { workspace = true }
+chrono = { workspace = true }
+regex = { workspace = true }
 hiqlite = { workspace = true }
 openssl = { workspace = true }
 openssl-sys = { workspace = true }

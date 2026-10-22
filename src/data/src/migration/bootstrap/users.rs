@@ -144,6 +144,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)"#;
             let values = if let Some(values) = user.user_values {
                 UserValuesRequest {
                     birthdate: values.birthdate,
+                    gender: values.gender,
                     phone: values.phone,
                     street: values.street,
                     zip: values.zip,

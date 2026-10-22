@@ -33,6 +33,7 @@ use crate::entity::theme::ThemeCssFull;
 use crate::entity::tos::ToS;
 use crate::entity::tos_user_accept::ToSUserAccept;
 use crate::entity::user_attr::{UserAttrConfigEntity, UserAttrValueEntity};
+use crate::entity::user_clients::UserClientRow;
 use crate::entity::user_login_states::UserLoginState;
 use crate::entity::user_revoke::UserRevoke;
 use crate::entity::users::User;
@@ -930,6 +931,50 @@ VALUES ($1, $2, $3, $4, $5, $6)"#;
     Ok(())
 }
 
+pub async fn user_clients(data_before: Vec<UserClientRow>) -> Result<(), ErrorResponse> {
+    let sql_1 = "DELETE FROM user_clients";
+    let sql_2 = r#"
+INSERT INTO user_clients (user_id, client_id, first_at, last_at, scope, logins)
+VALUES ($1, $2, $3, $4, $5, $6)"#;
+
+    if is_hiqlite() {
+        DB::hql().execute(sql_1, params!()).await?;
+
+        for b in data_before {
+            DB::hql()
+                .execute(
+                    sql_2,
+                    params!(
+                        b.user_id,
+                        b.client_id,
+                        b.first_at,
+                        b.last_at,
+                        b.scope,
+                        b.logins
+                    ),
+                )
+                .await?;
+        }
+    } else {
+        DB::pg_execute(sql_1, &[]).await?;
+        for b in data_before {
+            DB::pg_execute(
+                sql_2,
+                &[
+                    &b.user_id,
+                    &b.client_id,
+                    &b.first_at,
+                    &b.last_at,
+                    &b.scope,
+                    &b.logins,
+                ],
+            )
+            .await?;
+        }
+    }
+    Ok(())
+}
+
 pub async fn magic_links(data_before: Vec<MagicLink>) -> Result<(), ErrorResponse> {
     let sql_1 = "DELETE FROM magic_links";
     let sql_2 = r#"
@@ -1732,8 +1777,9 @@ VALUES ($1, $2, $3, $4)"#;
 pub async fn user_attr_config(data_before: Vec<UserAttrConfigEntity>) -> Result<(), ErrorResponse> {
     let sql_1 = "DELETE FROM user_attr_config";
     let sql_2 = r#"
-INSERT INTO user_attr_config (name, "desc", default_value, typ, user_editable)
-VALUES ($1, $2, $3, $4, $5)"#;
+INSERT INTO user_attr_config
+(name, "desc", default_value, typ, user_editable, regex, error_msg, options)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#;
 
     if is_hiqlite() {
         DB::hql().execute(sql_1, params!()).await?;
@@ -1742,7 +1788,16 @@ VALUES ($1, $2, $3, $4, $5)"#;
             DB::hql()
                 .execute(
                     sql_2,
-                    params!(b.name, b.desc, b.default_value, typ, b.user_editable),
+                    params!(
+                        b.name,
+                        b.desc,
+                        b.default_value,
+                        typ,
+                        b.user_editable,
+                        b.regex,
+                        b.error_msg,
+                        b.options
+                    ),
                 )
                 .await?;
         }
@@ -1752,7 +1807,16 @@ VALUES ($1, $2, $3, $4, $5)"#;
             let typ = b.typ.as_ref().map(|t| t.as_str());
             DB::pg_execute(
                 sql_2,
-                &[&b.name, &b.desc, &b.default_value, &typ, &b.user_editable],
+                &[
+                    &b.name,
+                    &b.desc,
+                    &b.default_value,
+                    &typ,
+                    &b.user_editable,
+                    &b.regex,
+                    &b.error_msg,
+                    &b.options,
+                ],
             )
             .await?;
         }
@@ -1895,8 +1959,8 @@ pub async fn users_values(data_before: Vec<UserValues>) -> Result<(), ErrorRespo
     let sql_1 = "DELETE FROM users_values";
     let sql_2 = r#"
 INSERT INTO
-users_values (id, birthdate, phone, street, zip, city, country, preferred_username, tz)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
+users_values (id, birthdate, gender, phone, street, zip, city, country, preferred_username, tz)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#;
 
     if is_hiqlite() {
         DB::hql().execute(sql_1, params!()).await?;
@@ -1907,6 +1971,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
                     params!(
                         b.id,
                         b.birthdate,
+                        b.gender,
                         b.phone,
                         b.street,
                         b.zip,
@@ -1926,6 +1991,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
                 &[
                     &b.id,
                     &b.birthdate,
+                    &b.gender,
                     &b.phone,
                     &b.street,
                     &b.zip,

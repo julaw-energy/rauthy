@@ -649,6 +649,7 @@ impl Default for Vars {
                 metrics_port: 9090,
                 swagger_ui_enable: false,
                 swagger_ui_public: false,
+                scalar_enable: false,
                 see_keep_alive: Duration::from_secs(30),
                 ssp_threshold: 1000,
             },
@@ -1347,6 +1348,7 @@ Your account has not been compromised and no data was leaked."#.into()),
                 given_name: UserValueConfigValue::Required,
                 family_name: UserValueConfigValue::Optional,
                 birthdate: UserValueConfigValue::Optional,
+                gender: UserValueConfigValue::Optional,
                 street: UserValueConfigValue::Optional,
                 zip: UserValueConfigValue::Optional,
                 city: UserValueConfigValue::Optional,
@@ -3446,6 +3448,9 @@ impl Vars {
         ) {
             self.server.swagger_ui_public = v;
         }
+        if let Some(v) = t_bool(&mut table, "server", "scalar_enable", "SCALAR_ENABLE") {
+            self.server.scalar_enable = v;
+        }
 
         if let Some(v) = t_duration(&mut table, "server", "see_keep_alive", "SSE_KEEP_ALIVE") {
             self.server.see_keep_alive = v;
@@ -3887,6 +3892,9 @@ impl Vars {
         }
         if let Some(v) = t_str(&mut table, "user_values", "birthdate", "") {
             self.user_values.birthdate = UserValueConfigValue::from(v.as_str());
+        }
+        if let Some(v) = t_str(&mut table, "user_values", "gender", "") {
+            self.user_values.gender = UserValueConfigValue::from(v.as_str());
         }
         if let Some(v) = t_str(&mut table, "user_values", "street", "") {
             self.user_values.street = UserValueConfigValue::from(v.as_str());
@@ -4652,6 +4660,7 @@ pub struct VarsServer {
     pub metrics_port: u16,
     pub swagger_ui_enable: bool,
     pub swagger_ui_public: bool,
+    pub scalar_enable: bool,
     pub see_keep_alive: Duration,
     pub ssp_threshold: u16,
 }
@@ -4749,6 +4758,7 @@ pub struct VarsUserValuesConfig {
     pub given_name: UserValueConfigValue,
     pub family_name: UserValueConfigValue,
     pub birthdate: UserValueConfigValue,
+    pub gender: UserValueConfigValue,
     pub street: UserValueConfigValue,
     pub zip: UserValueConfigValue,
     pub city: UserValueConfigValue,

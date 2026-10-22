@@ -1,10 +1,14 @@
-use crate::cust_validation::{validate_vec_groups, validate_vec_roles};
+use crate::cust_validation::{
+    validate_attr_options, validate_attr_regex, validate_birthdate, validate_country,
+    validate_vec_groups, validate_vec_roles,
+};
 use crate::generic::Language;
 use crate::oidc::AddressClaim;
 use hiqlite::macros::FromRow;
 use rauthy_common::regex::{
     RE_ALNUM, RE_ALNUM_48, RE_ALNUM_64, RE_APP_ID, RE_ATTR, RE_ATTR_DESC, RE_CITY, RE_CLIENT_NAME,
-    RE_DATE_STR, RE_MFA_CODE, RE_PHONE, RE_PREFERRED_USERNAME, RE_STREET, RE_URI, RE_USER_NAME,
+    RE_DATE_STR, RE_GENDER, RE_MFA_CODE, RE_PHONE, RE_PREFERRED_USERNAME, RE_STREET, RE_URI,
+    RE_USER_NAME,
 };
 use rauthy_derive::FromPgRow;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
@@ -217,11 +221,17 @@ pub struct UpdateUserSelfRequest {
 #[derive(Debug, Default, PartialEq, Deserialize, Validate, ToSchema)]
 #[cfg_attr(debug_assertions, derive(Serialize))]
 pub struct UserValuesRequest {
-    /// Validation: `[0-9]{4}-[0-9]{2}-[0-9]{2}`
-    #[validate(regex(path = "*RE_DATE_STR", code = "[0-9]{4}-[0-9]{2}-[0-9]{2}"))]
+    /// Validation: `[0-9]{4}-[0-9]{2}-[0-9]{2}`, a real calendar date between 1900-01-01 and today
+    #[validate(
+        regex(path = "*RE_DATE_STR", code = "[0-9]{4}-[0-9]{2}-[0-9]{2}"),
+        custom(function = "validate_birthdate")
+    )]
     pub birthdate: Option<String>,
-    /// Validation: `+[0-9]{0,32}`
-    #[validate(regex(path = "*RE_PHONE", code = "+[0-9]{0,32}"))]
+    /// Validation: `female|male|other`
+    #[validate(regex(path = "*RE_GENDER", code = "female|male|other"))]
+    pub gender: Option<String>,
+    /// Validation: E.164 - `+[0-9]{8,15}`
+    #[validate(regex(path = "*RE_PHONE", code = "+[0-9]{8,15}"))]
     pub phone: Option<String>,
     /// Validation: `[a-zA-Z0-9À-ÿ-.\s]{0,48}`
     #[validate(regex(path = "*RE_STREET", code = "[a-zA-Z0-9À-ÿ-.\\s]{0,48}"))]
@@ -232,17 +242,33 @@ pub struct UserValuesRequest {
     /// Validation: `[a-zA-Z0-9À-ÿ-\s]{0,48}`
     #[validate(regex(path = "*RE_CITY", code = "[a-zA-Z0-9À-ÿ-\\s]{0,48}"))]
     pub city: Option<String>,
-    /// Validation: `[a-zA-Z0-9À-ÿ-\s]{0,48}`
-    #[validate(regex(path = "*RE_CITY", code = "[a-zA-Z0-9À-ÿ-\\s]{0,48}"))]
+    /// Validation: an ISO 3166-1 alpha-2 code like `UG`, or (legacy) a name matching
+    /// `[a-zA-Z0-9À-ÿ-\s]{0,48}`
+    #[validate(custom(function = "validate_country"))]
     pub country: Option<String>,
     /// Validation: Valid Timezone in the format of `Europe/Berlin`
     #[validate(length(max = 48))]
     pub tz: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+/// The type of a custom user attribute. It tells the UI which widget to render and is also
+/// enforced by the backend, so API clients cannot bypass it. Attributes without a type accept
+/// any JSON value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
 pub enum UserAttrConfigTyp {
+    String,
+    Text,
     Email,
+    Phone,
+    Number,
+    Integer,
+    Boolean,
+    Date,
+    Url,
+    Enum,
+    Country,
+    Timezone,
 }
 
 impl FromStr for UserAttrConfigTyp {
@@ -250,7 +276,18 @@ impl FromStr for UserAttrConfigTyp {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let slf = match s {
+            "string" => Self::String,
+            "text" => Self::Text,
             "email" => Self::Email,
+            "phone" => Self::Phone,
+            "number" => Self::Number,
+            "integer" => Self::Integer,
+            "boolean" => Self::Boolean,
+            "date" => Self::Date,
+            "url" => Self::Url,
+            "enum" => Self::Enum,
+            "country" => Self::Country,
+            "timezone" => Self::Timezone,
             _ => {
                 return Err(ErrorResponse::new(
                     ErrorResponseType::BadRequest,
@@ -265,11 +302,21 @@ impl FromStr for UserAttrConfigTyp {
 impl UserAttrConfigTyp {
     pub fn as_str(&self) -> &str {
         match self {
+            UserAttrConfigTyp::String => "string",
+            UserAttrConfigTyp::Text => "text",
             UserAttrConfigTyp::Email => "email",
+            UserAttrConfigTyp::Phone => "phone",
+            UserAttrConfigTyp::Number => "number",
+            UserAttrConfigTyp::Integer => "integer",
+            UserAttrConfigTyp::Boolean => "boolean",
+            UserAttrConfigTyp::Date => "date",
+            UserAttrConfigTyp::Url => "url",
+            UserAttrConfigTyp::Enum => "enum",
+            UserAttrConfigTyp::Country => "country",
+            UserAttrConfigTyp::Timezone => "timezone",
         }
     }
 }
-
 #[derive(Deserialize, Validate, ToSchema)]
 #[cfg_attr(debug_assertions, derive(Serialize))]
 pub struct UserAttrConfigRequest {
@@ -280,9 +327,20 @@ pub struct UserAttrConfigRequest {
     #[validate(regex(path = "*RE_ATTR_DESC", code = "[a-zA-Z0-9À-ÿ-\\s]{2,128}"))]
     pub desc: Option<String>,
     pub default_value: Option<serde_json::Value>,
-    /// Currently ignored - will be implemented in a future version
     pub typ: Option<UserAttrConfigTyp>,
     pub user_editable: Option<bool>,
+    /// An additional pattern the (text) value must match. It is validated by the backend as well.
+    /// Validation: valid regex, max 256 characters
+    #[validate(custom(function = "validate_attr_regex"))]
+    pub regex: Option<String>,
+    /// Shown when a value does not pass validation. The UI falls back to a default per type.
+    /// Validation: max 128 characters
+    #[validate(length(max = 128))]
+    pub error_msg: Option<String>,
+    /// The allowed values for the `Enum` type
+    /// Validation: max 64 entries with up to 64 characters each
+    #[validate(custom(function = "validate_attr_options"))]
+    pub options: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Validate, ToSchema)]
@@ -373,6 +431,21 @@ pub struct WebauthnRegFinishRequest {
 pub struct WebIdRequest {
     pub custom_triples: Option<String>,
     pub expose_email: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct UserClientResponse {
+    pub client_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_name: Option<String>,
+    /// Unix timestamp in seconds
+    pub first_at: i64,
+    /// Unix timestamp in seconds
+    pub last_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    /// Number of times tokens have been issued for this client
+    pub logins: i64,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -560,6 +633,12 @@ pub struct UserAttrConfigValueResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub typ: Option<UserAttrConfigTyp>,
     pub user_editable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub regex: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_msg: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<String>>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -591,6 +670,12 @@ pub struct UserEditableAttrResponse {
     pub default_value: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub typ: Option<UserAttrConfigTyp>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub regex: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_msg: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<serde_json::Value>,
 }
@@ -633,6 +718,8 @@ pub struct Userinfo {
     pub family_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub birthdate: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gender: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -722,6 +809,8 @@ pub struct UserResponseSimple {
 pub struct UserValuesResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub birthdate: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gender: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phone: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

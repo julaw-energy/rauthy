@@ -10,6 +10,7 @@ use rauthy_data::entity::refresh_tokens::RefreshToken;
 use rauthy_data::entity::refresh_tokens_devices::RefreshTokenDevice;
 use rauthy_data::entity::scopes::Scope;
 use rauthy_data::entity::user_attr::UserAttrValueEntity;
+use rauthy_data::entity::user_clients::UserClient;
 use rauthy_data::entity::users::User;
 use rauthy_data::entity::users_values::UserValues;
 use rauthy_data::entity::webids::WebId;
@@ -372,6 +373,7 @@ impl TokenSet {
             family_name: None,
             address: None,
             birthdate: None,
+            gender: None,
             picture: None,
             locale: None,
             nonce: nonce.as_ref().map(|n| n.0.as_str()),
@@ -407,6 +409,10 @@ impl TokenSet {
 
                 if let Some(birthdate) = &uv.birthdate {
                     claims.birthdate = Some(birthdate.as_str());
+                }
+
+                if let Some(gender) = &uv.gender {
+                    claims.gender = Some(gender.as_str());
                 }
 
                 if let Some(zone) = &uv.tz {
@@ -835,6 +841,11 @@ impl TokenSet {
         } else {
             None
         };
+
+        // audit trail for the "connected apps" list - must never break a login
+        if let Err(err) = UserClient::touch(&user.id, &client.id, &scope).await {
+            tracing::warn!(?err, "Cannot record user client access");
+        }
 
         Ok(Self {
             access_token,

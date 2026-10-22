@@ -23,8 +23,8 @@ use rauthy_handlers::openapi::ApiDoc;
 use rauthy_handlers::swagger_ui::{OPENAPI_CONFIG, OPENAPI_JSON};
 use rauthy_handlers::{
     api_keys, atproto, auth_providers, backup, blacklist, clients, cors_preflight, dev_only, email,
-    events, fed_cm, generic, groups, html, kv, oidc, pam, roles, scopes, sessions, swagger_ui,
-    themes, tos, users,
+    events, fed_cm, generic, groups, html, kv, oidc, pam, roles, scalar, scopes, sessions,
+    swagger_ui, themes, tos, users,
 };
 use rauthy_middlewares::csrf_protection::CsrfProtectionMiddleware;
 use rauthy_middlewares::ip_blacklist::RauthyIpBlacklistMiddleware;
@@ -675,6 +675,7 @@ fn api_services() -> actix_web::Scope {
                 .service(users::get_user_picture)
                 .service(users::delete_user_picture)
                 .service(users::get_user_devices)
+                .service(users::get_user_clients)
                 .service(users::put_user_device_name)
                 .service(users::delete_user_device)
                 .service(users::get_user_webid_data)
@@ -748,6 +749,7 @@ fn api_services() -> actix_web::Scope {
                 .service(generic::get_i18n_config)
                 .service(generic::get_ready)
                 .service(swagger_ui::get_openapi_doc)
+                .service(scalar::get_scalar)
                 .service(swagger_ui::get_swagger_ui)
                 .service(users::get_user_otps)
                 .service(users::post_user_otp)

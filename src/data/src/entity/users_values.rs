@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 pub struct UserValues {
     pub id: String,
     pub birthdate: Option<String>,
+    pub gender: Option<String>,
     pub phone: Option<String>,
     pub street: Option<String>,
     pub zip: Option<String>,
@@ -34,8 +35,8 @@ impl UserValues {
     ) -> Result<(), ErrorResponse> {
         let sql = r#"
 INSERT INTO
-users_values (id, birthdate, phone, street, zip, city, country, preferred_username, tz)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
+users_values (id, birthdate, gender, phone, street, zip, city, country, preferred_username, tz)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#;
 
         if is_hiqlite() {
             DB::hql()
@@ -44,6 +45,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
                     params!(
                         user_id,
                         values.birthdate,
+                        values.gender,
                         values.phone,
                         values.street,
                         values.zip,
@@ -71,6 +73,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
                 &[
                     &user_id,
                     &values.birthdate,
+                    &values.gender,
                     &values.phone,
                     &values.street,
                     &values.zip,
@@ -155,10 +158,10 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
         let idx = Self::cache_idx(&user_id);
         let sql = r#"
 INSERT INTO
-users_values (id, birthdate, phone, street, zip, city, country, tz)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+users_values (id, birthdate, gender, phone, street, zip, city, country, tz)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT(id) DO UPDATE
-SET birthdate = $2, phone = $3, street = $4, zip = $5, city = $6, country = $7, tz = $8
+SET birthdate = $2, gender = $3, phone = $4, street = $5, zip = $6, city = $7, country = $8, tz = $9
 RETURNING *"#;
 
         let values: Self = if is_hiqlite() {
@@ -168,6 +171,7 @@ RETURNING *"#;
                     params!(
                         user_id,
                         values.birthdate,
+                        values.gender,
                         values.phone,
                         values.street,
                         values.zip,
@@ -183,6 +187,7 @@ RETURNING *"#;
                 &[
                     &user_id,
                     &values.birthdate,
+                    &values.gender,
                     &values.phone,
                     &values.street,
                     &values.zip,
@@ -322,6 +327,7 @@ impl From<UserValues> for UserValuesResponse {
     fn from(value: UserValues) -> Self {
         Self {
             birthdate: value.birthdate,
+            gender: value.gender,
             phone: value.phone,
             street: value.street,
             zip: value.zip,

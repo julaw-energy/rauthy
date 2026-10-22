@@ -4,7 +4,7 @@ use actix_web::web::Path;
 use actix_web::{HttpResponse, get};
 use rauthy_common::constants::APPLICATION_JSON;
 use rauthy_data::rauthy_config::RauthyConfig;
-use rauthy_error::ErrorResponse;
+use rauthy_error::{ErrorResponse, ErrorResponseType};
 use std::sync::{Arc, LazyLock, OnceLock};
 use tracing::warn;
 
@@ -21,8 +21,8 @@ pub static OPENAPI_CONFIG: LazyLock<Arc<utoipa_swagger_ui::Config>> = LazyLock::
 #[get("/docs/openapi.json")]
 pub async fn get_openapi_doc(principal: ReqPrincipal) -> Result<HttpResponse, ErrorResponse> {
     let cfg = &RauthyConfig::get().vars.server;
-    if !cfg.swagger_ui_enable {
-        warn!("Request for /docs/openapi.json but `swagger_ui_enable` is set to `false`");
+    if !cfg.swagger_ui_enable && !cfg.scalar_enable {
+        warn!("Request for /docs/openapi.json but neither Swagger UI nor Scalar is enabled");
         return Ok(HttpResponse::NotFound().finish());
     }
     if !cfg.swagger_ui_public && principal.validate_session_auth().is_err() {
@@ -30,9 +30,17 @@ pub async fn get_openapi_doc(principal: ReqPrincipal) -> Result<HttpResponse, Er
         return Ok(HttpResponse::Unauthorized().finish());
     }
 
-    Ok(HttpResponse::Ok()
-        .content_type(APPLICATION_JSON)
-        .body(OPENAPI_JSON.get().unwrap().as_str()))
+    // With the Swagger UI the document is built once at startup. With only Scalar enabled it is
+    // built per request instead, so it never stays in memory.
+    if let Some(json) = OPENAPI_JSON.get() {
+        return Ok(HttpResponse::Ok()
+            .content_type(APPLICATION_JSON)
+            .body(json.as_str()));
+    }
+    let json = crate::openapi::ApiDoc::build().to_json().map_err(|err| {
+        ErrorResponse::new(ErrorResponseType::Internal, format!("OpenAPI: {err}"))
+    })?;
+    Ok(HttpResponse::Ok().content_type(APPLICATION_JSON).body(json))
 }
 
 #[get("/docs/{_:.*}")]

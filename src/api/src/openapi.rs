@@ -18,6 +18,7 @@ use rauthy_data::rauthy_config::{
 };
 use rauthy_error::{ErrorResponse, ErrorResponseType};
 use rauthy_service::token_set;
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityRequirement, SecurityScheme};
 use utoipa::openapi::{ExternalDocs, Server};
 use utoipa::{OpenApi, openapi};
 
@@ -220,6 +221,7 @@ use utoipa::{OpenApi, openapi};
         users::get_user_picture,
         users::delete_user_picture,
         users::get_user_devices,
+        users::get_user_clients,
         users::put_user_device_name,
         users::delete_user_device,
         users::get_user_webid,
@@ -535,6 +537,22 @@ impl ApiDoc {
         let pub_url = &RauthyConfig::get().vars.server.pub_url;
         let url = format!("{scheme}{pub_url}/auth/v1");
         doc.servers = Some(vec![Server::new(url)]);
+
+        // API keys are sent as `Authorization: API-Key <name>$<secret>`. Declaring the scheme lets
+        // API clients like Scalar send authenticated requests.
+        doc.components
+            .get_or_insert_with(Default::default)
+            .add_security_scheme(
+                "api_key",
+                SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::with_description(
+                    "Authorization",
+                    "Format: `API-Key <name>$<secret>`",
+                ))),
+            );
+        doc.security = Some(vec![SecurityRequirement::new(
+            "api_key",
+            Vec::<String>::new(),
+        )]);
 
         doc
     }

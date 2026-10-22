@@ -182,6 +182,8 @@ pub struct JwtIdClaims<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub birthdate: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub gender: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub picture: Option<Cow<'a, str>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locale: Option<&'a str>,
@@ -555,6 +557,7 @@ mod tests {
             family_name: None,
             address: None,
             birthdate: None,
+            gender: None,
             picture: None,
             locale: None,
             nonce: None,

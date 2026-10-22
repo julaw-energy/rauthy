@@ -4,6 +4,7 @@ use crate::entity::users::User;
 use deadpool_postgres::GenericClient;
 use hiqlite::Params;
 use hiqlite::macros::{FromRow, params};
+use rauthy_api_types::cust_validation::validate_country;
 use rauthy_api_types::users::{
     UserAttrConfigRequest, UserAttrConfigTyp, UserAttrConfigValueResponse, UserAttrValueResponse,
     UserAttrValuesUpdateRequest,
@@ -12,9 +13,13 @@ use rauthy_common::constants::{CACHE_TTL_APP, CACHE_TTL_USER, IDX_USER_ATTR_CONF
 use rauthy_common::is_hiqlite;
 use rauthy_derive::FromPgRow;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
+use std::sync::LazyLock;
+use validator::ValidateEmail;
 
 // Additional custom attributes for users. These can be set for every user and then mapped to a
 // scope, to include them in JWT tokens.
@@ -26,6 +31,10 @@ pub struct UserAttrConfigEntity {
     #[column(parse)]
     pub typ: Option<UserAttrConfigTyp>,
     pub user_editable: bool,
+    pub regex: Option<String>,
+    pub error_msg: Option<String>,
+    /// JSON array of strings
+    pub options: Option<String>,
 }
 
 // CRUD
@@ -50,6 +59,7 @@ impl UserAttrConfigEntity {
 
         let typ = new_attr.typ.as_ref().map(|t| t.as_str());
         let user_editable = new_attr.user_editable.unwrap_or(false);
+        let options = options_to_json(&new_attr.options)?;
         let default_value = if let Some(bytes) = &new_attr.default_value {
             Some(serde_json::to_vec(bytes)?)
         } else {
@@ -60,28 +70,36 @@ impl UserAttrConfigEntity {
             DB::hql()
                 .execute(
                     r#"
-INSERT INTO user_attr_config (name, desc, default_value, typ, user_editable)
-VALUES ($1, $2, $3, $4, $5)"#,
+INSERT INTO user_attr_config
+(name, desc, default_value, typ, user_editable, regex, error_msg, options)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
                     params!(
                         &new_attr.name,
                         &new_attr.desc,
                         &default_value,
                         typ,
-                        user_editable
+                        user_editable,
+                        &new_attr.regex,
+                        &new_attr.error_msg,
+                        &options
                     ),
                 )
                 .await?;
         } else {
             DB::pg_execute(
                 r#"
-INSERT INTO user_attr_config (name, "desc", default_value, typ, user_editable)
-VALUES ($1, $2, $3, $4, $5)"#,
+INSERT INTO user_attr_config
+(name, "desc", default_value, typ, user_editable, regex, error_msg, options)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
                 &[
                     &new_attr.name,
                     &new_attr.desc,
                     &default_value,
                     &typ,
                     &user_editable,
+                    &new_attr.regex,
+                    &new_attr.error_msg,
+                    &options,
                 ],
             )
             .await?;
@@ -95,6 +113,9 @@ VALUES ($1, $2, $3, $4, $5)"#,
             default_value,
             typ: new_attr.typ,
             user_editable: new_attr.user_editable.unwrap_or(false),
+            regex: new_attr.regex,
+            error_msg: new_attr.error_msg,
+            options,
         })
     }
 
@@ -270,6 +291,10 @@ VALUES ($1, $2, $3, $4, $5)"#,
         slf.name.clone_from(&req_data.name);
         slf.desc.clone_from(&req_data.desc);
         slf.user_editable = req_data.user_editable.unwrap_or(false);
+        slf.typ.clone_from(&req_data.typ);
+        slf.regex.clone_from(&req_data.regex);
+        slf.error_msg.clone_from(&req_data.error_msg);
+        slf.options = options_to_json(&req_data.options)?;
         slf.default_value = if let Some(v) = &req_data.default_value {
             Some(serde_json::to_vec(v)?)
         } else {
@@ -354,14 +379,18 @@ VALUES ($1, $2, $3, $4, $5)"#,
             txn.push((
                 r#"
 UPDATE user_attr_config
-SET name  = $1, desc = $2, default_value = $3, typ = $4, user_editable = $5
-WHERE name = $6"#,
+SET name  = $1, desc = $2, default_value = $3, typ = $4, user_editable = $5,
+    regex = $6, error_msg = $7, options = $8
+WHERE name = $9"#,
                 params!(
                     &slf.name,
                     &slf.desc,
                     &slf.default_value,
                     typ,
                     slf.user_editable,
+                    &slf.regex,
+                    &slf.error_msg,
+                    &slf.options,
                     name
                 ),
             ));
@@ -379,14 +408,18 @@ WHERE name = $6"#,
                 &txn,
                 r#"
 UPDATE user_attr_config
-SET name  = $1, "desc" = $2, default_value = $3, typ = $4, user_editable = $5
-WHERE name = $6"#,
+SET name  = $1, "desc" = $2, default_value = $3, typ = $4, user_editable = $5,
+    regex = $6, error_msg = $7, options = $8
+WHERE name = $9"#,
                 &[
                     &slf.name,
                     &slf.desc,
                     &slf.default_value,
                     typ,
                     &slf.user_editable,
+                    &slf.regex,
+                    &slf.error_msg,
+                    &slf.options,
                     &name,
                 ],
             )
@@ -429,6 +462,7 @@ impl UserAttrConfigEntity {
 
 impl From<UserAttrConfigEntity> for UserAttrConfigValueResponse {
     fn from(value: UserAttrConfigEntity) -> Self {
+        let options = value.options_vec();
         Self {
             name: value.name,
             desc: value.desc,
@@ -437,7 +471,26 @@ impl From<UserAttrConfigEntity> for UserAttrConfigValueResponse {
                 .map(|v| serde_json::from_slice(&v).unwrap_or_default()),
             typ: value.typ,
             user_editable: value.user_editable,
+            regex: value.regex,
+            error_msg: value.error_msg,
+            options,
         }
+    }
+}
+
+impl UserAttrConfigEntity {
+    /// The `Enum` options as a list
+    pub fn options_vec(&self) -> Option<Vec<String>> {
+        self.options
+            .as_deref()
+            .and_then(|o| serde_json::from_str(o).ok())
+    }
+}
+
+fn options_to_json(options: &Option<Vec<String>>) -> Result<Option<String>, ErrorResponse> {
+    match options {
+        Some(o) if !o.is_empty() => Ok(Some(serde_json::to_string(o)?)),
+        _ => Ok(None),
     }
 }
 
@@ -696,5 +749,257 @@ impl From<UserAttrValueEntity> for UserAttrValueResponse {
             key: value.key,
             value: val,
         }
+    }
+}
+
+// Value validation
+static RE_ATTR_PHONE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\+[0-9]{8,15}$").unwrap());
+static RE_ATTR_URL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^https?://[^\s/?#]+([/?#]\S*)?$").unwrap());
+
+impl UserAttrConfigEntity {
+    /// Validates `value` against the configured `typ`, `options` and `regex` and returns it in
+    /// the form it should be stored in. `Number`, `Integer` and `Boolean` accept their native JSON
+    /// type or text, and always end up as the real JSON type, so tokens contain `42` and `true`
+    /// instead of `"42"` and `"true"`. Attributes without a `typ` accept any JSON value.
+    ///
+    /// Empty strings and `null` mean "delete the value" and must not be passed in here.
+    pub fn validate_value(&self, value: Value) -> Result<Value, ErrorResponse> {
+        let Some(typ) = &self.typ else {
+            return Ok(value);
+        };
+
+        let invalid = || {
+            let msg = self
+                .error_msg
+                .clone()
+                .filter(|m| !m.is_empty())
+                .unwrap_or_else(|| format!("invalid value for attribute '{}'", self.name));
+            ErrorResponse::new(ErrorResponseType::BadRequest, msg)
+        };
+
+        // numbers and booleans may be sent as text or natively
+        let text = match &value {
+            Value::String(s) => s.trim().to_string(),
+            Value::Number(n) => n.to_string(),
+            Value::Bool(b) => b.to_string(),
+            _ => return Err(invalid()),
+        };
+
+        let result = match typ {
+            UserAttrConfigTyp::Number => {
+                let n = text.parse::<f64>().map_err(|_| invalid())?;
+                if !n.is_finite() {
+                    return Err(invalid());
+                }
+                if let Ok(i) = text.parse::<i64>() {
+                    Value::from(i)
+                } else {
+                    Value::from(n)
+                }
+            }
+            UserAttrConfigTyp::Integer => Value::from(text.parse::<i64>().map_err(|_| invalid())?),
+            UserAttrConfigTyp::Boolean => match text.as_str() {
+                "true" => Value::Bool(true),
+                "false" => Value::Bool(false),
+                _ => return Err(invalid()),
+            },
+            // everything else is text and must have been sent as such
+            _ if !value.is_string() => return Err(invalid()),
+            UserAttrConfigTyp::String | UserAttrConfigTyp::Text => Value::String(text.clone()),
+            UserAttrConfigTyp::Email => {
+                if !text.validate_email() {
+                    return Err(invalid());
+                }
+                Value::String(text.clone())
+            }
+            UserAttrConfigTyp::Phone => {
+                if !RE_ATTR_PHONE.is_match(&text) {
+                    return Err(invalid());
+                }
+                Value::String(text.clone())
+            }
+            UserAttrConfigTyp::Date => {
+                if chrono::NaiveDate::parse_from_str(&text, "%Y-%m-%d").is_err() {
+                    return Err(invalid());
+                }
+                Value::String(text.clone())
+            }
+            UserAttrConfigTyp::Url => {
+                if !RE_ATTR_URL.is_match(&text) {
+                    return Err(invalid());
+                }
+                Value::String(text.clone())
+            }
+            UserAttrConfigTyp::Enum => {
+                if !self.options_vec().unwrap_or_default().contains(&text) {
+                    return Err(invalid());
+                }
+                Value::String(text.clone())
+            }
+            UserAttrConfigTyp::Country => {
+                if text.len() != 2 || validate_country(&text).is_err() {
+                    return Err(invalid());
+                }
+                Value::String(text.clone())
+            }
+            UserAttrConfigTyp::Timezone => {
+                if chrono_tz::Tz::from_str(&text).is_err() {
+                    return Err(invalid());
+                }
+                Value::String(text.clone())
+            }
+        };
+
+        // the custom pattern applies to the text form of every type
+        if let Some(re) = self.regex.as_deref().filter(|r| !r.is_empty()) {
+            let re = regex::RegexBuilder::new(re)
+                .size_limit(100_000)
+                .build()
+                .map_err(|_| invalid())?;
+            if !re.is_match(&text) {
+                return Err(invalid());
+            }
+        }
+
+        Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests_validate_value {
+    use super::*;
+    use serde_json::json;
+
+    fn cfg(typ: UserAttrConfigTyp) -> UserAttrConfigEntity {
+        UserAttrConfigEntity {
+            name: "a".into(),
+            desc: None,
+            default_value: None,
+            typ: Some(typ),
+            user_editable: true,
+            regex: None,
+            error_msg: None,
+            options: None,
+        }
+    }
+
+    #[test]
+    fn untyped_accepts_anything() {
+        let mut c = cfg(UserAttrConfigTyp::String);
+        c.typ = None;
+        assert_eq!(c.validate_value(json!({"a": 1})).unwrap(), json!({"a": 1}));
+    }
+
+    #[test]
+    fn numbers_and_booleans_become_real_json() {
+        assert_eq!(
+            cfg(UserAttrConfigTyp::Number)
+                .validate_value(json!("42"))
+                .unwrap(),
+            json!(42)
+        );
+        assert_eq!(
+            cfg(UserAttrConfigTyp::Number)
+                .validate_value(json!("4.5"))
+                .unwrap(),
+            json!(4.5)
+        );
+        assert!(
+            cfg(UserAttrConfigTyp::Integer)
+                .validate_value(json!("4.5"))
+                .is_err()
+        );
+        assert_eq!(
+            cfg(UserAttrConfigTyp::Boolean)
+                .validate_value(json!("true"))
+                .unwrap(),
+            json!(true)
+        );
+        assert_eq!(
+            cfg(UserAttrConfigTyp::Boolean)
+                .validate_value(json!(false))
+                .unwrap(),
+            json!(false)
+        );
+        assert!(
+            cfg(UserAttrConfigTyp::Boolean)
+                .validate_value(json!("yes"))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn text_types() {
+        assert!(
+            cfg(UserAttrConfigTyp::Email)
+                .validate_value(json!("a@b.co"))
+                .is_ok()
+        );
+        assert!(
+            cfg(UserAttrConfigTyp::Email)
+                .validate_value(json!("nope"))
+                .is_err()
+        );
+        assert!(
+            cfg(UserAttrConfigTyp::Phone)
+                .validate_value(json!("+256700216664"))
+                .is_ok()
+        );
+        assert!(
+            cfg(UserAttrConfigTyp::Phone)
+                .validate_value(json!("0700216664"))
+                .is_err()
+        );
+        assert!(
+            cfg(UserAttrConfigTyp::Date)
+                .validate_value(json!("2025-02-29"))
+                .is_err()
+        );
+        assert!(
+            cfg(UserAttrConfigTyp::Url)
+                .validate_value(json!("https://a.b/c?d"))
+                .is_ok()
+        );
+        assert!(
+            cfg(UserAttrConfigTyp::Url)
+                .validate_value(json!("javascript:alert(1)"))
+                .is_err()
+        );
+        assert!(
+            cfg(UserAttrConfigTyp::Country)
+                .validate_value(json!("UG"))
+                .is_ok()
+        );
+        assert!(
+            cfg(UserAttrConfigTyp::Country)
+                .validate_value(json!("Uganda"))
+                .is_err()
+        );
+        assert!(
+            cfg(UserAttrConfigTyp::Timezone)
+                .validate_value(json!("Africa/Kampala"))
+                .is_ok()
+        );
+        assert!(
+            cfg(UserAttrConfigTyp::String)
+                .validate_value(json!(5))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn enum_regex_and_message() {
+        let mut c = cfg(UserAttrConfigTyp::Enum);
+        c.options = Some(r#"["a","b"]"#.into());
+        assert!(c.validate_value(json!("a")).is_ok());
+        assert!(c.validate_value(json!("c")).is_err());
+
+        let mut c = cfg(UserAttrConfigTyp::String);
+        c.regex = Some("^[A-Z]{3}$".into());
+        c.error_msg = Some("three capitals".into());
+        assert!(c.validate_value(json!("ABC")).is_ok());
+        let err = c.validate_value(json!("abc")).unwrap_err();
+        assert_eq!(err.message, "three capitals");
     }
 }

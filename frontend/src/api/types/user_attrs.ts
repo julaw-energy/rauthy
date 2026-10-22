@@ -1,6 +1,18 @@
 import type { JsonValue } from '$utils/jsonValue';
 
-export type UserAttrConfigTyp = 'email';
+export type UserAttrConfigTyp =
+    | 'string'
+    | 'text'
+    | 'email'
+    | 'phone'
+    | 'number'
+    | 'integer'
+    | 'boolean'
+    | 'date'
+    | 'url'
+    | 'enum'
+    | 'country'
+    | 'timezone';
 
 export interface UserAttrConfigEntity {
     name: string;
@@ -13,18 +25,25 @@ export interface UserAttrConfigRequest {
     /// Validation: PATTERN_ATTR_DESC
     desc?: string;
     default_value?: JsonValue;
-    /// Currently ignored - will be implemented in a future version
     typ?: UserAttrConfigTyp;
     user_editable?: boolean;
+    /// Validation: valid regex, max 256 characters
+    regex?: string;
+    /// Validation: max 128 characters
+    error_msg?: string;
+    /// For `Enum`. Validation: max 64 entries
+    options?: string[];
 }
 
 export interface UserAttrConfigValueResponse {
     name: string;
     desc?: string;
     default_value?: JsonValue;
-    /// Currently ignored - will be implemented in a future version
     typ?: UserAttrConfigTyp;
     user_editable?: boolean;
+    regex?: string;
+    error_msg?: string;
+    options?: string[];
 }
 
 export interface UserAttrConfigResponse {
@@ -45,6 +64,9 @@ export interface UserEditableAttrResponse {
     desc?: string;
     default_value?: JsonValue;
     typ?: UserAttrConfigTyp;
+    regex?: string;
+    error_msg?: string;
+    options?: string[];
     value?: string;
 }
 

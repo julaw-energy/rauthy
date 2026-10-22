@@ -1,8 +1,8 @@
 use crate::oidc::GrantType;
 use rauthy_common::constants::CLIENT_CLAIMS_MAX_LEN;
 use rauthy_common::regex::{
-    RE_ATTR, RE_CLIENT_URI, RE_CODE_CHALLENGE_METHOD, RE_CONTACT, RE_GROUPS, RE_LINUX_HOSTNAME,
-    RE_ORIGIN, RE_RESOURCE, RE_ROLES_SCOPES,
+    RE_ATTR, RE_CITY, RE_CLIENT_URI, RE_CODE_CHALLENGE_METHOD, RE_CONTACT, RE_GROUPS,
+    RE_LINUX_HOSTNAME, RE_ORIGIN, RE_RESOURCE, RE_ROLES_SCOPES,
 };
 use std::borrow::Cow;
 use std::str::FromStr;
@@ -255,4 +255,102 @@ mod tests {
         assert!(serde_json::to_vec(&too_big).unwrap().len() > 1024);
         assert!(validate_claims(&too_big).is_err());
     }
+}
+
+/// ISO 3166-1 alpha-2 codes plus the few extra ones `libphonenumber` offers (`AC`, `TA`, `XK`).
+/// Sorted for `binary_search`.
+const COUNTRY_CODES: &[&str] = &[
+    "AC", "AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR", "AS", "AT", "AU", "AW", "AX",
+    "AZ", "BA", "BB", "BD", "BE", "BF", "BG", "BH", "BI", "BJ", "BL", "BM", "BN", "BO", "BQ", "BR",
+    "BS", "BT", "BV", "BW", "BY", "BZ", "CA", "CC", "CD", "CF", "CG", "CH", "CI", "CK", "CL", "CM",
+    "CN", "CO", "CR", "CU", "CV", "CW", "CX", "CY", "CZ", "DE", "DJ", "DK", "DM", "DO", "DZ", "EC",
+    "EE", "EG", "EH", "ER", "ES", "ET", "FI", "FJ", "FK", "FM", "FO", "FR", "GA", "GB", "GD", "GE",
+    "GF", "GG", "GH", "GI", "GL", "GM", "GN", "GP", "GQ", "GR", "GS", "GT", "GU", "GW", "GY", "HK",
+    "HM", "HN", "HR", "HT", "HU", "ID", "IE", "IL", "IM", "IN", "IO", "IQ", "IR", "IS", "IT", "JE",
+    "JM", "JO", "JP", "KE", "KG", "KH", "KI", "KM", "KN", "KP", "KR", "KW", "KY", "KZ", "LA", "LB",
+    "LC", "LI", "LK", "LR", "LS", "LT", "LU", "LV", "LY", "MA", "MC", "MD", "ME", "MF", "MG", "MH",
+    "MK", "ML", "MM", "MN", "MO", "MP", "MQ", "MR", "MS", "MT", "MU", "MV", "MW", "MX", "MY", "MZ",
+    "NA", "NC", "NE", "NF", "NG", "NI", "NL", "NO", "NP", "NR", "NU", "NZ", "OM", "PA", "PE", "PF",
+    "PG", "PH", "PK", "PL", "PM", "PN", "PR", "PS", "PT", "PW", "PY", "QA", "RE", "RO", "RS", "RU",
+    "RW", "SA", "SB", "SC", "SD", "SE", "SG", "SH", "SI", "SJ", "SK", "SL", "SM", "SN", "SO", "SR",
+    "SS", "ST", "SV", "SX", "SY", "SZ", "TA", "TC", "TD", "TF", "TG", "TH", "TJ", "TK", "TL", "TM",
+    "TN", "TO", "TR", "TT", "TV", "TW", "TZ", "UA", "UG", "UM", "US", "UY", "UZ", "VA", "VC", "VE",
+    "VG", "VI", "VN", "VU", "WF", "WS", "XK", "YE", "YT", "ZA", "ZM", "ZW",
+];
+
+/// A country is stored as its ISO 3166-1 alpha-2 code. Values that are not exactly two letters
+/// are still accepted as free text (legacy data from before codes were used).
+pub fn validate_country(value: &str) -> Result<(), ValidationError> {
+    if value.len() == 2 {
+        if COUNTRY_CODES.binary_search(&value).is_ok() {
+            return Ok(());
+        }
+        return Err(ValidationError::new(
+            "unknown ISO 3166-1 alpha-2 country code",
+        ));
+    }
+    if value.chars().count() > 48 || !RE_CITY.is_match(value) {
+        return Err(ValidationError::new("[a-zA-Z0-9À-ÿ-\\s]{0,48}"));
+    }
+    Ok(())
+}
+
+/// `YYYY-MM-DD`, a real calendar date, not before 1900 and not in the future.
+pub fn validate_birthdate(value: &str) -> Result<(), ValidationError> {
+    let err = || ValidationError::new("birthdate must be a real date between 1900-01-01 and today");
+    let date = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(|_| err())?;
+    let min = chrono::NaiveDate::from_ymd_opt(1900, 1, 1).unwrap();
+    if date < min || date > chrono::Utc::now().date_naive() {
+        return Err(err());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests_user_values {
+    use super::*;
+
+    #[test]
+    fn country_codes_sorted_and_complete() {
+        assert!(COUNTRY_CODES.windows(2).all(|w| w[0] < w[1]));
+        assert_eq!(COUNTRY_CODES.len(), 249 + 3);
+        assert!(validate_country("UG").is_ok());
+        assert!(validate_country("ZZ").is_err());
+        assert!(validate_country("uG").is_err());
+        assert!(validate_country("Uganda").is_ok());
+    }
+
+    #[test]
+    fn birthdate() {
+        assert!(validate_birthdate("1999-08-16").is_ok());
+        assert!(validate_birthdate("2024-02-29").is_ok());
+        assert!(validate_birthdate("2025-02-29").is_err());
+        assert!(validate_birthdate("2025-13-45").is_err());
+        assert!(validate_birthdate("1899-12-31").is_err());
+        assert!(validate_birthdate("2999-01-01").is_err());
+    }
+}
+
+/// A user-defined pattern for a custom user attribute
+pub fn validate_attr_regex(value: &str) -> Result<(), ValidationError> {
+    if value.len() > 256 {
+        return Err(ValidationError::new("regex: max 256 characters"));
+    }
+    if regex::RegexBuilder::new(value)
+        .size_limit(100_000)
+        .build()
+        .is_err()
+    {
+        return Err(ValidationError::new("regex: invalid expression"));
+    }
+    Ok(())
+}
+
+pub fn validate_attr_options(value: &[String]) -> Result<(), ValidationError> {
+    if value.len() > 64 || value.iter().any(|v| v.is_empty() || v.chars().count() > 64) {
+        return Err(ValidationError::new(
+            "options: max 64 entries, 1-64 characters each",
+        ));
+    }
+    Ok(())
 }

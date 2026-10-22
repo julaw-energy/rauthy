@@ -5,7 +5,7 @@ use rauthy_data::rauthy_config::{RauthyConfig, UserValueConfigValue};
 use rauthy_error::{ErrorResponse, ErrorResponseType};
 use std::borrow::Cow;
 use std::str::FromStr;
-use tracing::{debug, warn};
+use tracing::debug;
 
 #[derive(Debug)]
 pub struct UserValuesValidator<'a> {
@@ -17,7 +17,7 @@ pub struct UserValuesValidator<'a> {
 
 impl UserValuesValidator<'_> {
     pub fn validate(&self) -> Result<(), ErrorResponse> {
-        warn!("Validating values {self:?}");
+        debug!("Validating user values");
         let config = &RauthyConfig::get().vars.user_values;
 
         if config.given_name == UserValueConfigValue::Required
@@ -65,6 +65,14 @@ impl UserValuesValidator<'_> {
                 return Err(ErrorResponse::new(
                     ErrorResponseType::BadRequest,
                     "'birthdate' is required",
+                ));
+            }
+            if config.gender == UserValueConfigValue::Required
+                && (uv.gender.is_none() || uv.gender.as_deref() == Some(""))
+            {
+                return Err(ErrorResponse::new(
+                    ErrorResponseType::BadRequest,
+                    "'gender' is required",
                 ));
             }
             if config.street == UserValueConfigValue::Required
@@ -142,6 +150,7 @@ impl UserValuesValidator<'_> {
             let uv = UserValues::find(&user.id).await?.unwrap_or_default();
             let user_values = Some(UserValuesRequest {
                 birthdate: uv.birthdate,
+                gender: uv.gender,
                 phone: uv.phone,
                 street: uv.street,
                 zip: uv.zip,

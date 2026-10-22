@@ -106,6 +106,7 @@ pub async fn trigger() {
     let _ = *RE_CONTACT;
     let _ = *RE_CSS_VALUE_LOOSE;
     let _ = *RE_DATE_STR;
+    let _ = *RE_GENDER;
     let _ = *RE_GROUPS;
     let _ = *RE_KV_KEY;
     let _ = *RE_ROLES_SCOPES;

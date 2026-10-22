@@ -183,7 +183,13 @@ export async function handleResponse<T>(
             resp.text = await res.text();
         }
     } else if (res.status !== 405) {
-        resp.error = await res.json();
+        // some errors (e.g. a malformed request body) are plain text, not an `ErrorResponse`
+        let text = await res.text();
+        try {
+            resp.error = JSON.parse(text);
+        } catch {
+            resp.error = { timestamp: Date.now() / 1000, error: 'BadRequest', message: text };
+        }
     }
 
     return resp;

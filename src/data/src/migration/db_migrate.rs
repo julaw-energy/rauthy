@@ -34,6 +34,7 @@ use crate::entity::theme::{ThemeCss, ThemeCssFull};
 use crate::entity::tos::ToS;
 use crate::entity::tos_user_accept::ToSUserAccept;
 use crate::entity::user_attr::{UserAttrConfigEntity, UserAttrValueEntity};
+use crate::entity::user_clients::UserClientRow;
 use crate::entity::user_login_states::UserLoginState;
 use crate::entity::user_revoke::UserRevoke;
 use crate::entity::users::User;
@@ -315,6 +316,11 @@ pub async fn migrate_from_sqlite(db_from: &str) -> Result<(), ErrorResponse> {
         .map(|r| r.unwrap())
         .collect_vec();
     inserts::login_locations(before).await?;
+
+    // USER CLIENTS
+    debug!("Migrating table: user_clients");
+    let before = query_sqlite::<UserClientRow>(&conn, "SELECT * FROM user_clients").await?;
+    inserts::user_clients(before).await?;
 
     // FAILED BACKCHANNEL LOGOUTS
     debug!("Migrating table: failed_backchannel_logouts");
@@ -837,6 +843,11 @@ pub async fn migrate_from_postgres() -> Result<(), ErrorResponse> {
     debug!("Migrating table: login_locations");
     let before = DB::pg_query_map_with(&cl, "SELECT * FROM login_locations", &[], 0).await?;
     inserts::login_locations(before).await?;
+
+    // USER CLIENTS
+    debug!("Migrating table: user_clients");
+    let before = DB::pg_query_map_with(&cl, "SELECT * FROM user_clients", &[], 0).await?;
+    inserts::user_clients(before).await?;
 
     // FAILED BACKCHANNEL LOGOUTS
     debug!("Migrating table: failed_backchannel_logouts");

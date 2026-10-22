@@ -44,6 +44,7 @@ pub struct Userinfo {
     pub given_name: Option<String>,
     pub family_name: Option<String>,
     pub birthdate: Option<String>,
+    pub gender: Option<String>,
     pub locale: Option<String>,
 
     // scope: phone

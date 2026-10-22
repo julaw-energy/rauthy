@@ -85,6 +85,7 @@ pub struct IdToken {
     pub family_name: Option<String>,
     pub address: Option<AddressClaim>,
     pub birthdate: Option<String>,
+    pub gender: Option<String>,
     pub picture: Option<String>,
     pub locale: Option<String>,
     pub nonce: Option<String>,

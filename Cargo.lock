@@ -4941,12 +4941,14 @@ name = "rauthy-api-types"
 version = "0.37.2"
 dependencies = [
  "actix-web",
+ "chrono",
  "hiqlite",
  "openssl",
  "openssl-sys",
  "rauthy-common",
  "rauthy-derive",
  "rauthy-error",
+ "regex",
  "serde",
  "serde_json",
  "time",

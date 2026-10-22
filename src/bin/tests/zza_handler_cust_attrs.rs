@@ -36,6 +36,9 @@ async fn test_cust_attrs() -> Result<(), Box<dyn Error>> {
         default_value: None,
         typ: None,
         user_editable: None,
+        regex: None,
+        error_msg: None,
+        options: None,
     };
     let res = client
         .post(&url_attrs)
@@ -247,6 +250,9 @@ async fn test_cust_attrs() -> Result<(), Box<dyn Error>> {
         default_value: None,
         typ: None,
         user_editable: None,
+        regex: None,
+        error_msg: None,
+        options: None,
     };
     let url_attr_mod = format!("{}/users/attr/{}", backend_url, cust_attr.name);
     let res = client

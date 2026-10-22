@@ -51,6 +51,15 @@ export interface I18n {
         accessRenew: string;
         accessRenewDelete: string;
         birthdate: string;
+        gender: string;
+        genderFemale: string;
+        genderMale: string;
+        genderOther: string;
+        connectedApps: string;
+        connectedAppsDesc: string;
+        lastAccess: string;
+        firstAccess: string;
+        logins: string;
         canModifyFor: string;
         city: string;
         changePassword: string;

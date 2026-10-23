@@ -759,6 +759,7 @@ fn api_services() -> actix_web::Scope {
                 .service(users::post_otp_auth_resend)
                 .service(users::post_otp_auth_finish_login)
                 .service(html::get_static_assets), // catch-all GET routes
+                .service(scalar::get_scalar_init)
         )
 }
 

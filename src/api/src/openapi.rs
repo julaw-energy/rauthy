@@ -549,10 +549,11 @@ impl ApiDoc {
                     "Format: `API-Key <name>$<secret>`",
                 ))),
             );
-        doc.security = Some(vec![SecurityRequirement::new(
-            "api_key",
-            Vec::<String>::new(),
-        )]);
+        // an API key is optional: the logged-in admin session (cookie) works as well
+        doc.security = Some(vec![
+            SecurityRequirement::new("api_key", Vec::<String>::new()),
+            SecurityRequirement::default(),
+        ]);
 
         doc
     }

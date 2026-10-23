@@ -22,10 +22,14 @@
 
         <p>
             {ta.docs.openapi}
-            <A href="/auth/v1/docs/" target="_blank">Swagger UI</A>
+            <A href="/auth/v1/docs/" target="_blank">API reference</A>
             <br />
             <b>{ta.common.note}:</b>
-            <span class="text-muted-foreground">{ta.docs.openapiNote}</span>
+            <span class="text-muted-foreground">
+                The reference (Scalar) is shown when <code>server.scalar_enable</code> is set, otherwise the Swagger
+                UI when <code>server.swagger_ui_enable</code> is. Access needs an admin session unless
+                <code>server.swagger_ui_public</code> is set.
+            </span>
         </p>
 
         <p>

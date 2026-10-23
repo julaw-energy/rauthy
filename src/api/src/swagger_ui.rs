@@ -48,6 +48,12 @@ pub async fn get_swagger_ui(
     path: Path<String>,
     principal: ReqPrincipal,
 ) -> Result<HttpResponse, ErrorResponse> {
+    // with Scalar enabled, the `/docs/` root shows it instead of the Swagger UI (which stays
+    // reachable at `/docs/index.html`)
+    if path.is_empty() && RauthyConfig::get().vars.server.scalar_enable {
+        return crate::scalar::scalar_page(&principal);
+    }
+
     let cfg = &RauthyConfig::get().vars.server;
     if !cfg.swagger_ui_enable {
         warn!("Request for the Swagger UI but `swagger_ui_enable` is set to `false`");

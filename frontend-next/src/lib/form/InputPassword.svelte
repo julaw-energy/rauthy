@@ -1,4 +1,6 @@
 <script lang="ts">
+    // Browsers ignore autocomplete="off" on password fields and fill the saved login password into e.g.
+    // an OIDC client secret - `new-password` is the value that really stops that (see the template below).
     import type { FullAutoFill } from 'svelte/elements';
     import { Input } from '$lib/components/ui/input';
     import { Label } from '$lib/components/ui/label';
@@ -126,7 +128,7 @@
             aria-label={ariaLabel}
             class={showCopy ? 'pr-20' : 'pr-11'}
             bind:value
-            {autocomplete}
+            autocomplete={autocomplete === 'off' ? 'new-password' : autocomplete}
             placeholder={placeholder || label}
             {disabled}
             required={required || undefined}

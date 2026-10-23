@@ -6,7 +6,8 @@
     import type { RowDeletion } from '$lib/components/data-table/row-deletion';
     import Msg from '$lib5/Msg.svelte';
     import { onMount } from 'svelte';
-    import Button from '$lib5/button/Button.svelte';
+    import AddFooter from '$lib5/form/AddFooter.svelte';
+    import { toast } from 'svelte-sonner';
     import Input from '$lib5/form/Input.svelte';
     import { useI18n } from '$state/i18n.svelte';
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
@@ -44,8 +45,14 @@
     let blacklist: BlacklistedIp[] = $state([]);
 
     let ip = $state('');
-    let expDate = $state(fmtDateInput());
-    let expTime = $state(fmtTimeInput());
+    // bumped after a save to remount the form, so the emptied required field is not flagged invalid
+    let formNonce = $state(0);
+    let another = $state(false);
+    // The default expiry is a day from now: the old default was "now", so a new entry had already
+    // expired when it was saved and vanished from the list right away.
+    const inOneDay = () => new Date(Date.now() + 24 * 60 * 60 * 1000);
+    let expDate = $state(fmtDateInput(inOneDay()));
+    let expTime = $state(fmtTimeInput(inOneDay()));
 
     onMount(() => {
         fetchBlacklist();
@@ -72,6 +79,10 @@
             errSave = 'Invalid Date Input: User Expires';
             return;
         }
+        if (exp * 1000 <= Date.now()) {
+            errSave = 'The expiry must be in the future';
+            return;
+        }
 
         let payload: IpBlacklistRequest = {
             ip,
@@ -86,7 +97,15 @@
                 errSave = res.error.message;
             } else {
                 ip = '';
-                closeModal?.();
+                formNonce++;
+                // the form stays mounted: give the next entry a fresh default expiry
+                expDate = fmtDateInput(inOneDay());
+                expTime = fmtTimeInput(inOneDay());
+                if (another) {
+                    toast.success('Saved');
+                } else {
+                    closeModal?.();
+                }
                 await fetchBlacklist();
             }
         } catch (err) {
@@ -134,6 +153,7 @@
                     <div class="ml-auto">
                         <ButtonAddModal level={1} bind:closeModal>
                             <div class="grid gap-4">
+                                {#key formNonce}
                                 <Form action="/auth/v1/blacklist" {onSubmit}>
                                     <Input
                                         bind:ref={refIp}
@@ -152,13 +172,9 @@
                                         withTime
                                     />
 
-                                    <div class="flex items-center gap-3">
-                                        <Button type="submit">
-                                            {t.common.save}
-                                        </Button>
-                                        <Msg err={errSave} />
-                                    </div>
+                                    <AddFooter bind:another err={errSave} />
                                 </Form>
+                                {/key}
                             </div>
                         </ButtonAddModal>
                     </div>

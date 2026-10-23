@@ -8,9 +8,12 @@
     let {
         userId,
         onSave,
+        onDeleted,
     }: {
         userId: string;
         onSave: () => void;
+        // called after the user is gone, e.g. to close the details panel
+        onDeleted?: () => void;
     } = $props();
 
     let t = useI18n();
@@ -27,6 +30,7 @@
             err = res.error.message;
         } else {
             onSave();
+            onDeleted?.();
         }
     }
 </script>

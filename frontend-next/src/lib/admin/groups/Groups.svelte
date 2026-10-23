@@ -1,18 +1,19 @@
 <script lang="ts">
     import { onMount } from 'svelte';
+    import { toast } from 'svelte-sonner';
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
-    import { fetchGet } from '$api/fetch';
-    import { useParam } from '$state/param.svelte';
+    import { fetchDelete, fetchGet, fetchPut } from '$api/fetch';
     import { useTrigger } from '$state/callback.svelte';
     import type { GroupResponse } from '$api/types/groups.ts';
     import DataTable from '$lib/components/data-table/data-table.svelte';
-    import { textCol } from '$lib/components/data-table/columns';
+    import { fnTextCol, textCol } from '$lib/components/data-table/columns';
     import type { FeaturedColumnDef } from '$lib/components/data-table/data-table-features';
+    import type { EditConfig } from '$lib/components/data-table/data-table.svelte';
+    import type { RowDeletion } from '$lib/components/data-table/row-deletion';
+    import { PATTERN_GROUP } from '$utils/patterns';
     import ButtonAddModal from '$lib5/button/ButtonAddModal.svelte';
     import ContentAdmin from '$lib5/ContentAdmin.svelte';
-    import DetailsSheet from '$lib5/DetailsSheet.svelte';
     import GroupAddNew from '$lib5/admin/groups/GroupAddNew.svelte';
-    import GroupDetails from '$lib5/admin/groups/GroupDetails.svelte';
 
     let ta = useI18nAdmin();
 
@@ -20,17 +21,60 @@
     let tr = useTrigger();
     tr.set('navMain', () => refAddNew?.focus());
 
+    // bumping this re-creates the add form, so "save & add another" starts with an empty one
+    let addNonce = $state(0);
+
     let closeModal: undefined | (() => void) = $state();
 
     let err = $state('');
     let groups: GroupResponse[] = $state([]);
-    let group: undefined | GroupResponse = $derived(groups.find(x => x.id === gid.get()));
-    let gid = useParam('gid');
+
+    const metaText = (x: GroupResponse) => (x.meta === undefined || x.meta === null ? '' : JSON.stringify(x.meta));
 
     const columns: FeaturedColumnDef<GroupResponse>[] = [
-        textCol<GroupResponse>('name', ta.common.name, { size: 260 }),
         textCol<GroupResponse>('id', 'ID', { size: 260 }),
+        textCol<GroupResponse>('name', ta.common.name, { size: 260 }),
+        fnTextCol<GroupResponse>('meta', 'Metadata (JSON)', x => metaText(x), { size: 420 }),
     ];
+
+    const editable: EditConfig<GroupResponse> = {
+        columns: {
+            meta: {
+                read: metaText,
+                placeholder: '{"key": "value"}',
+                validate: v => {
+                    try {
+                        JSON.parse(v);
+                        return null;
+                    } catch {
+                        return 'Not valid JSON';
+                    }
+                },
+            },
+            name: { required: true, maxLength: 32, pattern: PATTERN_GROUP } },
+        canEdit: x => !(false),
+        save: async (x, changes) => {
+            if (changes.name !== undefined && groups.some(o => o.id !== x.id && o.name === changes.name)) {
+                throw new Error(ta.common.nameExistsAlready);
+            }
+            let res = await fetchPut(`/auth/v1/groups/${x.id}`, { group: changes.name ?? x.name, meta: metaFrom(changes.meta, x.meta) });
+            if (res.error) throw new Error(res.error.message);
+        },
+        onSaved: fetchGroups,
+    };
+
+    const metaFrom = (text: string | undefined, current: GroupResponse['meta']) =>
+        text === undefined ? current : text.trim() === '' ? undefined : JSON.parse(text);
+
+    const remove: RowDeletion<GroupResponse> = {
+        label: x => x.name,
+        canRemove: x => !(false),
+        run: async x => {
+            let res = await fetchDelete(`/auth/v1/groups/${x.id}`);
+            if (res.error) throw new Error(res.error.message);
+        },
+        onDeleted: fetchGroups,
+    };
 
     onMount(() => {
         fetchGroups();
@@ -49,10 +93,15 @@
         fetchGroups();
     }
 
-    async function onAddNew(id: string) {
+    async function onAddNew(id: string, another?: boolean) {
+        if (another) {
+            addNonce++;
+            toast.success('Saved');
+            await fetchGroups();
+            return;
+        }
         closeModal?.();
         await fetchGroups();
-        gid.set(id);
     }
 </script>
 
@@ -68,24 +117,20 @@
             clientSide
             searchable
             getRowId={x => x.id}
-            onRowClick={x => gid.set(x.id)}
+            {editable}
+            {remove}
+            rowActionsWidth={40}
             onFetch={fetchGroups}
         >
             {#snippet toolbar()}
                 <div class="ml-auto">
                     <ButtonAddModal bind:ref={refAddNew} level={groups.length === 0 ? 1 : 2} bind:closeModal alignRight>
-                        <GroupAddNew onSave={onAddNew} {groups} />
+                        {#key addNonce}
+                            <GroupAddNew onSave={onAddNew} {groups} />
+                        {/key}
                     </ButtonAddModal>
                 </div>
             {/snippet}
         </DataTable>
     </div>
 </ContentAdmin>
-
-<DetailsSheet open={!!group} title={group?.name ?? ''} onClose={() => gid.set(undefined)}>
-    {#if group}
-        {#key group.id}
-            <GroupDetails {group} {groups} {onSave} />
-        {/key}
-    {/if}
-</DetailsSheet>

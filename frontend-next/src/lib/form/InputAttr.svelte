@@ -48,8 +48,9 @@
     {:else if def.typ === 'enum'}
         <InputSelect bind:value label={lbl} items={(def.options ?? []).map(o => ({ value: o, label: o }))} />
     {:else}
+        <!-- a number input binds a NUMBER; the form logic works with text, so convert in both directions -->
         <Input
-            bind:value
+            bind:value={() => value, v => (value = v === null || v === undefined ? '' : String(v))}
             autocomplete="off"
             label={lbl}
             {placeholder}

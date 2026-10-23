@@ -27,6 +27,7 @@
         roles,
         groups,
         onSave,
+        onDeleted,
     }: {
         userValuesConfig: UserValuesConfig;
         userId: string;
@@ -34,6 +35,7 @@
         roles: RoleResponse[];
         groups: GroupResponse[];
         onSave: () => void;
+        onDeleted?: () => void;
     } = $props();
 
     let t = useI18n();
@@ -141,7 +143,7 @@
         {:else if selected === TAB_LOGOUT}
             <UserForceLogout {userId} />
         {:else if selected === TAB_DELETE}
-            <UserDelete {userId} {onSave} />
+            <UserDelete {userId} {onSave} {onDeleted} />
         {/if}
     </div>
 {/if}

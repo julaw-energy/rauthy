@@ -1,12 +1,10 @@
 <script lang="ts">
-    import Msg from '$lib5/Msg.svelte';
-    import Button from '$lib5/button/Button.svelte';
+    import AddFooter from '$lib5/form/AddFooter.svelte';
     import Input from '$lib5/form/Input.svelte';
     import { slide } from 'svelte/transition';
     import { formatUtcTsFromDateInput } from '$utils/helpers.js';
     import { fmtDateInput, fmtTimeInput } from '$utils/form';
     import type { ApiKeyAccess, ApiKeyRequest, ApiKeyResponse } from '$api/types/api_keys.ts';
-    import { useI18n } from '$state/i18n.svelte';
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
     import ApiKeyMatrix from '$lib5/admin/api_keys/ApiKeyMatrix.svelte';
     import { fetchPost } from '$api/fetch';
@@ -22,13 +20,13 @@
         onSave,
     }: {
         keys: ApiKeyResponse[];
-        onSave: () => void;
+        onSave: (another?: boolean) => void;
     } = $props();
 
-    let t = useI18n();
     let ta = useI18nAdmin();
 
     let err = $state('');
+    let another = $state(false);
     let doesExpire = $state(false);
     // IMPORTANT: do NOT give a default here -> will be initialized inside ApiKeyAccessMatrix!
     let finalizeMatrix: undefined | (() => ApiKeyAccess[]) = $state();
@@ -80,7 +78,7 @@
         if (res.error) {
             err = res.error.message;
         } else {
-            onSave();
+            onSave(another);
         }
     }
 </script>
@@ -117,11 +115,6 @@
 
         <ApiKeyMatrix bind:finalize={finalizeMatrix} />
 
-        <div class="flex items-center gap-3">
-            <Button type="submit">
-                {t.common.save}
-            </Button>
-            <Msg {err} />
-        </div>
+        <AddFooter bind:another {err} />
     </Form>
 </div>

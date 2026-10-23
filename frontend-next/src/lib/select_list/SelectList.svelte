@@ -32,17 +32,22 @@
 </script>
 
 <div class="flex w-full items-start gap-2" style:max-width={maxWidth}>
+    <!-- without a visible label the lone edit button gave no hint what it edits -->
+    <span class="w-20 shrink-0 pt-2 text-sm font-medium">{@render children()}</span>
     <div class="flex min-h-9 flex-1 flex-wrap items-center gap-1.5">
+        {#if selected.length === 0}
+            <span class="text-muted-foreground text-sm">—</span>
+        {/if}
         {#each selected as item (item.name)}
             <Badge variant="secondary">{item.name}</Badge>
         {/each}
+        <!-- inside the badge row so the pencil sits right after the last entry -->
+        {#if !readonly}
+            <Button invisible onclick={() => (showModal = true)}>
+                <span title={ta.common.edit}><IconEdit width="1.2rem" /></span>
+            </Button>
+        {/if}
     </div>
-
-    {#if !readonly}
-        <Button invisible onclick={() => (showModal = true)}>
-            <span title={ta.common.edit}><IconEdit width="1.2rem" /></span>
-        </Button>
-    {/if}
 
     <Modal bind:showModal bind:closeModal>
         <h3 class="text-lg font-semibold">{@render children()}</h3>

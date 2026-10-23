@@ -40,8 +40,8 @@
     let searchValue = $state('');
 
     const columns: FeaturedColumnDef<SessionResponse>[] = [
-        textCol<SessionResponse>('user_id', 'User ID', { size: 260 }),
         textCol<SessionResponse>('id', 'Session ID', { size: 260 }),
+        textCol<SessionResponse>('user_id', 'User ID', { size: 260 }),
         textCol<SessionResponse>('state', ta.options.state, { size: 130 }),
         dateCol<SessionResponse>('exp', ta.options.expires),
         dateCol<SessionResponse>('last_seen', ta.options.lastSeen),

@@ -1,5 +1,6 @@
 <script lang="ts">
     import Msg from '$lib5/Msg.svelte';
+    import AddFooter from '$lib5/form/AddFooter.svelte';
     import Button from '$lib5/button/Button.svelte';
     import Input from '$lib5/form/Input.svelte';
     import { PATTERN_ROLE_SCOPE } from '$utils/patterns';
@@ -14,7 +15,7 @@
         onSave,
     }: {
         scopes: ScopeResponse[];
-        onSave: (id: string) => void;
+        onSave: (id: string, another?: boolean) => void;
     } = $props();
 
     let t = useI18n();
@@ -31,6 +32,8 @@
         });
     });
 
+    let another = $state(false);
+
     async function onSubmit(form: HTMLFormElement, params: URLSearchParams) {
         if (scopes.find(s => s.name === name)) {
             err = ta.common.nameExistsAlready;
@@ -43,7 +46,7 @@
         };
         let res = await fetchPost<ScopeResponse>(form.action, payload);
         if (res.body) {
-            onSave(res.body.id);
+            onSave(res.body.id, another);
         } else {
             err = res.error?.message || 'Error';
         }
@@ -62,11 +65,6 @@
             pattern={PATTERN_ROLE_SCOPE}
         />
 
-        <div class="flex items-center gap-3">
-            <Button type="submit">
-                {t.common.save}
-            </Button>
-            <Msg {err} />
-        </div>
+        <AddFooter bind:another {err} />
     </Form>
 </div>

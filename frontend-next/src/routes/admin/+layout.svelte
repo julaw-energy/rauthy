@@ -9,6 +9,14 @@
     import NavSide from '$lib5/nav/NavSide.svelte';
     import Events from '$lib5/admin/events/Events.svelte';
     import Loading from '$lib5/Loading.svelte';
+    import DateFormatSelect from '$lib5/DateFormatSelect.svelte';
+    import ThemeSwitch from '$lib5/ThemeSwitch.svelte';
+    import LangSelector from '$lib5/LangSelector.svelte';
+    import A from '$lib5/A.svelte';
+    import Tooltip from '$lib5/Tooltip.svelte';
+    import IconUserCircle from '$icons/IconUserCircle.svelte';
+    import IconLogout from '$icons/IconLogout.svelte';
+    import { redirectToLogout } from '$utils/helpers';
     import { useSession } from '$state/session.svelte';
     import { fetchGet } from '$api/fetch';
     import { initI18nAdmin, useI18nAdmin } from '$state/i18n_admin.svelte';
@@ -65,7 +73,9 @@
         docs: 'docs',
     };
     let section = $derived(page.url.pathname.split('/')[4] ?? 'users');
-    let title = $derived((ta.nav as Record<string, string>)[titles[section] ?? section] ?? section);
+    // sections without a translated nav label
+    const fixedTitles: Record<string, string> = { kv: 'KV Store', pam: 'PAM' };
+    let title = $derived(fixedTitles[section] ?? (ta.nav as Record<string, string>)[titles[section] ?? section] ?? section);
 </script>
 
 <svelte:window bind:innerWidth />
@@ -97,11 +107,27 @@
                 <Sidebar.Trigger />
                 <Separator orientation="vertical" class="h-5" />
                 <h1 class="min-w-0 flex-1 truncate text-base font-semibold capitalize">{title}</h1>
-                {#if !wide}
-                    <Button invisible ariaLabel="Events" onclick={() => (showEvents = true)}>
-                        <Bell class="size-5" />
+                <!-- same controls, same order as the account page; icon buttons share one 36px box so they line up -->
+                <div
+                    class="flex shrink-0 items-center gap-1 [&_button:not([data-slot=select-trigger])]:size-9! [&_button:not([data-slot=select-trigger])]:p-0!"
+                >
+                    <DateFormatSelect />
+                    <ThemeSwitch />
+                    <div class="w-24 sm:w-28"><LangSelector borderless={false} /></div>
+                    <A href="/auth/v1/account" hideUnderline>
+                        <span class="inline-flex size-9 items-center justify-center">
+                            <Tooltip text="Account"><IconUserCircle width="1.4rem" /></Tooltip>
+                        </span>
+                    </A>
+                    <Button invisible ariaLabel="Logout" onclick={() => redirectToLogout()}>
+                        <Tooltip text="Logout"><IconLogout width="1.4rem" /></Tooltip>
                     </Button>
-                {/if}
+                    {#if !wide}
+                        <Button invisible ariaLabel="Events" onclick={() => (showEvents = true)}>
+                            <Bell class="size-5" />
+                        </Button>
+                    {/if}
+                </div>
             </header>
 
             <div class="flex min-h-0 flex-1 gap-4 p-3 sm:p-4">

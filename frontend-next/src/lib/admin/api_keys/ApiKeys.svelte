@@ -1,13 +1,15 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
-    import { fetchGet } from '$api/fetch';
+    import { fetchDelete, fetchGet } from '$api/fetch';
+    import type { RowDeletion } from '$lib/components/data-table/row-deletion';
     import { useParam } from '$state/param.svelte';
     import { useTrigger } from '$state/callback.svelte';
     import type { ApiKeyResponse, ApiKeysResponse } from '$api/types/api_keys.ts';
     import DataTable from '$lib/components/data-table/data-table.svelte';
     import { dateCol, fnTextCol, textCol } from '$lib/components/data-table/columns';
     import type { FeaturedColumnDef } from '$lib/components/data-table/data-table-features';
+    import { toast } from 'svelte-sonner';
     import ButtonAddModal from '$lib5/button/ButtonAddModal.svelte';
     import ContentAdmin from '$lib5/ContentAdmin.svelte';
     import DetailsSheet from '$lib5/DetailsSheet.svelte';
@@ -21,6 +23,8 @@
     tr.set('navMain', () => refAddNew?.focus());
 
     let closeModal: undefined | (() => void) = $state();
+    // bumped by "save & add another" to remount the add form empty
+    let addNonce = $state(0);
 
     let err = $state('');
     let keys: ApiKeyResponse[] = $state([]);
@@ -33,6 +37,16 @@
         dateCol<ApiKeyResponse>('expires', ta.api_key.expires),
         fnTextCol<ApiKeyResponse>('access', 'Access', k => (k.access ?? []).map(a => a.group).join(', '), { size: 360 }),
     ];
+
+    const remove: RowDeletion<ApiKeyResponse> = {
+        label: x => x.name,
+        canRemove: x => true,
+        run: async x => {
+            let res = await fetchDelete(`/auth/v1/api_keys/${x.name}`);
+            if (res.error) throw new Error(res.error.message);
+        },
+        onDeleted: fetchApiKeys,
+    };
 
     onMount(() => {
         fetchApiKeys();
@@ -47,8 +61,13 @@
         }
     }
 
-    function onNewKey() {
-        closeModal?.();
+    function onNewKey(another?: boolean) {
+        if (another) {
+            addNonce++;
+            toast.success('Saved');
+        } else {
+            closeModal?.();
+        }
         fetchApiKeys();
     }
 </script>
@@ -65,13 +84,16 @@
             clientSide
             searchable
             getRowId={k => k.name}
+            {remove}
             onRowClick={k => kid.set(k.name)}
             onFetch={fetchApiKeys}
         >
             {#snippet toolbar()}
                 <div class="ml-auto">
                     <ButtonAddModal bind:ref={refAddNew} level={keys.length === 0 ? 1 : 2} bind:closeModal alignRight>
-                        <ApiKeyAddNew {keys} onSave={onNewKey} />
+                        {#key addNonce}
+                            <ApiKeyAddNew {keys} onSave={onNewKey} />
+                        {/key}
                     </ButtonAddModal>
                 </div>
             {/snippet}

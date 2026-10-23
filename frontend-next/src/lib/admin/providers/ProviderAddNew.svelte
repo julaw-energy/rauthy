@@ -22,7 +22,8 @@
     import ProviderConfigURLs from '$lib/admin/providers/blocks/ProviderConfigURLs.svelte';
     import ProviderConfigClientInfo from '$lib/admin/providers/blocks/ProviderConfigClientInfo.svelte';
 
-    let { onSave }: { onSave: () => void } = $props();
+    let { onSave }: { onSave: (another?: boolean) => void } = $props();
+    let another = $state(false);
 
     let t = useI18n();
     let ta = useI18nAdmin();
@@ -164,7 +165,7 @@
     $effect(() => {
         if (success) {
             setTimeout(() => {
-                onSave();
+                onSave(another);
                 resetValues();
             }, 1500);
         }
@@ -365,9 +366,15 @@
             />
         {/if}
         <div class="flex flex-wrap items-center gap-2">
-            <Button type="submit" {isLoading}>
+            <Button type="submit" {isLoading} onclick={() => (another = false)}>
                 {formActionLookup ? ta.providers.config.lookup : t.common.save}
             </Button>
+
+            {#if !formActionLookup}
+                <Button type="submit" level={2} {isLoading} onclick={() => (another = true)}>
+                    {t.common.save} &amp; add another
+                </Button>
+            {/if}
 
             {#if !formActionLookup}
                 <Button level={3} onclick={resetValues} {isLoading}>

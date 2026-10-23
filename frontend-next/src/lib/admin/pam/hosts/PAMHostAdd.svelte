@@ -2,7 +2,7 @@
     import Msg from '$lib5/Msg.svelte';
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
     import Form from '$lib/form/Form.svelte';
-    import Button from '$lib/button/Button.svelte';
+    import AddFooter from '$lib5/form/AddFooter.svelte';
     import { useI18n } from '$state/i18n.svelte';
     import Input from '$lib/form/Input.svelte';
     import type {
@@ -22,7 +22,7 @@
         onCreate,
     }: {
         groups: PamGroupResponse[];
-        onCreate: (host: PamHostSimpleResponse) => void;
+        onCreate: (host: PamHostSimpleResponse, another?: boolean) => void;
     } = $props();
 
     let t = useI18n();
@@ -47,6 +47,8 @@
         });
     });
 
+    let another = $state(false);
+
     async function onSubmit(form: HTMLFormElement, params: URLSearchParams) {
         let gid = groups.find(g => g.name === groupName)?.id;
         if (!gid) {
@@ -64,7 +66,7 @@
                 err = res.error.message;
             }
         } else if (res.body) {
-            onCreate(res.body);
+            onCreate(res.body, another);
         }
     }
 </script>
@@ -101,11 +103,6 @@
             </p>
         {/if}
 
-        <div class="flex items-center gap-3">
-            <Button type="submit">
-                {t.common.save}
-            </Button>
-            <Msg {err} />
-        </div>
+        <AddFooter bind:another {err} />
     </Form>
 </div>

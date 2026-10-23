@@ -8,6 +8,7 @@
     import DataTable from '$lib/components/data-table/data-table.svelte';
     import { boolCol, textCol } from '$lib/components/data-table/columns';
     import type { FeaturedColumnDef } from '$lib/components/data-table/data-table-features';
+    import { toast } from 'svelte-sonner';
     import ButtonAddModal from '$lib5/button/ButtonAddModal.svelte';
     import ContentAdmin from '$lib5/ContentAdmin.svelte';
     import DetailsSheet from '$lib5/DetailsSheet.svelte';
@@ -50,9 +51,14 @@
         }
     }
 
-    function onSave() {
-        pid.set(undefined);
-        closeModal?.();
+    function onSave(another?: boolean) {
+        if (another) {
+            // modal stays open; the add form already reset itself back to the first step
+            toast.success('Saved');
+        } else {
+            pid.set(undefined);
+            closeModal?.();
+        }
         fetchData();
     }
 </script>

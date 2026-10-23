@@ -36,7 +36,12 @@
 </script>
 
 <Sidebar.MenuItem>
-    <Sidebar.MenuButton isActive={active} tooltipContent={undefined}>
+    <!-- the default active state (`sidebar-accent`) is only a few % off the background, so use the primary color -->
+    <Sidebar.MenuButton
+        isActive={active}
+        tooltipContent={undefined}
+        class="data-active:bg-primary data-active:text-primary-foreground data-active:hover:bg-primary data-active:hover:text-primary-foreground data-active:font-medium"
+    >
         {#snippet child({ props })}
             <a {...props} {href} {onclick}>
                 {@render icon('1.1rem')}

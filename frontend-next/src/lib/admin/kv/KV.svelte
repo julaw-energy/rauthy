@@ -14,7 +14,8 @@
     import KVDelete from '$lib/admin/kv/KVDelete.svelte';
     import Form from '$lib/form/Form.svelte';
     import Input from '$lib/form/Input.svelte';
-    import Button from '$lib/button/Button.svelte';
+    import AddFooter from '$lib/form/AddFooter.svelte';
+    import { toast } from 'svelte-sonner';
     import { useI18n } from '$state/i18n.svelte';
     import { PATTERN_GROUP } from '$utils/patterns';
     import InputCheckbox from '$lib/form/InputCheckbox.svelte';
@@ -75,6 +76,10 @@
         ns.set(nameNew);
     }
 
+    // bumped by "save & add another" to remount the add form empty
+    let addNonce = $state(0);
+    let another = $state(false);
+
     async function onSubmit(form: HTMLFormElement, params: URLSearchParams) {
         let payload: KVNamespaceRequest = {
             name: params.get('name') || '',
@@ -83,10 +88,16 @@
         let res = await fetchPost(form.action, payload);
         if (res.error) {
             err = res.error.message;
-        } else {
-            await fetchData();
+            closeModal?.();
+            return;
         }
-        closeModal?.();
+        await fetchData();
+        if (another) {
+            addNonce++;
+            toast.success('Saved');
+        } else {
+            closeModal?.();
+        }
     }
 </script>
 
@@ -108,6 +119,7 @@
             {#snippet toolbar()}
                 <div class="ml-auto">
                     <ButtonAddModal bind:ref={refAddNew} level={namespaces.length === 0 ? 1 : 2} bind:closeModal alignRight>
+                        {#key addNonce}
                         <Form action="/auth/v1/kv/ns" {onSubmit}>
                             <h3 class="text-lg font-semibold">{ta.kv.addNewNs}</h3>
                             <Input
@@ -121,15 +133,9 @@
                                 Public Access
                             </InputCheckbox>
 
-                            <div class="flex gap-2">
-                                <Button type="submit">
-                                    {t.common.save}
-                                </Button>
-                                <Button level={3} onclick={() => closeModal?.()}>
-                                    {t.common.cancel}
-                                </Button>
-                            </div>
+                            <AddFooter bind:another />
                         </Form>
+                        {/key}
                     </ButtonAddModal>
                 </div>
             {/snippet}

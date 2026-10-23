@@ -1,5 +1,6 @@
 <script lang="ts">
     import Msg from '$lib5/Msg.svelte';
+    import AddFooter from '$lib5/form/AddFooter.svelte';
     import Button from '$lib5/button/Button.svelte';
     import Input from '$lib5/form/Input.svelte';
     import InputSelect from '$lib5/form/InputSelect.svelte';
@@ -21,7 +22,7 @@
         onSave,
     }: {
         attrs: UserAttrConfigValueResponse[];
-        onSave: (name: string) => void;
+        onSave: (name: string, another?: boolean) => void;
     } = $props();
 
     let t = useI18n();
@@ -44,6 +45,8 @@
             ref?.focus();
         });
     });
+
+    let another = $state(false);
 
     async function onSubmit(form: HTMLFormElement, params: URLSearchParams) {
         if (attrs.find(a => a.name === name)) {
@@ -87,7 +90,7 @@
         };
         let res = await fetchPost<UserAttrConfigEntity>(form.action, payload);
         if (res.body) {
-            onSave(res.body.name);
+            onSave(res.body.name, another);
         } else {
             err = res.error?.message || 'Error';
         }
@@ -146,11 +149,6 @@
             {ta.attrs.userEditable}
         </Switch>
 
-        <div class="flex items-center gap-3">
-            <Button type="submit">
-                {t.common.save}
-            </Button>
-            <Msg {err} />
-        </div>
+        <AddFooter bind:another {err} />
     </Form>
 </div>

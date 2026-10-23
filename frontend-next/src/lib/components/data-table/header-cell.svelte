@@ -16,8 +16,8 @@
 </script>
 
 <div role="columnheader" aria-colspan={header.colSpan}
-        class="group relative text-base font-bold flex-none border-b border-r border-gray-400 bg-olive-200 px-1 py-1 dark:bg-olive-800"
-        style="width: {header.getSize()}px;"
+        class="group relative text-base font-bold dt-header dt-border border-r px-1 py-1"
+        style="flex: {header.getSize()} 1 0px; min-width: {Math.min(header.getSize(), 110)}px;"
 >
     {#if !header.isPlaceholder}
         <div class="min-w-0 flex items-center justify-between gap-2">

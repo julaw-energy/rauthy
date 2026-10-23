@@ -1,7 +1,10 @@
 <script lang="ts">
     import { onMount } from 'svelte';
+    import { toast } from 'svelte-sonner';
     import type { PaginationState } from '@tanstack/svelte-table';
-    import { fetchGet } from '$api/fetch';
+    import { fetchDelete, fetchGet } from '$api/fetch';
+    import { useSession } from '$state/session.svelte';
+    import type { RowDeletion } from '$lib/components/data-table/row-deletion';
     import type { UserResponse, UserResponseSimple } from '$api/types/user.ts';
     import type { GroupResponse } from '$api/types/groups.ts';
     import type { RoleResponse } from '$api/types/roles.ts';
@@ -34,6 +37,9 @@
     let tr = useTrigger();
     tr.set('navMain', () => refAddNew?.focus());
 
+    // bumping this re-creates the add form, so "save & add another" starts with an empty one
+    let addNonce = $state(0);
+
     let closeModal: undefined | (() => void) = $state();
     let err = $state('');
 
@@ -61,13 +67,13 @@
     let searchValue = $state('');
 
     const columns: FeaturedColumnDef<UserResponseSimple>[] = [
+        textCol<UserResponseSimple>('id', 'ID', { size: 230 }),
         componentCol<UserResponseSimple, Record<string, never>>('user', 'User', UserCell, undefined, {
             accessorFn: (u: UserResponseSimple) => `${u.email} ${u.given_name ?? ''} ${u.family_name ?? ''}`,
             enableColumnFilter: true,
             size: 320,
             meta: { dataType: 'text', filter: { type: 'text' } },
         }),
-        textCol<UserResponseSimple>('id', 'ID', { size: 230 }),
         dateCol<UserResponseSimple>('created_at', 'Created'),
         dateCol<UserResponseSimple>('last_login', 'Last Login'),
     ];
@@ -80,6 +86,18 @@
             ? users.filter((u) => u.email?.toLowerCase().includes(q))
             : users.filter((u) => u.id.toLowerCase().includes(q));
     });
+
+    let session = useSession('admin');
+    // deleting users stays full-admin only (like in the details); nobody deletes their own account here
+    const remove: RowDeletion<UserResponseSimple> = {
+        label: x => x.email,
+        canRemove: x => session.isAdmin() && x.id !== session.get()?.user_id,
+        run: async x => {
+            let res = await fetchDelete(`/auth/v1/users/${x.id}`);
+            if (res.error) throw new Error(res.error.message);
+        },
+        onDeleted: () => fetchUsers(sspHeaders ? `page_size=${sspPageSize}` : undefined),
+    };
 
     onMount(() => {
         fetchUsers('page_size=' + sspPageSize);
@@ -219,10 +237,21 @@
         }
     }
 
-    async function onAddNew(id: string) {
+    async function onAddNew(id: string, another?: boolean) {
+        if (another) {
+            addNonce++;
+            toast.success('Saved');
+            await fetchUsers();
+            return;
+        }
         closeModal?.();
         await fetchUsers();
         uid.set(id);
+    }
+
+    // the deleted user's panel must not stay open
+    function onDeleted() {
+        uid.set(undefined);
     }
 
     function onSave() {
@@ -250,6 +279,7 @@
             {fetching}
             onFetch={() => fetchUsers(sspHeaders ? `page_size=${sspPageSize}` : undefined)}
             getRowId={(u) => u.id}
+            remove={session.isAdmin() ? remove : undefined}
             onRowClick={(u) => {
                 uid.set(u.id);
                 tr.trigger('navSubSub');
@@ -270,7 +300,9 @@
                     <SendMail {groups} {roles} />
                     <EmailJobs />
                     <ButtonAddModal bind:ref={refAddNew} level={roles.length === 0 ? 1 : 2} bind:closeModal alignRight>
-                        <UserAddNew config={userValuesConfig} onSave={onAddNew} {roles} {groups} />
+                        {#key addNonce}
+                            <UserAddNew config={userValuesConfig} onSave={onAddNew} {roles} {groups} />
+                        {/key}
                     </ButtonAddModal>
                 </div>
             {/snippet}
@@ -281,7 +313,7 @@
 <DetailsSheet open={!!(userId && userValuesConfig)} title={users.find((u) => u.id === userId)?.email ?? ta.nav.users} onClose={() => uid.set(undefined)} wide>
     {#if userId && userValuesConfig}
         {#key userId}
-            <UserDetails {userValuesConfig} {userId} {providers} {roles} {groups} {onSave} />
+            <UserDetails {userValuesConfig} {userId} {providers} {roles} {groups} {onSave} {onDeleted} />
         {/key}
     {/if}
 </DetailsSheet>

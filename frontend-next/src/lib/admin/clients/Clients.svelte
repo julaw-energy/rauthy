@@ -1,6 +1,8 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { fetchGet } from '$api/fetch';
+    import { toast } from 'svelte-sonner';
+    import { fetchDelete, fetchGet } from '$api/fetch';
+    import type { RowDeletion } from '$lib/components/data-table/row-deletion';
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
     import { useParam } from '$state/param.svelte';
     import { useTrigger } from '$state/callback.svelte';
@@ -21,6 +23,8 @@
     let tr = useTrigger();
     tr.set('navMain', () => refAddNew?.focus());
 
+    // bumping this re-creates the add form, so "save & add another" starts with an empty one
+    let addNonce = $state(0);
     let closeModal: undefined | (() => void) = $state();
 
     let err = $state('');
@@ -38,6 +42,16 @@
         fnTextCol<ClientResponse>('flows_enabled', 'Flows', c => (c.flows_enabled ?? []).join(', '), { size: 300 }),
         fnTextCol<ClientResponse>('redirect_uris', 'Redirect URIs', c => (c.redirect_uris ?? []).join(', '), { size: 360 }),
     ];
+
+    const remove: RowDeletion<ClientResponse> = {
+        label: x => `${x.name || x.id} (${x.id})`,
+        canRemove: x => x.id !== 'rauthy',
+        run: async x => {
+            let res = await fetchDelete(`/auth/v1/clients/${x.id}`);
+            if (res.error) throw new Error(res.error.message);
+        },
+        onDeleted: fetchClients,
+    };
 
     onMount(() => {
         fetchClients();
@@ -66,7 +80,13 @@
         fetchClients();
     }
 
-    async function onAddNew(id: string) {
+    async function onAddNew(id: string, another?: boolean) {
+        if (another) {
+            addNonce++;
+            toast.success('Saved');
+            await fetchClients();
+            return;
+        }
         closeModal?.();
         await fetchClients();
         cid.set(id);
@@ -85,6 +105,7 @@
             clientSide
             searchable
             getRowId={c => c.id}
+            {remove}
             onRowClick={c => {
                 cid.set(c.id);
                 tr.trigger('navSubSub');
@@ -94,7 +115,9 @@
             {#snippet toolbar()}
                 <div class="ml-auto">
                     <ButtonAddModal bind:ref={refAddNew} level={clients.length === 0 ? 1 : 2} bind:closeModal alignRight>
-                        <ClientAddNew onSave={onAddNew} {clients} />
+                        {#key addNonce}
+                            <ClientAddNew onSave={onAddNew} {clients} />
+                        {/key}
                     </ButtonAddModal>
                 </div>
             {/snippet}

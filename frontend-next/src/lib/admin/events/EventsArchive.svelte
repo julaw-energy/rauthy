@@ -21,8 +21,10 @@
 
     let events: EventResponse[] = $state([]);
 
-    let fromDate = $state(fmtDateInput());
-    let fromTime = $state(fmtTimeInput());
+    // start a day back: "from now" always listed nothing for the archive
+    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    let fromDate = $state(fmtDateInput(dayAgo));
+    let fromTime = $state(fmtTimeInput(dayAgo));
     let untilDate: undefined | string = $state('');
     let untilTime = $state('--:--');
     let level: EventLevel = $state('info');

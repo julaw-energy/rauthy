@@ -26,7 +26,7 @@
         if (!o) onClose?.();
     }}
 >
-    <Sheet.Content side="right" class="flex w-full flex-col gap-0 p-0 sm:max-w-xl {wide ? 'lg:max-w-4xl' : 'lg:max-w-2xl'}">
+    <Sheet.Content side="right" class="flex flex-col gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-xl {wide ? 'data-[side=right]:lg:max-w-4xl' : 'data-[side=right]:lg:max-w-2xl'}">
         <Sheet.Header class="border-b p-4 pr-12">
             <Sheet.Title class="truncate">{title}</Sheet.Title>
         </Sheet.Header>

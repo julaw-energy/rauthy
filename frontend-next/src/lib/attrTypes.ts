@@ -69,8 +69,8 @@ function validDate(s: string) {
 }
 
 /** The message to show when `text` is not valid for `def`, `null` if it is (empty means "no value"). */
-export function validateAttr(def: AttrDef, text: string | null | undefined): string | null {
-    let v = (text ?? '').trim();
+export function validateAttr(def: AttrDef, text: string | number | null | undefined): string | null {
+    let v = String(text ?? '').trim();
     if (!def.typ || !v) return null;
 
     let ok = true;

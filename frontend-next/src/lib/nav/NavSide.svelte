@@ -1,15 +1,9 @@
 <script lang="ts">
     import * as Sidebar from '$lib/components/ui/sidebar';
     import { Separator } from '$lib/components/ui/separator';
-    import DateFormatSelect from '$lib5/DateFormatSelect.svelte';
-    import ThemeSwitch from '$lib5/ThemeSwitch.svelte';
-    import Button from '$lib5/button/Button.svelte';
-    import LangSelector from '$lib5/LangSelector.svelte';
     import AppVersion from '$lib5/AppVersion.svelte';
     import RauthyLogo from '$lib5/RauthyLogo.svelte';
     import NavLink from '$lib5/nav/NavLink.svelte';
-    import A from '$lib5/A.svelte';
-    import Tooltip from '$lib5/Tooltip.svelte';
     import IconUserGroup from '$icons/IconUserGroup.svelte';
     import IconDocText from '$icons/IconDocText.svelte';
     import IconOffice from '$icons/IconOffice.svelte';
@@ -23,13 +17,10 @@
     import IconWrenchScrew from '$icons/IconWrenchScrew.svelte';
     import IconBookOpen from '$icons/IconBookOpen.svelte';
     import IconCheckBadge from '$icons/IconCheckBadge.svelte';
-    import IconLogout from '$icons/IconLogout.svelte';
-    import IconUserCircle from '$icons/IconUserCircle.svelte';
     import IconCommandLine from '$icons/IconCommandLine.svelte';
     import IconCircleStack from '$icons/IconCircleStack.svelte';
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
     import { useSession } from '$state/session.svelte';
-    import { redirectToLogout } from '$utils/helpers';
     import { page } from '$app/state';
 
     let ta = useI18nAdmin();
@@ -134,20 +125,8 @@
 
     <Sidebar.Footer>
         <Separator />
-        <!-- a quick link to the own account dashboard. A delegated group admin cannot manage itself
-             in here, so it self-manages from the account dashboard, which links back to the Admin UI. -->
-        <div class="flex flex-wrap items-center gap-1 group-data-[collapsible=icon]:flex-col">
-            <DateFormatSelect />
-            <ThemeSwitch />
-            <A href="/auth/v1/account" hideUnderline>
-                <Tooltip text="Account"><IconUserCircle width="1.4rem" /></Tooltip>
-            </A>
-            <Button invisible onclick={() => redirectToLogout()}>
-                <Tooltip text="Logout"><IconLogout width="1.4rem" /></Tooltip>
-            </Button>
-        </div>
+        <!-- date format, theme, account link and logout live in the page header (routes/admin/+layout) -->
         <div class="group-data-[collapsible=icon]:hidden">
-            <LangSelector openTop borderless />
             <div class="px-2"><AppVersion /></div>
         </div>
     </Sidebar.Footer>

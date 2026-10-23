@@ -16,16 +16,12 @@ use rauthy_data::entity::user_attr::{UserAttrConfigEntity, UserAttrValueEntity};
 use rauthy_data::entity::users::User;
 use rauthy_data::entity::users_values::UserValues;
 use rauthy_data::rauthy_config::RauthyConfig;
+use rauthy_data::settings;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
 use validator::Validate;
 
 fn sms_available() -> bool {
-    RauthyConfig::get()
-        .vars
-        .channels
-        .get(MessageChannel::Sms)
-        .driver
-        != ChannelDriver::Disabled
+    settings::channel(MessageChannel::Sms).driver != ChannelDriver::Disabled
 }
 
 async fn phone_of(user_id: &str) -> Result<Option<String>, ErrorResponse> {

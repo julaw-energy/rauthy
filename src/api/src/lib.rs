@@ -45,6 +45,7 @@ pub mod roles;
 pub mod scalar;
 pub mod scopes;
 pub mod sessions;
+pub mod settings;
 pub mod swagger_ui;
 pub mod themes;
 pub mod tos;

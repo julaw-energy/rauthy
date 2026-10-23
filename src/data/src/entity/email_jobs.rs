@@ -428,7 +428,7 @@ impl EmailJob {
 
         // everything except the built-in SMTP mailer goes through the configured agent driver
         let via_smtp = self.channel == MessageChannel::Email
-            && RauthyConfig::get().vars.channels.get(self.channel).driver == ChannelDriver::Smtp;
+            && crate::settings::channel(self.channel).driver == ChannelDriver::Smtp;
         let mut consecutive_failures = 0;
 
         let mut cancel_check_ts = Utc::now().timestamp();

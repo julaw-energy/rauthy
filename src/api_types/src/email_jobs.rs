@@ -55,7 +55,7 @@ fn validate_target_names(names: &[String]) -> Result<(), ValidationError> {
 }
 
 /// Delivery channel of a bulk message
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum MessageChannel {
     #[default]

@@ -232,6 +232,52 @@ pub async fn send_email_to(
         .map_err(|_| ErrorResponse::new(ErrorResponseType::Timeout, "email send timeout"))
 }
 
+/// Checks that the agent of a channel can be reached. Returns a short description of what was
+/// checked. Nothing is delivered to a user.
+pub async fn test(channel: MessageChannel) -> Result<String, ErrorResponse> {
+    let cfg = crate::settings::channel(channel);
+    let url = cfg.url.as_deref().unwrap_or_default();
+
+    let req = match cfg.driver {
+        ChannelDriver::Notifyd => CLIENT.get(format!("{url}/v1/health")),
+        ChannelDriver::Webhook => {
+            let body = br#"{"version":1,"type":"ping"}"#.to_vec();
+            let mut r = CLIENT.post(url).header("content-type", "application/json");
+            if let Some(k) = &cfg.api_key {
+                r = r.header("x-rauthy-signature", webhook_signature(&body, k));
+            }
+            r.body(body)
+        }
+        ChannelDriver::Smtp => {
+            return Err(ErrorResponse::new(
+                ErrorResponseType::BadRequest,
+                "The smtp driver is tested with the SMTP test",
+            ));
+        }
+        ChannelDriver::Disabled => {
+            return Err(ErrorResponse::new(
+                ErrorResponseType::BadRequest,
+                "The channel is disabled",
+            ));
+        }
+    };
+
+    let res = req.send().await.map_err(|err| {
+        ErrorResponse::new(
+            ErrorResponseType::Connection,
+            format!("The agent is not reachable: {err}"),
+        )
+    })?;
+    let status = res.status();
+    if !status.is_success() {
+        return Err(ErrorResponse::new(
+            ErrorResponseType::Connection,
+            format!("The agent answered {status}"),
+        ));
+    }
+    Ok(format!("The agent answered {status}"))
+}
+
 static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     // The agent URL is trusted admin config (often a private / docker address), so this
     // deliberately does not use the SSRF-guarded global client.
@@ -283,7 +329,9 @@ pub async fn send(
     channel: MessageChannel,
     msg: &ChannelMessage,
 ) -> Result<Option<String>, ErrorResponse> {
-    let cfg = RauthyConfig::get().vars.channels.get(channel);
+    // DB settings first, config file as the fallback
+    let cfg = crate::settings::channel(channel);
+    let cfg = &cfg;
     let url = cfg.url.as_deref().unwrap_or_default();
 
     let req = match cfg.driver {

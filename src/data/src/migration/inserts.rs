@@ -44,6 +44,7 @@ use crate::entity::webids::WebId;
 use crate::events::event::Event;
 use crate::fido_mds::mds_entry::MdsEntrySimple;
 use crate::fido_mds::metadata::MdsMetadata;
+use crate::settings::SettingRow;
 use cryptr::EncValue;
 use hiqlite::macros::params;
 use rauthy_common::is_hiqlite;
@@ -978,6 +979,26 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#;
                 ],
             )
             .await?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn settings(data_before: Vec<SettingRow>) -> Result<(), ErrorResponse> {
+    let sql_1 = "DELETE FROM settings";
+    let sql_2 = "INSERT INTO settings (key, value, updated) VALUES ($1, $2, $3)";
+
+    if is_hiqlite() {
+        DB::hql().execute(sql_1, params!()).await?;
+        for b in data_before {
+            DB::hql()
+                .execute(sql_2, params!(b.key, b.value, b.updated))
+                .await?;
+        }
+    } else {
+        DB::pg_execute(sql_1, &[]).await?;
+        for b in data_before {
+            DB::pg_execute(sql_2, &[&b.key, &b.value, &b.updated]).await?;
         }
     }
     Ok(())

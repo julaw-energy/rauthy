@@ -24,7 +24,7 @@ use rauthy_handlers::swagger_ui::{OPENAPI_CONFIG, OPENAPI_JSON};
 use rauthy_handlers::{
     api_keys, atproto, auth_providers, backup, blacklist, clients, contact_verification,
     cors_preflight, dev_only, email, events, fed_cm, generic, groups, html, kv, oidc, pam, roles,
-    scalar, scopes, sessions, swagger_ui, themes, tos, users,
+    scalar, scopes, sessions, settings, swagger_ui, themes, tos, users,
 };
 use rauthy_middlewares::csrf_protection::CsrfProtectionMiddleware;
 use rauthy_middlewares::ip_blacklist::RauthyIpBlacklistMiddleware;
@@ -126,6 +126,13 @@ pub async fn run(
 
     debug!("Applying database migrations");
     let previous_db_version = DB::migrate().await.expect("Database migration error");
+
+    // DB-managed settings (SMTP, channels): load them, seed from the config file on the first
+    // start, and keep them fresh when another node changes them
+    if let Err(err) = rauthy_data::settings::init().await {
+        error!("Could not load the settings from the DB: {}", err.message);
+    }
+    tokio::spawn(rauthy_data::settings::watch());
 
     debug!("Starting Events handler");
     EventNotifier::init_notifiers(tx_email).await.unwrap();
@@ -534,6 +541,12 @@ fn api_services() -> actix_web::Scope {
                 .service(contact_verification::post_attr_verification_start)
                 .service(contact_verification::post_attr_verification_confirm)
                 .service(contact_verification::put_attr_verification)
+                .service(settings::get_settings)
+                .service(settings::put_settings_smtp)
+                .service(settings::post_settings_smtp_test)
+                .service(settings::put_settings_channel)
+                .service(settings::post_settings_channel_test)
+                .service(settings::post_settings_import)
                 .service(email::get_email_jobs)
                 .service(email::get_channels)
                 .service(email::post_send_email)

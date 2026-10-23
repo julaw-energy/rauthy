@@ -9,7 +9,7 @@ use rauthy_api_types::email_jobs::{
 use rauthy_common::sanitize_html::sanitize_html;
 use rauthy_data::channels::ChannelDriver;
 use rauthy_data::entity::email_jobs::{EmailJob, EmailJobFilter, EmailJobStatus};
-use rauthy_data::rauthy_config::RauthyConfig;
+use rauthy_data::settings;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
 use validator::Validate;
 
@@ -99,10 +99,7 @@ pub async fn get_channels(principal: ReqPrincipal) -> Result<HttpResponse, Error
         principal.validate_group_admin_session()?;
     }
 
-    let resp = RauthyConfig::get()
-        .vars
-        .channels
-        .available()
+    let resp = settings::available_channels()
         .into_iter()
         .map(|(channel, driver)| ChannelInfo {
             channel,
@@ -162,13 +159,7 @@ pub async fn post_send_email(
     }
     payload.validate()?;
 
-    if RauthyConfig::get()
-        .vars
-        .channels
-        .get(payload.channel)
-        .driver
-        == ChannelDriver::Disabled
-    {
+    if settings::channel(payload.channel).driver == ChannelDriver::Disabled {
         return Err(ErrorResponse::new(
             ErrorResponseType::BadRequest,
             format!("Channel '{}' is not configured", payload.channel.as_str()),

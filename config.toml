@@ -558,7 +558,14 @@ api_key_secret = 'twUA2M7RZ8H3FyJHbti2AcMADPDCxDqUKbvi8FDnm3nYidwQx57Wfv6iaVTQyn
 bootstrap_dir = 'bootstrap'
 
 [channels]
-# Delivery channels for bulk messages sent from the admin UI (and, later, verification codes).
+# Settings in the database: on the first start, `[email]` SMTP values and `[channels.*]` found here
+# are copied into the database ONCE ("seeded"). From then on the database is authoritative and
+# they are edited in the admin UI (Config -> Email / Channels) without a restart; the matching
+# keys can then be removed from this file. The admin UI can also re-import the current file
+# values at any time. Without any SMTP server Rauthy still starts; emails are just not sent
+# until one is set up.
+#
+# Delivery channels for bulk messages sent from the admin UI and verification codes.
 # Rauthy talks to every notification agent through ONE contract, so the agent can be swapped
 # without touching anything else. Drivers:
 # - "smtp":    the built-in mailer (email only, the default for email)

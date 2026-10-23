@@ -1,12 +1,13 @@
 use crate::{
     api_keys, atproto, auth_providers, backup, blacklist, clients, contact_verification, email,
-    events, fed_cm, generic, groups, kv, oidc, pam, roles, scopes, sessions, themes, tos, users,
+    events, fed_cm, generic, groups, kv, oidc, pam, roles, scopes, sessions, settings, themes, tos,
+    users,
 };
 use rauthy_api_types::*;
 use rauthy_api_types::{
     api_keys::*, auth_providers::*, backup::*, blacklist::*, clients::*, email_jobs::*, events::*,
     fed_cm::*, forward_auth::*, generic::*, groups::*, kv::*, oidc::*, pam::*, roles::*, scopes::*,
-    sessions::*, themes::*, tos::*, users::*, verification::*,
+    sessions::*, settings::*, themes::*, tos::*, users::*, verification::*,
 };
 use rauthy_common::constants::{PROXY_MODE, RAUTHY_VERSION};
 use rauthy_data::ListenScheme;
@@ -85,6 +86,12 @@ use utoipa::{OpenApi, openapi};
         contact_verification::post_attr_verification_start,
         contact_verification::post_attr_verification_confirm,
         contact_verification::put_attr_verification,
+        settings::get_settings,
+        settings::put_settings_smtp,
+        settings::post_settings_smtp_test,
+        settings::put_settings_channel,
+        settings::post_settings_channel_test,
+        settings::post_settings_import,
         email::get_email_jobs,
         email::get_channels,
         email::post_send_email,
@@ -310,6 +317,12 @@ use utoipa::{OpenApi, openapi};
             IpBlacklistRequest,
             DeviceRequest,
             DeviceGrantRequest,
+            SettingsResponse,
+            SmtpSettingsResponse,
+            ChannelSettingsResponse,
+            SmtpSettingsRequest,
+            ChannelSettingsRequest,
+            SettingsTestResponse,
             VerificationStatusResponse,
             AttrVerificationResponse,
             ContactStatus,
@@ -499,6 +512,7 @@ use utoipa::{OpenApi, openapi};
         (name = "groups", description = "Groups endpoints"),
         (name = "roles", description = "Roles endpoints"),
         (name = "scopes", description = "Scopes endpoints"),
+        (name = "settings", description = "Settings managed in the database (SMTP, channels)"),
         (name = "events", description = "Events Stream"),
         (name = "kv", description = "Global KV Store"),
         (name = "pam", description = "PAM endpoints"),

@@ -47,6 +47,7 @@ use crate::fido_mds::mds_entry::MdsEntrySimple;
 use crate::fido_mds::metadata::MdsMetadata;
 use crate::migration::inserts;
 use crate::rauthy_config::RauthyConfig;
+use crate::settings::SettingRow;
 use hiqlite::macros::params;
 use itertools::Itertools;
 use rauthy_common::constants::RAUTHY_VERSION;
@@ -328,6 +329,11 @@ pub async fn migrate_from_sqlite(db_from: &str) -> Result<(), ErrorResponse> {
     let before =
         query_sqlite::<ContactVerification>(&conn, "SELECT * FROM contact_verifications").await?;
     inserts::contact_verifications(before).await?;
+
+    // SETTINGS
+    debug!("Migrating table: settings");
+    let before = query_sqlite::<SettingRow>(&conn, "SELECT * FROM settings").await?;
+    inserts::settings(before).await?;
 
     // FAILED BACKCHANNEL LOGOUTS
     debug!("Migrating table: failed_backchannel_logouts");
@@ -865,6 +871,11 @@ pub async fn migrate_from_postgres() -> Result<(), ErrorResponse> {
     debug!("Migrating table: contact_verifications");
     let before = DB::pg_query_map_with(&cl, "SELECT * FROM contact_verifications", &[], 0).await?;
     inserts::contact_verifications(before).await?;
+
+    // SETTINGS
+    debug!("Migrating table: settings");
+    let before = DB::pg_query_map_with(&cl, "SELECT * FROM settings", &[], 0).await?;
+    inserts::settings(before).await?;
 
     // FAILED BACKCHANNEL LOGOUTS
     debug!("Migrating table: failed_backchannel_logouts");

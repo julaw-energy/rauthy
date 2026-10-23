@@ -4372,7 +4372,7 @@ pub struct VarsEmail {
     pub password_exp: Duration,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum EmailTlsMode {
     Tls,
     StartTls,

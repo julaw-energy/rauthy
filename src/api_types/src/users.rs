@@ -261,6 +261,12 @@ pub enum UserAttrConfigTyp {
     Text,
     Email,
     Phone,
+    /// like `Email`, but the user can verify with a code that the address is theirs
+    #[serde(rename = "verified_email")]
+    VerifiedEmail,
+    /// like `Phone`, but the user can verify with an SMS code that the number is theirs
+    #[serde(rename = "verified_phone")]
+    VerifiedPhone,
     Number,
     Integer,
     Boolean,
@@ -280,6 +286,8 @@ impl FromStr for UserAttrConfigTyp {
             "text" => Self::Text,
             "email" => Self::Email,
             "phone" => Self::Phone,
+            "verified_email" => Self::VerifiedEmail,
+            "verified_phone" => Self::VerifiedPhone,
             "number" => Self::Number,
             "integer" => Self::Integer,
             "boolean" => Self::Boolean,
@@ -306,6 +314,8 @@ impl UserAttrConfigTyp {
             UserAttrConfigTyp::Text => "text",
             UserAttrConfigTyp::Email => "email",
             UserAttrConfigTyp::Phone => "phone",
+            UserAttrConfigTyp::VerifiedEmail => "verified_email",
+            UserAttrConfigTyp::VerifiedPhone => "verified_phone",
             UserAttrConfigTyp::Number => "number",
             UserAttrConfigTyp::Integer => "integer",
             UserAttrConfigTyp::Boolean => "boolean",

@@ -33,6 +33,8 @@
 
     let err = $state('');
     let success = $state(false);
+    // bumped after a save, so verifiable attributes reload their verification state
+    let saved = $state(0);
 
     interface AttrValue {
         name: string;
@@ -128,6 +130,7 @@
             err = res.error.message;
         } else {
             success = true;
+            saved++;
             setTimeout(() => {
                 success = false;
             }, 3000);
@@ -144,7 +147,7 @@
         <p class="text-muted-foreground text-sm">{ta.users.descAttr}</p>
 
         {#each attrsCombined as a (a.name)}
-            <InputAttr def={a} bind:value={a.value} onEnter={onSubmit} />
+            <InputAttr def={a} bind:value={a.value} onEnter={onSubmit} userId={user.id} admin refresh={saved} />
         {/each}
 
         <div class="flex items-center gap-3">

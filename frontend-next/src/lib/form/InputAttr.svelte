@@ -7,6 +7,7 @@
     import InputSelect from '$lib5/form/InputSelect.svelte';
     import TZSelect from '$lib5/TZSelect.svelte';
     import Switch from '$lib5/Switch.svelte';
+    import ContactVerify from '$lib5/form/ContactVerify.svelte';
     import { validateAttr, attrToText, type AttrDef } from '$lib5/attrTypes';
 
     // One custom user attribute. The widget follows `def.typ`; `value` is always the text form
@@ -16,11 +17,20 @@
         value = $bindable(''),
         label,
         onEnter,
+        // needed for `verified_email` / `verified_phone`: whose attribute this is
+        userId,
+        // admins may mark a verifiable value as verified without a code
+        admin = false,
+        // changes whenever the value was saved, see `ContactVerify`
+        refresh = 0,
     }: {
         def: AttrDef;
         value?: string;
         label?: string;
         onEnter?: () => void;
+        userId?: string;
+        admin?: boolean;
+        refresh?: number;
     } = $props();
 
     let touched = $state(false);
@@ -37,7 +47,7 @@
         </Switch>
     {:else if def.typ === 'text'}
         <InputArea bind:value label={lbl} {placeholder} />
-    {:else if def.typ === 'phone'}
+    {:else if def.typ === 'phone' || def.typ === 'verified_phone'}
         <InputPhone bind:value label={lbl} {placeholder} {onEnter} />
     {:else if def.typ === 'date'}
         <InputDate bind:value label={lbl} min="0001-01-01" max="9999-12-31" {onEnter} />
@@ -54,7 +64,7 @@
             autocomplete="off"
             label={lbl}
             {placeholder}
-            typ={def.typ === 'email'
+            typ={def.typ === 'email' || def.typ === 'verified_email'
                 ? 'email'
                 : def.typ === 'url'
                   ? 'url'
@@ -67,5 +77,15 @@
     {/if}
     {#if msg}
         <p class="text-destructive text-xs">{msg}</p>
+    {/if}
+    {#if userId && (def.typ === 'verified_email' || def.typ === 'verified_phone')}
+        <ContactVerify
+            {userId}
+            kind={def.typ === 'verified_email' ? 'email' : 'phone'}
+            attr={def.name}
+            current={value}
+            {admin}
+            {refresh}
+        />
     {/if}
 </div>

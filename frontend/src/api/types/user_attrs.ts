@@ -5,6 +5,8 @@ export type UserAttrConfigTyp =
     | 'text'
     | 'email'
     | 'phone'
+    | 'verified_email'
+    | 'verified_phone'
     | 'number'
     | 'integer'
     | 'boolean'

@@ -9,6 +9,8 @@ export type AttrTyp =
     | 'text'
     | 'email'
     | 'phone'
+    | 'verified_email'
+    | 'verified_phone'
     | 'number'
     | 'integer'
     | 'boolean'
@@ -23,6 +25,8 @@ export const ATTR_TYPES: { value: AttrTyp; label: string }[] = [
     { value: 'text', label: 'Text (multi line)' },
     { value: 'email', label: 'Email address' },
     { value: 'phone', label: 'Phone number' },
+    { value: 'verified_email', label: 'Email address (verifiable)' },
+    { value: 'verified_phone', label: 'Phone number (verifiable)' },
     { value: 'number', label: 'Number' },
     { value: 'integer', label: 'Whole number' },
     { value: 'boolean', label: 'Yes / No' },
@@ -48,6 +52,8 @@ const DEFAULT_MSG: Record<AttrTyp, string> = {
     text: 'Invalid value',
     email: 'Enter a valid email address',
     phone: 'Enter a phone number with country code, like +256700000000',
+    verified_email: 'Enter a valid email address',
+    verified_phone: 'Enter a phone number with country code, like +256700000000',
     number: 'Enter a number',
     integer: 'Enter a whole number',
     boolean: 'Choose yes or no',
@@ -76,9 +82,11 @@ export function validateAttr(def: AttrDef, text: string | number | null | undefi
     let ok = true;
     switch (def.typ) {
         case 'email':
+        case 'verified_email':
             ok = RE_EMAIL.test(v);
             break;
         case 'phone':
+        case 'verified_phone':
             ok = parsePhoneNumberFromString(v)?.isPossible() === true && /^\+[0-9]{8,15}$/.test(v);
             break;
         case 'number':

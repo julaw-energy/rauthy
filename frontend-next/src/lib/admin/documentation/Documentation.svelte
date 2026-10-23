@@ -10,8 +10,8 @@
     let tr = useTrigger();
     tr.set('navMain', () => ref?.focus());
 
-    // Where the readable docs live. Rauthy does not serve them itself yet.
-    const DOCS_URL = 'https://sebadob.github.io/rauthy/';
+    // the book is served by Rauthy itself
+    const DOCS_URL = '/auth/v1/book/';
     const API_URL = '/auth/v1/docs/';
 </script>
 

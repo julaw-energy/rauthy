@@ -25,6 +25,7 @@
   - [Database Migrations](config/db_migration.md)
   - [UNIX Domain Sockets](config/unix_socket.md)
   - [Tuning](config/tuning.md)
+  - [Settings in the Database](config/settings_db.md)
 
 - [Authentication Providers](auth_providers/index.md)
   - [GitHub](./auth_providers/github.md)
@@ -37,6 +38,8 @@
   - [Resource Indicators (RFC 8707)](work/resource_indicators.md)
   - [Token Exchange (RFC 8693)](work/token_exchange.md)
   - [E-Mail Templates](work/email_templates.md)
+  - [Message Channels](work/message_channels.md)
+  - [Verifying Email and Phone](work/verification.md)
   - [IP Blacklisting](work/ip_blacklist.md)
   - [JSON Web Keys](work/jwks.md)
   - [I18n](work/i18n.md)

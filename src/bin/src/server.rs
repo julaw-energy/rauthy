@@ -22,7 +22,7 @@ use rauthy_data::rauthy_config::RauthyConfig;
 use rauthy_handlers::openapi::ApiDoc;
 use rauthy_handlers::swagger_ui::{OPENAPI_CONFIG, OPENAPI_JSON};
 use rauthy_handlers::{
-    api_keys, atproto, auth_providers, backup, blacklist, clients, contact_verification,
+    api_keys, atproto, auth_providers, backup, blacklist, book, clients, contact_verification,
     cors_preflight, dev_only, email, events, fed_cm, generic, groups, html, kv, oidc, pam, roles,
     scalar, scopes, sessions, settings, swagger_ui, themes, tos, users,
 };
@@ -541,6 +541,8 @@ fn api_services() -> actix_web::Scope {
                 .service(contact_verification::post_attr_verification_start)
                 .service(contact_verification::post_attr_verification_confirm)
                 .service(contact_verification::put_attr_verification)
+                .service(book::get_book_redirect)
+                .service(book::get_book)
                 .service(settings::get_settings)
                 .service(settings::put_settings_smtp)
                 .service(settings::post_settings_smtp_test)

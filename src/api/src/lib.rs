@@ -27,6 +27,7 @@ pub mod atproto;
 pub mod auth_providers;
 pub mod backup;
 pub mod blacklist;
+pub mod book;
 pub mod clients;
 pub mod contact_verification;
 pub mod cors_preflight;

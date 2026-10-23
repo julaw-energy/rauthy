@@ -1,10 +1,16 @@
+use crate::channels::{
+    ChannelDriver, ChannelMessage, ChannelRecipient, MessagePurpose, send as channel_send,
+};
 use crate::database::DB;
 use crate::email;
 use crate::entity::users::User;
+use crate::entity::users_values::UserValues;
 use crate::rauthy_config::RauthyConfig;
 use chrono::Utc;
 use hiqlite::macros::{FromRow, params};
-use rauthy_api_types::email_jobs::{EmailJobFilterType, EmailJobRequest, EmailJobResponse};
+use rauthy_api_types::email_jobs::{
+    EmailJobFilterType, EmailJobRequest, EmailJobResponse, EmailTargets, MessageChannel,
+};
 use rauthy_common::{is_hiqlite, markdown};
 use rauthy_error::{ErrorResponse, ErrorResponseType};
 use std::borrow::Cow;
@@ -16,6 +22,8 @@ use tracing::{error, info, trace, warn};
 #[derive(Debug, FromRow)]
 pub struct EmailJob {
     pub id: i64,
+    #[column(parse)]
+    pub channel: MessageChannel,
     pub scheduled: Option<i64>,
     #[column(from_i64)]
     pub status: EmailJobStatus,
@@ -33,6 +41,7 @@ impl From<tokio_postgres::Row> for EmailJob {
     fn from(row: tokio_postgres::Row) -> Self {
         Self {
             id: row.get("id"),
+            channel: row.get::<_, String>("channel").parse().unwrap_or_default(),
             scheduled: row.get("scheduled"),
             status: EmailJobStatus::from(row.get::<_, i16>("status") as i64),
             updated: row.get("updated"),
@@ -82,6 +91,34 @@ pub enum EmailJobFilter {
     NotInGroup(String),
     HasRole(String),
     HasNotRole(String),
+    /// Multi-select filter, stored as `targets_{json}` in the same `filter` column
+    Targets(EmailTargets),
+}
+
+impl EmailJobFilter {
+    /// Returns `true` if the user should receive the email of a job with this filter.
+    fn matches(&self, user: &User) -> bool {
+        match self {
+            EmailJobFilter::None => true,
+            EmailJobFilter::InGroup(s) => user.get_groups().contains(s),
+            EmailJobFilter::NotInGroup(s) => !user.get_groups().contains(s),
+            EmailJobFilter::HasRole(s) => user.get_roles().contains(s),
+            EmailJobFilter::HasNotRole(s) => !user.get_roles().contains(s),
+            EmailJobFilter::Targets(t) => {
+                let roles = user.get_roles();
+                let groups = user.get_groups();
+                if t.not_roles.iter().any(|r| roles.contains(r))
+                    || t.not_groups.iter().any(|g| groups.contains(g))
+                {
+                    return false;
+                }
+                !t.has_includes()
+                    || t.users.contains(&user.id)
+                    || t.roles.iter().any(|r| roles.contains(r))
+                    || t.groups.iter().any(|g| groups.contains(g))
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -126,6 +163,14 @@ impl FromStr for EmailJobFilter {
             Self::HasRole(role.to_string())
         } else if let Some(role) = s.strip_prefix("not_role_") {
             Self::HasNotRole(role.to_string())
+        } else if let Some(json) = s.strip_prefix("targets_") {
+            match serde_json::from_str::<EmailTargets>(json) {
+                Ok(t) => Self::Targets(t),
+                Err(err) => {
+                    error!(?err, "Invalid EmailJobFilter targets in DB");
+                    Self::None
+                }
+            }
         } else if s != "none" {
             error!("Invalid EmailJobFilter value in DB: {s}");
             Self::None
@@ -155,6 +200,13 @@ impl Display for EmailJobFilter {
             EmailJobFilter::HasNotRole(s) => {
                 write!(f, "not_role_{s}")
             }
+            EmailJobFilter::Targets(t) => {
+                write!(
+                    f,
+                    "targets_{}",
+                    serde_json::to_string(t).unwrap_or_default()
+                )
+            }
         }
     }
 }
@@ -178,7 +230,9 @@ impl EmailJob {
     pub async fn insert(payload: EmailJobRequest) -> Result<Self, ErrorResponse> {
         let now = Utc::now().timestamp();
         let status = EmailJobStatus::Open.value();
-        let filter = if let Some(value) = payload.filter_value {
+        let filter = if let Some(t) = payload.targets.filter(|t| !t.is_empty()) {
+            EmailJobFilter::Targets(t)
+        } else if let Some(value) = payload.filter_value {
             match payload.filter_type {
                 EmailJobFilterType::None => EmailJobFilter::None,
                 EmailJobFilterType::InGroup => EmailJobFilter::InGroup(value),
@@ -191,10 +245,11 @@ impl EmailJob {
         }
         .to_string();
         let content_type = EmailContentType::from(payload.content_type).to_string();
+        let channel = payload.channel.as_str().to_string();
 
         let sql = r#"
-INSERT INTO email_jobs (id, scheduled, status, updated, filter, content_type, subject, body)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO email_jobs (id, scheduled, status, updated, filter, content_type, subject, body, channel)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *"#;
 
         let slf = if is_hiqlite() {
@@ -209,7 +264,8 @@ RETURNING *"#;
                         filter,
                         content_type,
                         payload.subject,
-                        payload.body
+                        payload.body,
+                        channel
                     ),
                 )
                 .await?
@@ -225,6 +281,7 @@ RETURNING *"#;
                     &content_type,
                     &payload.subject,
                     &payload.body,
+                    &channel,
                 ],
             )
             .await?
@@ -369,6 +426,11 @@ impl EmailJob {
             EmailContentType::Html => (None, self.render_html_content().await?),
         };
 
+        // everything except the built-in SMTP mailer goes through the configured agent driver
+        let via_smtp = self.channel == MessageChannel::Email
+            && RauthyConfig::get().vars.channels.get(self.channel).driver == ChannelDriver::Smtp;
+        let mut consecutive_failures = 0;
+
         let mut cancel_check_ts = Utc::now().timestamp();
 
         loop {
@@ -403,32 +465,35 @@ impl EmailJob {
             }
 
             for user in users {
-                match &self.filter {
-                    EmailJobFilter::None => {}
-                    EmailJobFilter::InGroup(s) => {
-                        if !user.get_groups().contains(s) {
-                            self.set_last_user_ts(&user.email, user.created_at);
-                            continue;
+                if !self.filter.matches(&user) {
+                    self.set_last_user_ts(&user.email, user.created_at);
+                    continue;
+                }
+
+                if !via_smtp {
+                    match self.deliver_via_agent(&user, &text, &html).await {
+                        Ok(_) => consecutive_failures = 0,
+                        Err(err) => {
+                            // one bad number / address must not kill the whole job, but a dead
+                            // agent should
+                            consecutive_failures += 1;
+                            error!(
+                                "EmailJob {}: delivery to user {} failed: {}",
+                                self.id, user.id, err.message
+                            );
+                            if consecutive_failures >= 5 {
+                                self.set_last_user_ts(&user.email, user.created_at);
+                                self.save().await?;
+                                return Err(ErrorResponse::new(
+                                    ErrorResponseType::Connection,
+                                    "5 deliveries in a row failed - exiting job",
+                                ));
+                            }
                         }
                     }
-                    EmailJobFilter::NotInGroup(s) => {
-                        if user.get_groups().contains(s) {
-                            self.set_last_user_ts(&user.email, user.created_at);
-                            continue;
-                        }
-                    }
-                    EmailJobFilter::HasRole(s) => {
-                        if !user.get_roles().contains(s) {
-                            self.set_last_user_ts(&user.email, user.created_at);
-                            continue;
-                        }
-                    }
-                    EmailJobFilter::HasNotRole(s) => {
-                        if user.get_roles().contains(s) {
-                            self.set_last_user_ts(&user.email, user.created_at);
-                            continue;
-                        }
-                    }
+                    self.set_last_user_ts(&user.email, user.created_at);
+                    tokio::time::sleep(Duration::from_millis(delay_inner_ms)).await;
+                    continue;
                 }
 
                 // catch a send timeout and increase delay timing
@@ -483,6 +548,43 @@ impl EmailJob {
         }
     }
 
+    /// Delivers to one user through the agent driver of the job's channel.
+    /// Users without the needed contact value (e.g. no phone number) are skipped.
+    async fn deliver_via_agent(
+        &self,
+        user: &User,
+        text: &Option<String>,
+        html: &Option<String>,
+    ) -> Result<(), ErrorResponse> {
+        let to = match self.channel {
+            MessageChannel::Email => user.email.clone(),
+            MessageChannel::Sms | MessageChannel::Whatsapp => {
+                match UserValues::find(&user.id).await?.and_then(|v| v.phone) {
+                    Some(p) if !p.is_empty() => p,
+                    _ => {
+                        trace!("EmailJob {}: user {} has no phone number", self.id, user.id);
+                        return Ok(());
+                    }
+                }
+            }
+        };
+
+        let msg = ChannelMessage::new(
+            self.channel,
+            MessagePurpose::Admin,
+            ChannelRecipient {
+                user_id: user.id.clone(),
+                name: user.email_recipient_name(),
+                to,
+            },
+            (self.channel == MessageChannel::Email).then(|| self.subject.clone()),
+            text.clone().unwrap_or_default(),
+            html.clone(),
+            Some(format!("emailjob-{}-{}", self.id, user.id)),
+        );
+        channel_send(self.channel, &msg).await.map(|_| ())
+    }
+
     #[inline]
     fn last_user_ts(&self) -> (&str, i64) {
         if let Some(last_user_ts) = &self.last_user_ts {
@@ -531,7 +633,12 @@ impl From<rauthy_api_types::email_jobs::EmailContentType> for EmailContentType {
 
 impl From<EmailJob> for EmailJobResponse {
     fn from(v: EmailJob) -> Self {
+        let mut targets = None;
         let (filter_type, filter_value) = match v.filter {
+            EmailJobFilter::Targets(t) => {
+                targets = Some(t);
+                (EmailJobFilterType::None, None)
+            }
             EmailJobFilter::None => (EmailJobFilterType::None, None),
             EmailJobFilter::InGroup(s) => (EmailJobFilterType::InGroup, Some(s)),
             EmailJobFilter::NotInGroup(s) => (EmailJobFilterType::NotInGroup, Some(s)),
@@ -546,15 +653,51 @@ impl From<EmailJob> for EmailJobResponse {
 
         Self {
             id: v.id,
+            channel: v.channel,
             scheduled: v.scheduled,
             status: v.status.into(),
             updated: v.updated,
             last_user_ts: v.last_user_ts,
             filter_type,
             filter_value,
+            targets,
             content_type,
             subject: v.subject,
             body: v.body,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn targets_filter_roundtrip() {
+        let t = EmailTargets {
+            roles: vec!["admin".into(), "editor".into()],
+            groups: vec!["staff".into()],
+            users: vec!["abc123".into()],
+            not_roles: vec![],
+            not_groups: vec!["banned".into()],
+        };
+        let s = EmailJobFilter::Targets(t.clone()).to_string();
+        assert!(s.starts_with("targets_"));
+        assert_eq!(
+            s.parse::<EmailJobFilter>().unwrap(),
+            EmailJobFilter::Targets(t)
+        );
+    }
+
+    #[test]
+    fn legacy_filters_still_parse() {
+        assert_eq!(
+            "group_staff".parse::<EmailJobFilter>().unwrap(),
+            EmailJobFilter::InGroup("staff".into())
+        );
+        assert_eq!(
+            "none".parse::<EmailJobFilter>().unwrap(),
+            EmailJobFilter::None
+        );
     }
 }

@@ -114,9 +114,23 @@
                                 <LabeledValue label="Update">
                                     {formatDateFromTs(job.updated)}
                                 </LabeledValue>
-                                <LabeledValue label="Filter">
-                                    {job.filter_type}
-                                    {job.filter_value}
+                                <LabeledValue label="Channel / recipients">
+                                    {job.channel}:
+                                    {#if job.targets}
+                                        {[
+                                            job.targets.roles.length ? `roles ${job.targets.roles.join(', ')}` : '',
+                                            job.targets.groups.length ? `groups ${job.targets.groups.join(', ')}` : '',
+                                            job.targets.users.length ? `${job.targets.users.length} user(s)` : '',
+                                            job.targets.not_roles.length || job.targets.not_groups.length
+                                                ? `except ${[...job.targets.not_roles, ...job.targets.not_groups].join(', ')}`
+                                                : '',
+                                        ]
+                                            .filter(Boolean)
+                                            .join(' · ') || 'all users'}
+                                    {:else}
+                                        {job.filter_type}
+                                        {job.filter_value ?? ''}
+                                    {/if}
                                 </LabeledValue>
                             </div>
                             <LabeledValue label={ta.email.subject}>

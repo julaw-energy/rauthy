@@ -477,8 +477,8 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#;
 pub async fn email_jobs(data_before: Vec<EmailJob>) -> Result<(), ErrorResponse> {
     let sql_1 = "DELETE FROM email_jobs";
     let sql_2 = r#"
-INSERT INTO email_jobs (id, scheduled, status, updated, filter, content_type, subject, body)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#;
+INSERT INTO email_jobs (id, scheduled, status, updated, filter, content_type, subject, body, channel)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
 
     if is_hiqlite() {
         DB::hql().execute(sql_1, params!()).await?;
@@ -494,7 +494,8 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#;
                         b.filter.to_string(),
                         b.content_type.to_string(),
                         b.subject,
-                        b.body
+                        b.body,
+                        b.channel.as_str()
                     ),
                 )
                 .await?;
@@ -513,6 +514,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#;
                     &b.content_type.to_string(),
                     &b.subject,
                     &b.body,
+                    &b.channel.as_str(),
                 ],
             )
             .await?;

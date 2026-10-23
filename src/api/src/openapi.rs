@@ -78,6 +78,7 @@ use utoipa::{OpenApi, openapi};
         clients::post_client_validate_uri,
 
         email::get_email_jobs,
+        email::get_channels,
         email::post_send_email,
         email::post_email_job_cancel,
 
@@ -302,9 +303,12 @@ use utoipa::{OpenApi, openapi};
             DeviceRequest,
             DeviceGrantRequest,
             EmailJobRequest,
+            ChannelInfo,
+            MessageChannel,
             EmailContentType,
             EmailJobFilterType,
             EmailJobResponse,
+            EmailTargets,
             EmailJobStatus,
             EncKeyMigrateRequest,
             FedCMAssertionRequest,

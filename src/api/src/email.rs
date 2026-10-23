@@ -3,10 +3,13 @@ use actix_web::web::{Json, Path};
 use actix_web::{HttpResponse, get, post};
 use chrono::Utc;
 use rauthy_api_types::email_jobs::{
-    EmailContentType, EmailJobFilterType, EmailJobRequest, EmailJobResponse,
+    ChannelInfo, EmailContentType, EmailJobFilterType, EmailJobRequest, EmailJobResponse,
+    EmailTargets, MessageChannel,
 };
 use rauthy_common::sanitize_html::sanitize_html;
+use rauthy_data::channels::ChannelDriver;
 use rauthy_data::entity::email_jobs::{EmailJob, EmailJobFilter, EmailJobStatus};
+use rauthy_data::rauthy_config::RauthyConfig;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
 use validator::Validate;
 
@@ -16,8 +19,22 @@ use validator::Validate;
 fn group_admin_email_scope(principal: &ReqPrincipal, filter: &EmailJobFilter) -> bool {
     match filter {
         EmailJobFilter::InGroup(group) => principal.group_admin_manages_any([group.as_str()]),
+        EmailJobFilter::Targets(t) => targets_group_admin_scope(principal, t),
         _ => false,
     }
+}
+
+/// Multi-select targets are only allowed for group admins if they consist of managed groups
+/// exclusively, without any role / user entries or excludes.
+fn targets_group_admin_scope(principal: &ReqPrincipal, t: &EmailTargets) -> bool {
+    !t.groups.is_empty()
+        && t.roles.is_empty()
+        && t.users.is_empty()
+        && t.not_roles.is_empty()
+        && t.not_groups.is_empty()
+        && t.groups
+            .iter()
+            .all(|g| principal.group_admin_manages_any([g.as_str()]))
 }
 
 /// Get all EmailJobs
@@ -59,7 +76,47 @@ pub async fn get_email_jobs(principal: ReqPrincipal) -> Result<HttpResponse, Err
     Ok(HttpResponse::Ok().json(resp))
 }
 
-/// Send out a custom email to users
+/// Get the message channels that are available for sending
+///
+/// **Permissions**
+/// - rauthy_admin
+/// - group admin
+#[utoipa::path(
+    get,
+    path = "/email/channels",
+    tag = "email",
+    responses(
+        (status = 200, description = "Ok", body = [ChannelInfo]),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+)]
+#[get("/email/channels")]
+pub async fn get_channels(principal: ReqPrincipal) -> Result<HttpResponse, ErrorResponse> {
+    if principal.is_admin() {
+        principal.validate_admin_session()?;
+    } else {
+        principal.validate_group_admin_session()?;
+    }
+
+    let resp = RauthyConfig::get()
+        .vars
+        .channels
+        .available()
+        .into_iter()
+        .map(|(channel, driver)| ChannelInfo {
+            channel,
+            driver: driver.as_str().to_string(),
+        })
+        .collect::<Vec<_>>();
+
+    Ok(HttpResponse::Ok().json(resp))
+}
+
+/// Send out a custom email, SMS or WhatsApp message to users
+///
+/// The `channel` defaults to `email`. SMS and WhatsApp need a configured driver, only support
+/// plain text, and skip users without a phone number.
 ///
 /// **Permissions**
 /// - rauthy_admin
@@ -85,20 +142,44 @@ pub async fn post_send_email(
         principal.validate_admin_session()?;
     } else {
         principal.validate_group_admin_session()?;
-        let allowed = matches!(payload.filter_type, EmailJobFilterType::InGroup)
-            && payload
-                .filter_value
-                .as_deref()
-                .map(|g| principal.group_admin_manages_any([g]))
-                .unwrap_or(false);
+        let allowed = match payload.targets.as_ref().filter(|t| !t.is_empty()) {
+            Some(t) => targets_group_admin_scope(&principal, t),
+            None => {
+                matches!(payload.filter_type, EmailJobFilterType::InGroup)
+                    && payload
+                        .filter_value
+                        .as_deref()
+                        .map(|g| principal.group_admin_manages_any([g]))
+                        .unwrap_or(false)
+            }
+        };
         if !allowed {
             return Err(ErrorResponse::new(
                 ErrorResponseType::Forbidden,
-                "Group admins may only send emails to a single group they manage",
+                "Group admins may only send emails to groups they manage",
             ));
         }
     }
     payload.validate()?;
+
+    if RauthyConfig::get()
+        .vars
+        .channels
+        .get(payload.channel)
+        .driver
+        == ChannelDriver::Disabled
+    {
+        return Err(ErrorResponse::new(
+            ErrorResponseType::BadRequest,
+            format!("Channel '{}' is not configured", payload.channel.as_str()),
+        ));
+    }
+    if payload.channel != MessageChannel::Email && payload.content_type != EmailContentType::Text {
+        return Err(ErrorResponse::new(
+            ErrorResponseType::BadRequest,
+            "SMS and WhatsApp only support plain text",
+        ));
+    }
 
     if payload.content_type == EmailContentType::HTML {
         payload.body = sanitize_html(&payload.body);

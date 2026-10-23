@@ -6,6 +6,7 @@ use rauthy_api_types::users::ActiveOtp;
 use std::fmt::{Display, Formatter};
 
 pub mod api_cookie;
+pub mod channels;
 pub mod database;
 pub mod email;
 pub mod entity;

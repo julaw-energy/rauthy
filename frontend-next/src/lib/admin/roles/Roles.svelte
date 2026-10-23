@@ -13,6 +13,9 @@
     import { PATTERN_ROLE_SCOPE } from '$utils/patterns';
     import ButtonAddModal from '$lib5/button/ButtonAddModal.svelte';
     import ContentAdmin from '$lib5/ContentAdmin.svelte';
+    import SendMail from '$lib5/SendMail.svelte';
+    import { Mail } from '@lucide/svelte';
+    import Button from '$lib/components/ui/button/button.svelte';
     import RoleAddNew from '$lib5/admin/roles/RoleAddNew.svelte';
 
     let ta = useI18nAdmin();
@@ -24,6 +27,13 @@
     // bumping this re-creates the add form, so "save & add another" starts with an empty one
     let addNonce = $state(0);
 
+    // "Email" row / selection action: one shared dialog, pre-filled with the chosen roles
+    let mailOpen = $state(false);
+    let mailInitial: { roles: string[] } = $state({ roles: [] });
+    function emailTo(names: string[]) {
+        mailInitial = { roles: names };
+        mailOpen = true;
+    }
     let closeModal: undefined | (() => void) = $state();
 
     let err = $state('');
@@ -106,6 +116,7 @@
 </script>
 
 <ContentAdmin>
+    <SendMail bind:open={mailOpen} initial={mailInitial} trigger={false} />
     {#if err}
         <p class="text-destructive text-sm">{err}</p>
     {/if}
@@ -122,6 +133,16 @@
             rowActionsWidth={40}
             onFetch={fetchRoles}
         >
+            {#snippet rowActions(x)}
+                <Button variant="ghost" size="icon-sm" aria-label="Send email" title="Send email" onclick={() => emailTo([x.name])}>
+                    <Mail class="size-4" />
+                </Button>
+            {/snippet}
+            {#snippet selectionActions(rows)}
+                <Button size="sm" variant="outline" onclick={() => emailTo(rows.map(r => r.name))}>
+                    <Mail class="size-4" />Email selected
+                </Button>
+            {/snippet}
             {#snippet toolbar()}
                 <div class="ml-auto">
                     <ButtonAddModal bind:ref={refAddNew} level={roles.length === 0 ? 1 : 2} bind:closeModal alignRight>

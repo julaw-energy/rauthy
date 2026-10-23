@@ -16,7 +16,9 @@
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
     import { fetchSearchServer, type SearchParamsIdxUser } from '$utils/search';
     import { Input } from '$lib/components/ui/input';
-    import { Search } from '@lucide/svelte';
+    import { Mail, Search } from '@lucide/svelte';
+    import Button from '$lib/components/ui/button/button.svelte';
+    import IconEnvelope from '$icons/IconEnvelope.svelte';
     import DataTable from '$lib/components/data-table/data-table.svelte';
     import { componentCol, dateCol, textCol } from '$lib/components/data-table/columns';
     import type { FeaturedColumnDef } from '$lib/components/data-table/data-table-features';
@@ -40,6 +42,13 @@
     // bumping this re-creates the add form, so "save & add another" starts with an empty one
     let addNonce = $state(0);
 
+    // "Email" row / selection action: one shared dialog, pre-filled with the chosen users
+    let mailOpen = $state(false);
+    let mailInitial: { users: { id: string; label: string }[] } = $state({ users: [] });
+    function emailTo(list: { id: string; email: string }[]) {
+        mailInitial = { users: list.map(u => ({ id: u.id, label: u.email })) };
+        mailOpen = true;
+    }
     let closeModal: undefined | (() => void) = $state();
     let err = $state('');
 
@@ -263,6 +272,7 @@
 </script>
 
 <ContentAdmin>
+    <SendMail bind:open={mailOpen} initial={mailInitial} {groups} {roles} trigger={false} />
     {#if err}
         <p class="text-destructive text-sm">{err}</p>
     {/if}
@@ -286,6 +296,16 @@
             }}
             initialSorting={[{ id: 'created_at', desc: true }]}
         >
+            {#snippet rowActions(u)}
+                <Button variant="ghost" size="icon-sm" aria-label="Send email" title="Send email" onclick={() => emailTo([u])}>
+                    <Mail class="size-4" />
+                </Button>
+            {/snippet}
+            {#snippet selectionActions(rows)}
+                <Button size="sm" variant="outline" onclick={() => emailTo(rows)}>
+                    <Mail class="size-4" />Email selected
+                </Button>
+            {/snippet}
             {#snippet toolbar()}
                 <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                     <div class="relative w-full min-w-48 sm:w-72">
@@ -297,7 +317,9 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-1">
-                    <SendMail {groups} {roles} />
+                    <Button variant="ghost" size="icon" aria-label={ta.email.sendMail} title={ta.email.sendMail} onclick={() => emailTo([])}>
+                        <IconEnvelope width="1.3rem" />
+                    </Button>
                     <EmailJobs />
                     <ButtonAddModal bind:ref={refAddNew} level={roles.length === 0 ? 1 : 2} bind:closeModal alignRight>
                         {#key addNonce}

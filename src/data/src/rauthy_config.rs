@@ -266,6 +266,7 @@ pub struct Vars {
     pub device_grant: VarsDeviceGrant,
     pub dpop: VarsDpop,
     pub dynamic_clients: VarsDynamicClients,
+    pub channels: crate::channels::VarsChannels,
     pub email: VarsEmail,
     pub encryption: VarsEncryption,
     pub ephemeral_clients: VarsEphemeralClients,
@@ -410,6 +411,7 @@ impl Default for Vars {
                 rate_limit_reg: Duration::from_secs(3600),
                 allowed_resources: Vec::default(),
             },
+            channels: crate::channels::VarsChannels::default(),
             email: VarsEmail {
                 rauthy_admin_email: None,
                 sub_prefix: "Rauthy IAM".into(),
@@ -1441,6 +1443,7 @@ impl Vars {
         slf.parse_device_grant(&mut table);
         slf.parse_dpop(&mut table);
         slf.parse_dynamic_clients(&mut table, &mut secrets);
+        slf.channels.parse(&mut table);
         slf.parse_email(&mut table, &mut secrets);
         slf.parse_encryption(&mut table, &mut secrets);
         slf.parse_ephemeral_clients(&mut table);

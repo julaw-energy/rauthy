@@ -527,6 +527,7 @@ fn api_services() -> actix_web::Scope {
                 .service(cors_preflight::options_atproto_metadata)
                 .service(cors_preflight::options_openid_configuration)
                 .service(email::get_email_jobs)
+                .service(email::get_channels)
                 .service(email::post_send_email)
                 .service(email::post_email_job_cancel)
                 .service(events::post_events)
@@ -750,6 +751,7 @@ fn api_services() -> actix_web::Scope {
                 .service(generic::get_ready)
                 .service(swagger_ui::get_openapi_doc)
                 .service(scalar::get_scalar)
+                .service(scalar::get_scalar_init)
                 .service(swagger_ui::get_swagger_ui)
                 .service(users::get_user_otps)
                 .service(users::post_user_otp)
@@ -759,7 +761,6 @@ fn api_services() -> actix_web::Scope {
                 .service(users::post_otp_auth_resend)
                 .service(users::post_otp_auth_finish_login)
                 .service(html::get_static_assets), // catch-all GET routes
-                .service(scalar::get_scalar_init)
         )
 }
 

@@ -73,6 +73,8 @@
         toolbar?: Snippet;
         /** Extra per-row cell on the right (e.g. an actions menu). */
         rowActions?: Snippet<[TData]>;
+        /** Extra buttons in the bar shown while rows are selected (receives the selected rows). */
+        selectionActions?: Snippet<[TData[]]>;
         rowActionsWidth?: number;
         pageSizes?: number[];
         emptyText?: string;
@@ -112,7 +114,7 @@
     let {
         data, columns, clientSide = false, paginationData, handleFetch, searchable = false,
         searchPlaceholder = "Search…", search = $bindable(""), onFetch, fetching = false,
-        onCreate, createLabel = "Create", onRowClick, remove, toolbar, rowActions, rowActionsWidth = 44,
+        onCreate, createLabel = "Create", onRowClick, remove, toolbar, rowActions, selectionActions, rowActionsWidth = 44,
         pageSizes = sizes, emptyText = "No results found.", initialSorting = [], initialPageSize = 20,
         getRowId, viewButton = false, selectable, editable, class: className, ...restProps
     }: DataTableProps<TData> = $props();
@@ -574,6 +576,7 @@
         {#if canSelect && selectedRows.length > 0}
             <div class="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-2 py-1 text-sm">
                 <span>{selectedRows.length} selected</span>
+                {@render selectionActions?.(selectedRows)}
                 <Button size="sm" variant="destructive" onclick={() => { bulkErrors = []; bulkFinished = false; bulkOpen = true; }}>
                     <Trash2 class="size-4"/>{remove?.verb ?? 'Delete'} selected
                 </Button>

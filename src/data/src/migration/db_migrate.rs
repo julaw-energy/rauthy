@@ -498,6 +498,11 @@ pub async fn migrate_from_sqlite(db_from: &str) -> Result<(), ErrorResponse> {
 
             Ok(EmailJob {
                 id: row.get("id")?,
+                channel: row
+                    .get::<_, String>("channel")
+                    .unwrap_or_default()
+                    .parse()
+                    .unwrap_or_default(),
                 scheduled: row.get("scheduled")?,
                 status,
                 updated: row.get("updated")?,

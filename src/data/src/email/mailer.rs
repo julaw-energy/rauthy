@@ -85,7 +85,17 @@ pub async fn sender(rx: mpsc::Receiver<(EMail, EMailCallback)>) {
 }
 
 /// Builds the message to send. Fails for an invalid sender or recipient instead of panicking.
-fn build_message(from: &Mailbox, req: EMail) -> Result<lettre::Message, String> {
+fn build_message(from: &Mailbox, mut req: EMail) -> Result<lettre::Message, String> {
+    // The templates and translations say "Rauthy"; show the configured name instead.
+    let app_name = settings::app_name();
+    if app_name != "Rauthy" {
+        let brand = |s: &str| s.replace("Rauthy", &app_name);
+        let html_name = app_name.replace('&', "&amp;");
+        req.subject = brand(&req.subject);
+        req.text = req.text.as_deref().map(brand);
+        req.html = req.html.as_deref().map(|s| s.replace("Rauthy", &html_name));
+    }
+
     let to: Mailbox = format!("{} <{}>", req.recipient_name, req.address)
         .parse()
         .map_err(|err| format!("invalid recipient '{}': {err}", req.address))?;

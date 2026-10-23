@@ -30,9 +30,33 @@ pub struct ChannelSettingsResponse {
     pub from_db: bool,
 }
 
+/// The general settings
+#[derive(Debug, Serialize, ToSchema)]
+#[cfg_attr(debug_assertions, derive(Deserialize))]
+pub struct GeneralSettingsResponse {
+    /// The name users see instead of "Rauthy"
+    pub app_name: String,
+    /// `true` if the value comes from the database, `false` if from the config file
+    pub from_db: bool,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct GeneralSettingsRequest {
+    /// 1 to 48 characters, without `<`, `>`, `"`, `\\` and line breaks
+    pub app_name: String,
+}
+
+/// Public: just the name of this service
+#[derive(Debug, Serialize, ToSchema)]
+#[cfg_attr(debug_assertions, derive(Deserialize))]
+pub struct AppNameResponse {
+    pub name: String,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 #[cfg_attr(debug_assertions, derive(Deserialize))]
 pub struct SettingsResponse {
+    pub general: GeneralSettingsResponse,
     pub smtp: SmtpSettingsResponse,
     /// `false` while no SMTP server is set up, the admin UI points to the setup page then
     pub smtp_configured: bool,

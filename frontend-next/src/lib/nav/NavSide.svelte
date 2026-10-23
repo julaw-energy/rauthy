@@ -2,6 +2,7 @@
     import * as Sidebar from '$lib/components/ui/sidebar';
     import { Separator } from '$lib/components/ui/separator';
     import AppVersion from '$lib5/AppVersion.svelte';
+    import { brand } from '$lib5/appName.svelte';
     import RauthyLogo from '$lib5/RauthyLogo.svelte';
     import NavLink from '$lib5/nav/NavLink.svelte';
     import IconUserGroup from '$icons/IconUserGroup.svelte';
@@ -42,7 +43,7 @@
     <Sidebar.Header>
         <div class="flex items-center gap-2 px-1 group-data-[collapsible=icon]:justify-center">
             <RauthyLogo width="2rem" />
-            <span class="text-lg font-semibold tracking-tight group-data-[collapsible=icon]:hidden">Rauthy</span>
+            <span class="text-lg font-semibold tracking-tight group-data-[collapsible=icon]:hidden">{brand.name}</span>
         </div>
     </Sidebar.Header>
 

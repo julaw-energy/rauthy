@@ -31,6 +31,13 @@ use tracing::{error, info, warn};
 const WATCH_INTERVAL: Duration = Duration::from_secs(15);
 
 pub const KEY_SMTP: &str = "smtp";
+pub const KEY_GENERAL: &str = "general";
+
+/// The `general` group: values that apply everywhere
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct GeneralStored {
+    pub app_name: String,
+}
 
 fn key_channel(channel: MessageChannel) -> String {
     format!("channel.{}", channel.as_str())
@@ -92,6 +99,7 @@ impl EffectiveSmtp {
 
 #[derive(Debug, Default)]
 struct Live {
+    general: Option<GeneralStored>,
     smtp: Option<(SmtpStored, Option<String>)>,
     channels: HashMap<MessageChannel, (ChannelStored, Option<String>)>,
     stamps: HashMap<String, i64>,
@@ -132,6 +140,16 @@ fn decrypt_secret(b64: &str) -> Result<String, ErrorResponse> {
 }
 
 // ---- effective accessors ---------------------------------------------------------------
+
+/// The name of this service as shown to users: the DB value if set, `server.app_name` otherwise.
+pub fn app_name() -> String {
+    live()
+        .general
+        .as_ref()
+        .map(|g| g.app_name.clone())
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| RauthyConfig::get().vars.server.app_name.to_string())
+}
 
 /// The SMTP settings to use right now.
 pub fn smtp() -> EffectiveSmtp {
@@ -208,6 +226,10 @@ pub fn driver_from_str(channel: MessageChannel, s: &str) -> ChannelDriver {
 
 // ---- views for the admin API (no secrets) ----------------------------------------------
 
+pub fn general_from_db() -> bool {
+    live().general.is_some()
+}
+
 pub fn smtp_view() -> SmtpSettingsResponse {
     let s = smtp();
     SmtpSettingsResponse {
@@ -266,7 +288,12 @@ pub async fn reload() -> Result<(), ErrorResponse> {
     for row in rows {
         new.stamps.insert(row.key.clone(), row.updated);
 
-        if row.key == KEY_SMTP {
+        if row.key == KEY_GENERAL {
+            match serde_json::from_str::<GeneralStored>(&row.value) {
+                Ok(g) => new.general = Some(g),
+                Err(err) => error!(?err, "Invalid `general` settings in the DB"),
+            }
+        } else if row.key == KEY_SMTP {
             match serde_json::from_str::<SmtpStored>(&row.value) {
                 Ok(s) => {
                     let password = match s.password.as_deref().map(decrypt_secret) {
@@ -315,6 +342,15 @@ pub async fn init() -> Result<(), ErrorResponse> {
 
     let live = live();
     let mut seeded = Vec::new();
+
+    if live.general.is_none() {
+        let name = RauthyConfig::get().vars.server.app_name.to_string();
+        if name != "Rauthy" {
+            let stored = GeneralStored { app_name: name };
+            upsert(KEY_GENERAL, &serde_json::to_string(&stored)?).await?;
+            seeded.push("general");
+        }
+    }
 
     if live.smtp.is_none() {
         let v = &RauthyConfig::get().vars.email;
@@ -453,6 +489,24 @@ pub async fn save_smtp(update: SmtpSettingsRequest) -> Result<(), ErrorResponse>
     reload().await
 }
 
+pub async fn save_general(app_name: &str) -> Result<(), ErrorResponse> {
+    let name = app_name.trim();
+    if name.is_empty() || name.chars().count() > 48 {
+        return Err(bad("The name must have 1 to 48 characters"));
+    }
+    if name.contains(['<', '>', '"', '\\', '\n', '\r']) {
+        return Err(bad("The name must not contain < > \" \\ or line breaks"));
+    }
+    let stored = GeneralStored {
+        app_name: name.to_string(),
+    };
+    upsert(KEY_GENERAL, &serde_json::to_string(&stored)?).await?;
+    reload().await?;
+    // pages carry the name, drop the cached ones
+    DB::hql().clear_cache(crate::database::Cache::Html).await?;
+    Ok(())
+}
+
 pub async fn save_channel(
     ch: MessageChannel,
     update: ChannelSettingsRequest,
@@ -500,6 +554,15 @@ pub async fn save_channel(
 
 /// Copies the current config file / env values of a group into the DB, replacing what is there.
 pub async fn import_from_file(group: &str) -> Result<(), ErrorResponse> {
+    if group == KEY_GENERAL {
+        let stored = GeneralStored {
+            app_name: RauthyConfig::get().vars.server.app_name.to_string(),
+        };
+        upsert(KEY_GENERAL, &serde_json::to_string(&stored)?).await?;
+        reload().await?;
+        DB::hql().clear_cache(crate::database::Cache::Html).await?;
+        return Ok(());
+    }
     if group == KEY_SMTP {
         let v = &RauthyConfig::get().vars.email;
         let stored = SmtpStored {

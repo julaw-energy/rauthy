@@ -1,5 +1,16 @@
 export type MessageChannel = 'email' | 'sms' | 'whatsapp';
 
+export interface GeneralSettingsResponse {
+    /// the name users see instead of "Rauthy"
+    app_name: string;
+    /// true if the value comes from the database, false if from the config file
+    from_db: boolean;
+}
+
+export interface GeneralSettingsRequest {
+    app_name: string;
+}
+
 export interface SmtpSettingsResponse {
     url?: string;
     port?: number;
@@ -23,6 +34,7 @@ export interface ChannelSettingsResponse {
 }
 
 export interface SettingsResponse {
+    general: GeneralSettingsResponse;
     smtp: SmtpSettingsResponse;
     /// false while no SMTP server is set up
     smtp_configured: boolean;

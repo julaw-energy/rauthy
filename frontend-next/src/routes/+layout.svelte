@@ -4,11 +4,14 @@
     import { ModeWatcher } from 'mode-watcher';
     import { Toaster } from '$lib/components/ui/sonner';
     import { initLang } from '$state/language.svelte';
-    import { initI18n } from '$state/i18n.svelte';
+    import { initI18n, useI18n } from '$state/i18n.svelte';
+    import { brand, brandI18n, initBranding } from '$lib5/appName.svelte';
     import themeInit from '$lib/themeInit.js?url';
 
     initLang();
     initI18n();
+    initBranding();
+    brandI18n(useI18n());
 
     let { children }: { children: Snippet } = $props();
 
@@ -53,7 +56,7 @@
         <h1 class="text-2xl font-bold">Cookies disabled</h1>
         <p class="text-muted-foreground">
             You need to enable Cookies.<br />
-            Without them, a safe interaction with Rauthy is not possible.
+            Without them, a safe interaction with {brand.name} is not possible.
         </p>
     </div>
 {/if}

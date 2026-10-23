@@ -2546,6 +2546,17 @@ sync_delete_users = true
 retry_count = 100
 
 [server]
+# The name of this service as users see it: page titles, the admin UI, emails and the built-in
+# docs show it instead of "Rauthy". It can also be changed later in the admin UI (Config ->
+# General) without a restart; after the first start the database value wins (see "Settings in
+# the Database"). Set it here from the start so a fresh install is branded right away. The passkey
+# prompt name (`webauthn.rp_name`) follows it unless that is set explicitly (needs a restart).
+#
+# 1 to 48 characters
+# default: 'Rauthy'
+# overwritten by: APP_NAME
+#app_name = 'Rauthy'
+
 # The server address to listen on. Can bind to a specific IP.
 # When LISTEN_SCHEME is set to use UNIX sockets, this specifies
 # the path to listen on.

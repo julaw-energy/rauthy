@@ -3,12 +3,13 @@ use actix_web::web::{Json, Path};
 use actix_web::{HttpResponse, get, post, put};
 use rauthy_api_types::email_jobs::MessageChannel;
 use rauthy_api_types::settings::{
-    ChannelSettingsRequest, SettingsResponse, SettingsTestResponse, SmtpSettingsRequest,
+    AppNameResponse, ChannelSettingsRequest, GeneralSettingsRequest, GeneralSettingsResponse,
+    SettingsResponse, SettingsTestResponse, SmtpSettingsRequest,
 };
 use rauthy_data::channels;
 use rauthy_data::email::mailer;
 use rauthy_data::entity::users::User;
-use rauthy_data::settings::{self, KEY_SMTP};
+use rauthy_data::settings::{self, KEY_GENERAL, KEY_SMTP};
 use rauthy_error::{ErrorResponse, ErrorResponseType};
 
 fn channel_from_path(name: &str) -> Result<MessageChannel, ErrorResponse> {
@@ -37,6 +38,10 @@ pub async fn get_settings(principal: ReqPrincipal) -> Result<HttpResponse, Error
     principal.validate_admin_session()?;
 
     Ok(HttpResponse::Ok().json(SettingsResponse {
+        general: GeneralSettingsResponse {
+            app_name: settings::app_name(),
+            from_db: settings::general_from_db(),
+        },
         smtp: settings::smtp_view(),
         smtp_configured: settings::smtp().is_configured(),
         channels: [
@@ -48,6 +53,49 @@ pub async fn get_settings(principal: ReqPrincipal) -> Result<HttpResponse, Error
         .map(settings::channel_view)
         .collect(),
     }))
+}
+
+/// The name of this service, as users should see it. Public.
+#[utoipa::path(
+    get,
+    path = "/app_name",
+    tag = "settings",
+    responses((status = 200, description = "Ok", body = AppNameResponse)),
+)]
+#[get("/app_name")]
+pub async fn get_app_name() -> HttpResponse {
+    HttpResponse::Ok()
+        // the default would be `no-store`, but this is asked on every page load
+        .insert_header(("cache-control", "public, max-age=30"))
+        .json(AppNameResponse {
+            name: settings::app_name(),
+        })
+}
+
+/// Change the name of this service. Applies immediately, no restart needed.
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    put,
+    path = "/settings/general",
+    tag = "settings",
+    request_body = GeneralSettingsRequest,
+    responses(
+        (status = 200, description = "Ok"),
+        (status = 400, description = "BadRequest", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[put("/settings/general")]
+pub async fn put_settings_general(
+    principal: ReqPrincipal,
+    Json(payload): Json<GeneralSettingsRequest>,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_admin_session()?;
+    settings::save_general(&payload.app_name).await?;
+    Ok(HttpResponse::Ok().finish())
 }
 
 /// Change the SMTP settings. They apply immediately, no restart needed.
@@ -159,7 +207,7 @@ pub async fn post_settings_channel_test(
 
 /// Replace a settings group with the values of the config file / env as they are right now.
 ///
-/// `group` is `smtp`, `channel.email`, `channel.sms` or `channel.whatsapp`.
+/// `group` is `general`, `smtp`, `channel.email`, `channel.sms` or `channel.whatsapp`.
 ///
 /// **Permissions**
 /// - rauthy_admin
@@ -181,7 +229,7 @@ pub async fn post_settings_import(
 ) -> Result<HttpResponse, ErrorResponse> {
     principal.validate_admin_session()?;
     let group = path.into_inner();
-    if group != KEY_SMTP && !group.starts_with("channel.") {
+    if group != KEY_SMTP && group != KEY_GENERAL && !group.starts_with("channel.") {
         return Err(ErrorResponse::new(
             ErrorResponseType::BadRequest,
             "Unknown settings group",

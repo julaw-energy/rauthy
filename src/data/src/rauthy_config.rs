@@ -652,6 +652,7 @@ impl Default for Vars {
                 swagger_ui_enable: false,
                 swagger_ui_public: false,
                 scalar_enable: false,
+                app_name: "Rauthy".into(),
                 see_keep_alive: Duration::from_secs(30),
                 ssp_threshold: 1000,
             },
@@ -3454,6 +3455,13 @@ impl Vars {
         if let Some(v) = t_bool(&mut table, "server", "scalar_enable", "SCALAR_ENABLE") {
             self.server.scalar_enable = v;
         }
+        if let Some(v) = t_str(&mut table, "server", "app_name", "APP_NAME") {
+            let v = v.trim();
+            if v.is_empty() || v.len() > 48 {
+                panic!("`server.app_name` must have 1 to 48 characters");
+            }
+            self.server.app_name = v.to_string().into();
+        }
 
         if let Some(v) = t_duration(&mut table, "server", "see_keep_alive", "SSE_KEEP_ALIVE") {
             self.server.see_keep_alive = v;
@@ -4017,6 +4025,9 @@ impl Vars {
         }
         if let Some(v) = t_str(&mut table, "webauthn", "rp_name", "RP_NAME") {
             self.webauthn.rp_name = v.into();
+        } else if self.server.app_name != "Rauthy" {
+            // the name passkey prompts show follows the app name unless it is set explicitly
+            self.webauthn.rp_name = self.server.app_name.to_string().into();
         }
         if let Some(v) = t_duration(&mut table, "webauthn", "req_exp", "WEBAUTHN_REQ_EXP") {
             self.webauthn.req_exp = v;
@@ -4664,6 +4675,8 @@ pub struct VarsServer {
     pub swagger_ui_enable: bool,
     pub swagger_ui_public: bool,
     pub scalar_enable: bool,
+    /// The name shown to users instead of "Rauthy" (pages, titles, emails, docs)
+    pub app_name: Cow<'static, str>,
     pub see_keep_alive: Duration,
     pub ssp_threshold: u16,
 }

@@ -544,6 +544,8 @@ fn api_services() -> actix_web::Scope {
                 .service(book::get_book_redirect)
                 .service(book::get_book)
                 .service(settings::get_settings)
+                .service(settings::get_app_name)
+                .service(settings::put_settings_general)
                 .service(settings::put_settings_smtp)
                 .service(settings::post_settings_smtp_test)
                 .service(settings::put_settings_channel)

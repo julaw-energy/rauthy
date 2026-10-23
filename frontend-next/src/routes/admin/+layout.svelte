@@ -21,10 +21,12 @@
     import { fetchGet } from '$api/fetch';
     import type { SettingsResponse } from '$api/types/settings';
     import { initI18nAdmin, useI18nAdmin } from '$state/i18n_admin.svelte';
+    import { brandI18n } from '$lib5/appName.svelte';
 
     let { children }: { children: Snippet } = $props();
 
     initI18nAdmin();
+    brandI18n(useI18nAdmin());
 
     let ta = useI18nAdmin();
     let session = useSession('admin');

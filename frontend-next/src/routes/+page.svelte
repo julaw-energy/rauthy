@@ -1,6 +1,7 @@
 <script lang="ts">
     import { LogIn, UserPlus, ShieldCheck } from '@lucide/svelte';
     import Button from '$lib5/button/Button.svelte';
+    import { brand } from '$lib5/appName.svelte';
     import Main from '$lib5/Main.svelte';
     import ContentCenter from '$lib5/ContentCenter.svelte';
     import Template from '$lib5/Template.svelte';
@@ -32,7 +33,7 @@
         <Card.Root class="w-full max-w-sm">
             <Card.Header class="items-center text-center">
                 <RauthyLogo width="6rem" />
-                <Card.Title class="sr-only">Rauthy</Card.Title>
+                <Card.Title class="sr-only">{brand.name}</Card.Title>
             </Card.Header>
             <Card.Content class="grid gap-2">
                 <Button ariaLabel={t.index.accountLogin} onclick={() => go('/auth/v1/account')}>

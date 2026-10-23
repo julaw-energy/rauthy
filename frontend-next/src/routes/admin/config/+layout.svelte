@@ -23,7 +23,8 @@
 
 <div class="flex flex-col gap-4 md:flex-row">
     <NavSub>
-        <NavLinkSub bind:ref={refA} href="/auth/v1/admin/config/policy">
+        <NavLinkSub bind:ref={refA} href="/auth/v1/admin/config/general">General</NavLinkSub>
+        <NavLinkSub href="/auth/v1/admin/config/policy">
             {t.passwordPolicy.passwordPolicy}
         </NavLinkSub>
         <NavLinkSub href="/auth/v1/admin/config/jwks">JWKS</NavLinkSub>

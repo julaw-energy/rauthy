@@ -6,6 +6,7 @@ live in the database and be changed from the admin UI (**Config**) without a res
 
 | Group                   | Where in the UI           |
 |-------------------------|---------------------------|
+| Service name (`server.app_name`) | Config → General |
 | SMTP server (`[email]`) | Config → Email (SMTP)     |
 | Message channels        | Config → Channels         |
 
@@ -56,3 +57,14 @@ All endpoints need an admin session. See the [API reference](../swagger.md) for 
 | `PUT /settings/channel/{channel}`       | change a message channel                        |
 | `POST /settings/channel/{channel}/test` | check that the notification agent is reachable  |
 | `POST /settings/import/{group}`         | re-import `smtp` or `channel.<name>` from file  |
+
+## The Service Name
+
+`server.app_name` (env `APP_NAME`, default `Rauthy`) is the name your users see: page titles, the
+admin UI, the texts of the login and account pages, emails and these docs show it instead of the word
+"Rauthy". Set it in the config file for a fresh install, or change it any time under **Config →
+General**. Names of users, clients and data are never touched, only the product's own texts, and code
+blocks in the docs stay as they are.
+
+The name shown in passkey prompts (`webauthn.rp_name`) follows it unless set explicitly, and needs a
+restart. Sessions already open pick a new name up on their next page load.

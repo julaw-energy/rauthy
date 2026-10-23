@@ -28,6 +28,8 @@
         </NavLinkSub>
         <NavLinkSub href="/auth/v1/admin/config/jwks">JWKS</NavLinkSub>
         <NavLinkSub href="/auth/v1/admin/config/argon2">Password Hashing</NavLinkSub>
+        <NavLinkSub href="/auth/v1/admin/config/email">Email (SMTP)</NavLinkSub>
+        <NavLinkSub href="/auth/v1/admin/config/channels">Channels</NavLinkSub>
         <NavLinkSub href="/auth/v1/admin/config/encryption">{ta.docs.encryption}</NavLinkSub>
         <NavLinkSub href="/auth/v1/admin/config/backups">Backups</NavLinkSub>
         <NavLinkSub href="/auth/v1/admin/config/tos">{ta.tos.tos}</NavLinkSub>

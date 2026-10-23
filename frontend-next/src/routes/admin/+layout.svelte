@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { Snippet } from 'svelte';
     import { page } from '$app/state';
-    import { Bell } from '@lucide/svelte';
+    import { Bell, TriangleAlert } from '@lucide/svelte';
     import * as Sidebar from '$lib/components/ui/sidebar';
     import * as Sheet from '$lib/components/ui/sheet';
     import { Separator } from '$lib/components/ui/separator';
@@ -19,6 +19,7 @@
     import { redirectToLogout } from '$utils/helpers';
     import { useSession } from '$state/session.svelte';
     import { fetchGet } from '$api/fetch';
+    import type { SettingsResponse } from '$api/types/settings';
     import { initI18nAdmin, useI18nAdmin } from '$state/i18n_admin.svelte';
 
     let { children }: { children: Snippet } = $props();
@@ -29,6 +30,8 @@
     let session = useSession('admin');
 
     let isAdmin = $state(false);
+    // first-run hint: without an SMTP server no emails (password resets, codes) go out
+    let smtpMissing = $state(false);
     let needsAdminRole = $state(false);
     let mfaReqErr = $state(false);
     let showEvents = $state(false);
@@ -44,11 +47,17 @@
                 isAdmin = true;
                 // async check for admin access speeds up FCP and is still fast enough for a good UX
                 checkAdminAccess();
+                if (session.isAdmin()) checkSetup();
             } else {
                 needsAdminRole = true;
             }
         }
     });
+
+    async function checkSetup() {
+        let res = await fetchGet<SettingsResponse>('/auth/v1/settings');
+        if (res.body) smtpMissing = !res.body.smtp_configured;
+    }
 
     async function checkAdminAccess() {
         let res = await fetchGet('/auth/v1/auth_check_admin');
@@ -132,6 +141,19 @@
 
             <div class="flex min-h-0 flex-1 gap-4 p-3 sm:p-4">
                 <div class="flex min-w-0 flex-1 flex-col gap-4">
+                    {#if smtpMissing && !page.url.pathname.endsWith('/config/email')}
+                        <div
+                            class="flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm"
+                            role="status"
+                        >
+                            <TriangleAlert class="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                            <span class="flex-1">
+                                No mail server is set up yet, so Rauthy cannot send emails (password resets,
+                                verification codes).
+                            </span>
+                            <A href="/auth/v1/admin/config/email">Set up email</A>
+                        </div>
+                    {/if}
                     {@render children()}
                 </div>
                 {#if wide}

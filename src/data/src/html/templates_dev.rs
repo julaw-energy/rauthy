@@ -144,7 +144,7 @@ impl HtmlTemplate {
                 };
                 let mut ml = MagicLink::create(
                     user.id.clone(),
-                    RauthyConfig::get().vars.lifetimes.magic_link_pwd_reset,
+                    crate::settings::lifetimes().magic_link_pwd_reset,
                     usage,
                 )
                 .await?;

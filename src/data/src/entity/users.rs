@@ -218,7 +218,7 @@ impl User {
 
         let magic_link = MagicLink::create(
             slf.id.clone(),
-            RauthyConfig::get().vars.lifetimes.magic_link_pwd_first,
+            crate::settings::lifetimes().magic_link_pwd_first,
             MagicLinkUsage::NewUser(post_reset_redirect_uri),
         )
         .await?;
@@ -1797,7 +1797,7 @@ impl User {
             self.given_name.as_str(),
             self.family_name.as_deref().unwrap_or_default(),
         ];
-        if RauthyConfig::get().vars.user_values.name_order_reverse {
+        if crate::settings::user_values().name_order_reverse {
             parts.reverse();
         }
         parts
@@ -2043,7 +2043,7 @@ impl User {
         };
         let new_ml = MagicLink::create(
             self.id.clone(),
-            RauthyConfig::get().vars.lifetimes.magic_link_pwd_reset,
+            crate::settings::lifetimes().magic_link_pwd_reset,
             usage,
         )
         .await?;
@@ -2082,7 +2082,7 @@ impl User {
                 // also has an expired password to trigger email spam.
                 let magic_link = MagicLink::create(
                     self.id.clone(),
-                    RauthyConfig::get().vars.lifetimes.magic_link_pwd_reset,
+                    crate::settings::lifetimes().magic_link_pwd_reset,
                     MagicLinkUsage::PasswordReset(None),
                 )
                 .await?;

@@ -257,9 +257,9 @@ pub async fn post_authorize_refresh(
 
     // Webauthn overrides otp
     let require_webauthn =
-        user.has_webauthn_enabled() && RauthyConfig::get().vars.lifetimes.session_renew_mfa;
+        user.has_webauthn_enabled() && rauthy_data::settings::lifetimes().session_renew_mfa;
     let require_otp = !require_webauthn
-        && RauthyConfig::get().vars.lifetimes.session_renew_mfa
+        && rauthy_data::settings::lifetimes().session_renew_mfa
         && user.has_otp_enabled().await;
 
     finish_authorize(
@@ -393,7 +393,7 @@ pub(crate) async fn finish_authorize(
     let header_loc = code.build_location_header(data.state.as_deref());
 
     // check if we need to validate the 2nd factor
-    // if user.has_webauthn_enabled() && RauthyConfig::get().vars.lifetimes.session_renew_mfa {
+    // if user.has_webauthn_enabled() && rauthy_data::settings::lifetimes().session_renew_mfa {
     if data.require_webauthn {
         // Webauthn-enabled account
 

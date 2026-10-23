@@ -2,7 +2,6 @@ use chrono::Utc;
 use hiqlite::macros::params;
 use rauthy_common::is_hiqlite;
 use rauthy_data::database::DB;
-use rauthy_data::rauthy_config::RauthyConfig;
 use std::ops::Sub;
 use std::time::Duration;
 use tokio::time;
@@ -33,7 +32,7 @@ pub async fn sessions_cleanup() {
         let now = Utc::now();
         let exp = now.sub(chrono::Duration::minutes(1)).timestamp();
         let timeout = now
-            .sub(RauthyConfig::get().vars.lifetimes.session_timeout)
+            .sub(rauthy_data::settings::lifetimes().session_timeout)
             .sub(chrono::Duration::minutes(1))
             .timestamp();
 

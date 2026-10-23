@@ -125,9 +125,7 @@ impl HtmlTemplate {
             Self::PasswordReset(i) => serde_json::to_string(i).unwrap(),
             Self::StatusCode(i) => i.to_string(),
             Self::RestrictedEmailDomain(i) => i.to_string(),
-            Self::UserValues => {
-                serde_json::to_string(&RauthyConfig::get().vars.user_values).unwrap()
-            }
+            Self::UserValues => crate::settings::user_values_json().to_string(),
         }
     }
 }

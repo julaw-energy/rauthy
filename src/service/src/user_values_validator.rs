@@ -2,6 +2,7 @@ use rauthy_api_types::users::UserValuesRequest;
 use rauthy_data::entity::users::User;
 use rauthy_data::entity::users_values::UserValues;
 use rauthy_data::rauthy_config::{RauthyConfig, UserValueConfigValue};
+use rauthy_data::settings;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
 use std::borrow::Cow;
 use std::str::FromStr;
@@ -18,7 +19,9 @@ pub struct UserValuesValidator<'a> {
 impl UserValuesValidator<'_> {
     pub fn validate(&self) -> Result<(), ErrorResponse> {
         debug!("Validating user values");
-        let config = &RauthyConfig::get().vars.user_values;
+        // profile field requirements: DB settings first, config file as the fallback
+        let config = settings::user_values();
+        let pref_username = &RauthyConfig::get().vars.user_values.preferred_username;
 
         if config.given_name == UserValueConfigValue::Required
             && (self.given_name.is_none() || self.given_name == Some(""))
@@ -37,7 +40,7 @@ impl UserValuesValidator<'_> {
             ));
         }
 
-        if config.preferred_username.preferred_username == UserValueConfigValue::Required
+        if pref_username.preferred_username == UserValueConfigValue::Required
             && (self.preferred_username.is_none() || self.preferred_username == Some(""))
         {
             return Err(ErrorResponse::new(
@@ -47,8 +50,7 @@ impl UserValuesValidator<'_> {
         }
 
         if let Some(username) = self.preferred_username
-            && config
-                .preferred_username
+            && pref_username
                 .blacklist
                 .contains(&Cow::from(username.to_lowercase()))
         {
@@ -146,7 +148,7 @@ impl UserValuesValidator<'_> {
             return Ok(false);
         }
 
-        if RauthyConfig::get().vars.user_values.revalidate_during_login {
+        if settings::user_values().revalidate_during_login {
             let uv = UserValues::find(&user.id).await?.unwrap_or_default();
             let user_values = Some(UserValuesRequest {
                 birthdate: uv.birthdate,

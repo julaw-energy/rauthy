@@ -4800,7 +4800,7 @@ pub struct VarsUserPreferredUsername {
     pub email_fallback: bool,
 }
 
-#[derive(Debug, PartialEq, Serialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum UserValueConfigValue {
     Required,

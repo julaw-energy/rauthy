@@ -10,13 +10,14 @@
 
 use crate::channels::{ChannelConfig, ChannelDriver};
 use crate::database::DB;
-use crate::rauthy_config::{EmailTlsMode, RauthyConfig};
+use crate::rauthy_config::{EmailTlsMode, RauthyConfig, UserValueConfigValue};
 use chrono::Utc;
 use cryptr::EncValue;
 use hiqlite::macros::{FromRow, params};
 use rauthy_api_types::email_jobs::MessageChannel;
 use rauthy_api_types::settings::{
-    ChannelSettingsRequest, ChannelSettingsResponse, SmtpSettingsRequest, SmtpSettingsResponse,
+    ChannelSettingsRequest, ChannelSettingsResponse, LifetimesSettings, LifetimesSettingsResponse,
+    SmtpSettingsRequest, SmtpSettingsResponse,
 };
 use rauthy_common::is_hiqlite;
 use rauthy_common::utils::{base64_decode, base64_encode};
@@ -32,6 +33,125 @@ const WATCH_INTERVAL: Duration = Duration::from_secs(15);
 
 pub const KEY_SMTP: &str = "smtp";
 pub const KEY_GENERAL: &str = "general";
+pub const KEY_USER_VALUES: &str = "user_values";
+pub const KEY_LIFETIMES: &str = "lifetimes";
+
+/// The lifetimes in use, with typed durations
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Lifetimes {
+    pub refresh_token_grace_time: Duration,
+    pub refresh_token_lifetime: Duration,
+    pub session_lifetime: Duration,
+    pub session_timeout: Duration,
+    pub session_renew_mfa: bool,
+    pub magic_link_pwd_reset: Duration,
+    pub magic_link_pwd_first: Duration,
+}
+
+impl Lifetimes {
+    fn from_file() -> Self {
+        let l = &RauthyConfig::get().vars.lifetimes;
+        Self {
+            refresh_token_grace_time: l.refresh_token_grace_time,
+            refresh_token_lifetime: l.refresh_token_lifetime,
+            session_lifetime: l.session_lifetime,
+            session_timeout: l.session_timeout,
+            session_renew_mfa: l.session_renew_mfa,
+            magic_link_pwd_reset: l.magic_link_pwd_reset,
+            magic_link_pwd_first: l.magic_link_pwd_first,
+        }
+    }
+
+    fn defaults() -> Self {
+        Self {
+            refresh_token_grace_time: Duration::from_secs(5),
+            refresh_token_lifetime: Duration::from_secs(48 * 3600),
+            session_lifetime: Duration::from_secs(10 * 3600),
+            session_timeout: Duration::from_secs(90 * 60),
+            session_renew_mfa: false,
+            magic_link_pwd_reset: Duration::from_secs(30 * 60),
+            magic_link_pwd_first: Duration::from_secs(3 * 24 * 3600),
+        }
+    }
+
+    fn to_api(self) -> LifetimesSettings {
+        LifetimesSettings {
+            refresh_token_grace_time: self.refresh_token_grace_time.as_secs(),
+            refresh_token_lifetime: self.refresh_token_lifetime.as_secs(),
+            session_lifetime: self.session_lifetime.as_secs(),
+            session_timeout: self.session_timeout.as_secs(),
+            session_renew_mfa: self.session_renew_mfa,
+            magic_link_pwd_reset: self.magic_link_pwd_reset.as_secs(),
+            magic_link_pwd_first: self.magic_link_pwd_first.as_secs(),
+        }
+    }
+
+    fn from_api(v: &LifetimesSettings) -> Self {
+        Self {
+            refresh_token_grace_time: Duration::from_secs(v.refresh_token_grace_time),
+            refresh_token_lifetime: Duration::from_secs(v.refresh_token_lifetime),
+            session_lifetime: Duration::from_secs(v.session_lifetime),
+            session_timeout: Duration::from_secs(v.session_timeout),
+            session_renew_mfa: v.session_renew_mfa,
+            magic_link_pwd_reset: Duration::from_secs(v.magic_link_pwd_reset),
+            magic_link_pwd_first: Duration::from_secs(v.magic_link_pwd_first),
+        }
+    }
+}
+
+/// Session, token and link lifetimes right now: the DB row if there is one, the config file
+/// otherwise.
+pub fn lifetimes() -> Lifetimes {
+    live().lifetimes.unwrap_or_else(Lifetimes::from_file)
+}
+
+pub fn lifetimes_view() -> LifetimesSettingsResponse {
+    LifetimesSettingsResponse {
+        values: lifetimes().to_api(),
+        from_db: live().lifetimes.is_some(),
+    }
+}
+
+pub async fn save_lifetimes(v: LifetimesSettings) -> Result<(), ErrorResponse> {
+    const MIN: u64 = 60;
+    const DAY: u64 = 24 * 3600;
+    if v.refresh_token_grace_time > 3600 {
+        return Err(bad("The refresh token grace time can be at most 1 hour"));
+    }
+    if !(MIN..=365 * DAY).contains(&v.refresh_token_lifetime) {
+        return Err(bad(
+            "The refresh token lifetime must be between 1 minute and 365 days",
+        ));
+    }
+    if !(5 * MIN..=90 * DAY).contains(&v.session_lifetime) {
+        return Err(bad(
+            "The session lifetime must be between 5 minutes and 90 days",
+        ));
+    }
+    if !(MIN..=90 * DAY).contains(&v.session_timeout) {
+        return Err(bad(
+            "The session timeout must be between 1 minute and 90 days",
+        ));
+    }
+    if v.session_timeout > v.session_lifetime {
+        return Err(bad(
+            "The session timeout cannot be longer than the session lifetime",
+        ));
+    }
+    for (name, secs) in [
+        ("password reset link", v.magic_link_pwd_reset),
+        ("first password link", v.magic_link_pwd_first),
+    ] {
+        if !(MIN..=30 * DAY).contains(&secs) {
+            return Err(bad(format!(
+                "The {name} lifetime must be between 1 minute and 30 days"
+            )));
+        }
+    }
+
+    upsert(KEY_LIFETIMES, &serde_json::to_string(&v)?).await?;
+    reload().await
+}
 
 /// The `general` group: values that apply everywhere
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -97,8 +217,140 @@ impl EffectiveSmtp {
     }
 }
 
+/// The `user_values` group: which profile fields are shown / required. `preferred_username`
+/// has a compiled regex and stays in the config file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UserValuesStored {
+    pub given_name: String,
+    pub family_name: String,
+    pub birthdate: String,
+    pub gender: String,
+    pub street: String,
+    pub zip: String,
+    pub city: String,
+    pub country: String,
+    pub phone: String,
+    pub tz: String,
+    pub revalidate_during_login: bool,
+    pub name_order_reverse: bool,
+}
+
+/// The same values with typed requirements, the way the code reads them
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UserValuesEffective {
+    pub given_name: UserValueConfigValue,
+    pub family_name: UserValueConfigValue,
+    pub birthdate: UserValueConfigValue,
+    pub gender: UserValueConfigValue,
+    pub street: UserValueConfigValue,
+    pub zip: UserValueConfigValue,
+    pub city: UserValueConfigValue,
+    pub country: UserValueConfigValue,
+    pub phone: UserValueConfigValue,
+    pub tz: UserValueConfigValue,
+    pub revalidate_during_login: bool,
+    pub name_order_reverse: bool,
+}
+
+impl UserValuesEffective {
+    /// The built-in defaults, to tell whether the config file changed anything
+    fn defaults() -> Self {
+        use UserValueConfigValue::*;
+        Self {
+            given_name: Required,
+            family_name: Optional,
+            birthdate: Optional,
+            gender: Optional,
+            street: Optional,
+            zip: Optional,
+            city: Optional,
+            country: Optional,
+            phone: Optional,
+            tz: Optional,
+            revalidate_during_login: false,
+            name_order_reverse: false,
+        }
+    }
+}
+
+fn uv_to_str(v: UserValueConfigValue) -> &'static str {
+    match v {
+        UserValueConfigValue::Required => "required",
+        UserValueConfigValue::Optional => "optional",
+        UserValueConfigValue::Hidden => "hidden",
+    }
+}
+
+fn uv_from_str(s: &str) -> Option<UserValueConfigValue> {
+    match s {
+        "required" => Some(UserValueConfigValue::Required),
+        "optional" => Some(UserValueConfigValue::Optional),
+        "hidden" => Some(UserValueConfigValue::Hidden),
+        _ => None,
+    }
+}
+
+impl UserValuesEffective {
+    fn from_file() -> Self {
+        let v = &RauthyConfig::get().vars.user_values;
+        Self {
+            given_name: v.given_name,
+            family_name: v.family_name,
+            birthdate: v.birthdate,
+            gender: v.gender,
+            street: v.street,
+            zip: v.zip,
+            city: v.city,
+            country: v.country,
+            phone: v.phone,
+            tz: v.tz,
+            revalidate_during_login: v.revalidate_during_login,
+            name_order_reverse: v.name_order_reverse,
+        }
+    }
+
+    fn to_stored(self) -> UserValuesStored {
+        UserValuesStored {
+            given_name: uv_to_str(self.given_name).into(),
+            family_name: uv_to_str(self.family_name).into(),
+            birthdate: uv_to_str(self.birthdate).into(),
+            gender: uv_to_str(self.gender).into(),
+            street: uv_to_str(self.street).into(),
+            zip: uv_to_str(self.zip).into(),
+            city: uv_to_str(self.city).into(),
+            country: uv_to_str(self.country).into(),
+            phone: uv_to_str(self.phone).into(),
+            tz: uv_to_str(self.tz).into(),
+            revalidate_during_login: self.revalidate_during_login,
+            name_order_reverse: self.name_order_reverse,
+        }
+    }
+}
+
+impl UserValuesStored {
+    /// `None` if a requirement is not one of required / optional / hidden
+    fn to_effective(&self) -> Option<UserValuesEffective> {
+        Some(UserValuesEffective {
+            given_name: uv_from_str(&self.given_name)?,
+            family_name: uv_from_str(&self.family_name)?,
+            birthdate: uv_from_str(&self.birthdate)?,
+            gender: uv_from_str(&self.gender)?,
+            street: uv_from_str(&self.street)?,
+            zip: uv_from_str(&self.zip)?,
+            city: uv_from_str(&self.city)?,
+            country: uv_from_str(&self.country)?,
+            phone: uv_from_str(&self.phone)?,
+            tz: uv_from_str(&self.tz)?,
+            revalidate_during_login: self.revalidate_during_login,
+            name_order_reverse: self.name_order_reverse,
+        })
+    }
+}
+
 #[derive(Debug, Default)]
 struct Live {
+    lifetimes: Option<Lifetimes>,
+    user_values: Option<UserValuesEffective>,
     general: Option<GeneralStored>,
     smtp: Option<(SmtpStored, Option<String>)>,
     channels: HashMap<MessageChannel, (ChannelStored, Option<String>)>,
@@ -140,6 +392,31 @@ fn decrypt_secret(b64: &str) -> Result<String, ErrorResponse> {
 }
 
 // ---- effective accessors ---------------------------------------------------------------
+
+/// Which profile fields are shown / required right now: the DB row if there is one, the config
+/// file otherwise.
+pub fn user_values() -> UserValuesEffective {
+    live()
+        .user_values
+        .unwrap_or_else(UserValuesEffective::from_file)
+}
+
+pub fn user_values_from_db() -> bool {
+    live().user_values.is_some()
+}
+
+/// The whole `user_values` config as JSON for the frontend: the file config (which has the
+/// `preferred_username` block) with the DB values on top.
+pub fn user_values_json() -> serde_json::Value {
+    let mut v = serde_json::to_value(&RauthyConfig::get().vars.user_values).unwrap_or_default();
+    if let Some(o) = v.as_object_mut() {
+        let stored = user_values().to_stored();
+        if let Ok(serde_json::Value::Object(over)) = serde_json::to_value(stored) {
+            o.extend(over);
+        }
+    }
+    v
+}
 
 /// The name of this service as shown to users: the DB value if set, `server.app_name` otherwise.
 pub fn app_name() -> String {
@@ -288,7 +565,22 @@ pub async fn reload() -> Result<(), ErrorResponse> {
     for row in rows {
         new.stamps.insert(row.key.clone(), row.updated);
 
-        if row.key == KEY_GENERAL {
+        if row.key == KEY_LIFETIMES {
+            match serde_json::from_str::<LifetimesSettings>(&row.value) {
+                Ok(l) => new.lifetimes = Some(Lifetimes::from_api(&l)),
+                Err(err) => error!(?err, "Invalid `lifetimes` settings in the DB"),
+            }
+        } else if row.key == KEY_USER_VALUES {
+            match serde_json::from_str::<UserValuesStored>(&row.value)
+                .map_err(|e| e.to_string())
+                .and_then(|s| {
+                    s.to_effective()
+                        .ok_or_else(|| "invalid requirement".to_string())
+                }) {
+                Ok(e) => new.user_values = Some(e),
+                Err(err) => error!(%err, "Invalid `user_values` settings in the DB"),
+            }
+        } else if row.key == KEY_GENERAL {
             match serde_json::from_str::<GeneralStored>(&row.value) {
                 Ok(g) => new.general = Some(g),
                 Err(err) => error!(?err, "Invalid `general` settings in the DB"),
@@ -349,6 +641,26 @@ pub async fn init() -> Result<(), ErrorResponse> {
             let stored = GeneralStored { app_name: name };
             upsert(KEY_GENERAL, &serde_json::to_string(&stored)?).await?;
             seeded.push("general");
+        }
+    }
+
+    if live.lifetimes.is_none() {
+        let from_file = Lifetimes::from_file();
+        if from_file != Lifetimes::defaults() {
+            upsert(KEY_LIFETIMES, &serde_json::to_string(&from_file.to_api())?).await?;
+            seeded.push("lifetimes");
+        }
+    }
+
+    if live.user_values.is_none() {
+        let from_file = UserValuesEffective::from_file();
+        if from_file != UserValuesEffective::defaults() {
+            upsert(
+                KEY_USER_VALUES,
+                &serde_json::to_string(&from_file.to_stored())?,
+            )
+            .await?;
+            seeded.push("user_values");
         }
     }
 
@@ -489,6 +801,66 @@ pub async fn save_smtp(update: SmtpSettingsRequest) -> Result<(), ErrorResponse>
     reload().await
 }
 
+pub async fn save_user_values(stored: UserValuesStored) -> Result<(), ErrorResponse> {
+    let effective = stored
+        .to_effective()
+        .ok_or_else(|| bad("Every field must be one of: required, optional, hidden"))?;
+    // the name is how a user is greeted everywhere, it cannot be hidden
+    if effective.given_name == UserValueConfigValue::Hidden {
+        return Err(bad("The given name cannot be hidden"));
+    }
+    upsert(
+        KEY_USER_VALUES,
+        &serde_json::to_string(&effective.to_stored())?,
+    )
+    .await?;
+    reload().await?;
+    // the config is part of the cached pages
+    DB::hql().clear_cache(crate::database::Cache::Html).await?;
+    Ok(())
+}
+
+pub fn user_values_view() -> rauthy_api_types::settings::UserValuesSettingsResponse {
+    let s = user_values().to_stored();
+    rauthy_api_types::settings::UserValuesSettingsResponse {
+        values: rauthy_api_types::settings::UserValuesSettings {
+            given_name: s.given_name,
+            family_name: s.family_name,
+            birthdate: s.birthdate,
+            gender: s.gender,
+            street: s.street,
+            zip: s.zip,
+            city: s.city,
+            country: s.country,
+            phone: s.phone,
+            tz: s.tz,
+            revalidate_during_login: s.revalidate_during_login,
+            name_order_reverse: s.name_order_reverse,
+        },
+        from_db: user_values_from_db(),
+    }
+}
+
+pub async fn save_user_values_request(
+    v: rauthy_api_types::settings::UserValuesSettings,
+) -> Result<(), ErrorResponse> {
+    save_user_values(UserValuesStored {
+        given_name: v.given_name,
+        family_name: v.family_name,
+        birthdate: v.birthdate,
+        gender: v.gender,
+        street: v.street,
+        zip: v.zip,
+        city: v.city,
+        country: v.country,
+        phone: v.phone,
+        tz: v.tz,
+        revalidate_during_login: v.revalidate_during_login,
+        name_order_reverse: v.name_order_reverse,
+    })
+    .await
+}
+
 pub async fn save_general(app_name: &str) -> Result<(), ErrorResponse> {
     let name = app_name.trim();
     if name.is_empty() || name.chars().count() > 48 {
@@ -554,6 +926,24 @@ pub async fn save_channel(
 
 /// Copies the current config file / env values of a group into the DB, replacing what is there.
 pub async fn import_from_file(group: &str) -> Result<(), ErrorResponse> {
+    if group == KEY_LIFETIMES {
+        upsert(
+            KEY_LIFETIMES,
+            &serde_json::to_string(&Lifetimes::from_file().to_api())?,
+        )
+        .await?;
+        return reload().await;
+    }
+    if group == KEY_USER_VALUES {
+        upsert(
+            KEY_USER_VALUES,
+            &serde_json::to_string(&UserValuesEffective::from_file().to_stored())?,
+        )
+        .await?;
+        reload().await?;
+        DB::hql().clear_cache(crate::database::Cache::Html).await?;
+        return Ok(());
+    }
     if group == KEY_GENERAL {
         let stored = GeneralStored {
             app_name: RauthyConfig::get().vars.server.app_name.to_string(),

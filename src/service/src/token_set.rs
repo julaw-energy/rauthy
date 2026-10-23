@@ -517,7 +517,7 @@ impl TokenSet {
         let exp = if did.is_some() {
             nbf.add(config.vars.device_grant.refresh_token_lifetime)
         } else {
-            nbf.add(config.vars.lifetimes.refresh_token_lifetime)
+            nbf.add(rauthy_data::settings::lifetimes().refresh_token_lifetime)
         }
         .timestamp();
 

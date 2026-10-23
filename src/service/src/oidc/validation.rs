@@ -67,7 +67,7 @@ pub async fn validate_and_refresh_token(
     refresh_token: &str,
     req: &HttpRequest,
 ) -> Result<(TokenSet, Option<String>), ErrorResponse> {
-    let clock_skew_secs = RauthyConfig::get().vars.lifetimes.refresh_token_grace_time;
+    let clock_skew_secs = rauthy_data::settings::lifetimes().refresh_token_grace_time;
     let mut buf = Vec::with_capacity(256);
     JwtToken::validate_claims_into(
         refresh_token,

@@ -2841,7 +2841,7 @@ pub async fn get_user_values_config(
     if !RauthyConfig::get().vars.user_registration.enable {
         principal.validate_api_key_or_group_admin(AccessGroup::Users, AccessRights::Read)?;
     }
-    Ok(HttpResponse::Ok().json(&RauthyConfig::get().vars.user_values))
+    Ok(HttpResponse::Ok().json(rauthy_data::settings::user_values_json()))
 }
 
 /// Allows modification of specific user values from the user himself

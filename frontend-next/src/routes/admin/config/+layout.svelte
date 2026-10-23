@@ -24,6 +24,8 @@
 <div class="flex flex-col gap-4 md:flex-row">
     <NavSub>
         <NavLinkSub bind:ref={refA} href="/auth/v1/admin/config/general">General</NavLinkSub>
+        <NavLinkSub href="/auth/v1/admin/config/user_fields">User fields</NavLinkSub>
+        <NavLinkSub href="/auth/v1/admin/config/lifetimes">Sessions &amp; tokens</NavLinkSub>
         <NavLinkSub href="/auth/v1/admin/config/policy">
             {t.passwordPolicy.passwordPolicy}
         </NavLinkSub>

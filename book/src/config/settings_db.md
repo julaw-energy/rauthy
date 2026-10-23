@@ -7,6 +7,8 @@ live in the database and be changed from the admin UI (**Config**) without a res
 | Group                   | Where in the UI           |
 |-------------------------|---------------------------|
 | Service name (`server.app_name`) | Config → General |
+| User fields (`[user_values]`, except the preferred username rules) | Config → User fields |
+| Session, token and link lifetimes (`[lifetimes]`, except the JWK rotation cron) | Config → Sessions & tokens |
 | SMTP server (`[email]`) | Config → Email (SMTP)     |
 | Message channels        | Config → Channels         |
 

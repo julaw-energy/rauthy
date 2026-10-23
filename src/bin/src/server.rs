@@ -546,6 +546,8 @@ fn api_services() -> actix_web::Scope {
                 .service(settings::get_settings)
                 .service(settings::get_app_name)
                 .service(settings::put_settings_general)
+                .service(settings::put_settings_user_values)
+                .service(settings::put_settings_lifetimes)
                 .service(settings::put_settings_smtp)
                 .service(settings::post_settings_smtp_test)
                 .service(settings::put_settings_channel)

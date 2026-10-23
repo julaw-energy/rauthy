@@ -4,7 +4,8 @@ use actix_web::{HttpResponse, get, post, put};
 use rauthy_api_types::email_jobs::MessageChannel;
 use rauthy_api_types::settings::{
     AppNameResponse, ChannelSettingsRequest, GeneralSettingsRequest, GeneralSettingsResponse,
-    SettingsResponse, SettingsTestResponse, SmtpSettingsRequest,
+    LifetimesSettings, SettingsResponse, SettingsTestResponse, SmtpSettingsRequest,
+    UserValuesSettings,
 };
 use rauthy_data::channels;
 use rauthy_data::email::mailer;
@@ -38,6 +39,8 @@ pub async fn get_settings(principal: ReqPrincipal) -> Result<HttpResponse, Error
     principal.validate_admin_session()?;
 
     Ok(HttpResponse::Ok().json(SettingsResponse {
+        user_values: settings::user_values_view(),
+        lifetimes: settings::lifetimes_view(),
         general: GeneralSettingsResponse {
             app_name: settings::app_name(),
             from_db: settings::general_from_db(),
@@ -70,6 +73,58 @@ pub async fn get_app_name() -> HttpResponse {
         .json(AppNameResponse {
             name: settings::app_name(),
         })
+}
+
+/// Change how long sessions, refresh tokens and email links stay valid. Applies immediately.
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    put,
+    path = "/settings/lifetimes",
+    tag = "settings",
+    request_body = LifetimesSettings,
+    responses(
+        (status = 200, description = "Ok"),
+        (status = 400, description = "BadRequest", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[put("/settings/lifetimes")]
+pub async fn put_settings_lifetimes(
+    principal: ReqPrincipal,
+    Json(payload): Json<LifetimesSettings>,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_admin_session()?;
+    settings::save_lifetimes(payload).await?;
+    Ok(HttpResponse::Ok().finish())
+}
+
+/// Change which profile fields are shown or required. Applies immediately, no restart needed.
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    put,
+    path = "/settings/user_values",
+    tag = "settings",
+    request_body = UserValuesSettings,
+    responses(
+        (status = 200, description = "Ok"),
+        (status = 400, description = "BadRequest", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[put("/settings/user_values")]
+pub async fn put_settings_user_values(
+    principal: ReqPrincipal,
+    Json(payload): Json<UserValuesSettings>,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_admin_session()?;
+    settings::save_user_values_request(payload).await?;
+    Ok(HttpResponse::Ok().finish())
 }
 
 /// Change the name of this service. Applies immediately, no restart needed.
@@ -229,7 +284,12 @@ pub async fn post_settings_import(
 ) -> Result<HttpResponse, ErrorResponse> {
     principal.validate_admin_session()?;
     let group = path.into_inner();
-    if group != KEY_SMTP && group != KEY_GENERAL && !group.starts_with("channel.") {
+    if group != KEY_SMTP
+        && group != KEY_GENERAL
+        && group != settings::KEY_USER_VALUES
+        && group != settings::KEY_LIFETIMES
+        && !group.starts_with("channel.")
+    {
         return Err(ErrorResponse::new(
             ErrorResponseType::BadRequest,
             "Unknown settings group",

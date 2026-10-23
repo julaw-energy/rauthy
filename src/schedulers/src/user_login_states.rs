@@ -2,7 +2,6 @@ use chrono::Utc;
 use hiqlite::macros::params;
 use rauthy_common::is_hiqlite;
 use rauthy_data::database::DB;
-use rauthy_data::rauthy_config::RauthyConfig;
 use std::ops::Sub;
 use std::time::Duration;
 use tokio::time;
@@ -27,7 +26,7 @@ pub async fn user_login_states_cleanup() {
         // total lifetime for sessions. Adds 1 day of grace time already.
         // `timestamp` is stored in millis.
         let threshold = Utc::now()
-            .sub(RauthyConfig::get().vars.lifetimes.session_lifetime)
+            .sub(rauthy_data::settings::lifetimes().session_lifetime)
             .sub(Duration::from_secs(24 * 3600))
             .timestamp_millis();
         let sql = "DELETE FROM user_login_states WHERE timestamp < $1";

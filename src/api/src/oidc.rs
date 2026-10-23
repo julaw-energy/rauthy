@@ -225,13 +225,13 @@ pub async fn get_authorize(
                 principal.session.unwrap()
             } else {
                 Session::new(
-                    RauthyConfig::get().vars.lifetimes.session_lifetime,
+                    rauthy_data::settings::lifetimes().session_lifetime,
                     Some(real_ip_from_req(&req)?),
                 )
             }
         } else {
             Session::new(
-                RauthyConfig::get().vars.lifetimes.session_lifetime,
+                rauthy_data::settings::lifetimes().session_lifetime,
                 Some(real_ip_from_req(&req)?),
             )
         };
@@ -871,7 +871,7 @@ pub async fn post_session(
     }
 
     let session = Session::new(
-        RauthyConfig::get().vars.lifetimes.session_lifetime,
+        rauthy_data::settings::lifetimes().session_lifetime,
         real_ip_from_req(&req).ok(),
     );
     session.upsert().await?;
@@ -879,7 +879,7 @@ pub async fn post_session(
 
     let timeout = OffsetDateTime::from_unix_timestamp(session.last_seen)
         .unwrap()
-        .add(RauthyConfig::get().vars.lifetimes.session_lifetime);
+        .add(rauthy_data::settings::lifetimes().session_lifetime);
     let info = SessionInfoResponse {
         id: session.id.as_str().into(),
         csrf_token: Some(session.csrf_token.as_str().into()),
@@ -937,7 +937,7 @@ pub async fn get_session_info(principal: ReqPrincipal) -> HttpResponse {
 
     let timeout = OffsetDateTime::from_unix_timestamp(session.last_seen)
         .unwrap()
-        .add(RauthyConfig::get().vars.lifetimes.session_timeout);
+        .add(rauthy_data::settings::lifetimes().session_timeout);
     let info = SessionInfoResponse {
         id: session.id.as_str().into(),
         csrf_token: None,
@@ -986,7 +986,7 @@ pub async fn get_session_xsrf(principal: ReqPrincipal) -> Result<HttpResponse, E
 
     let timeout = OffsetDateTime::from_unix_timestamp(session.last_seen)
         .unwrap()
-        .add(RauthyConfig::get().vars.lifetimes.session_timeout);
+        .add(rauthy_data::settings::lifetimes().session_timeout);
     let info = SessionInfoResponse {
         id: session.id.as_str().into(),
         csrf_token: Some(session.csrf_token.as_str().into()),

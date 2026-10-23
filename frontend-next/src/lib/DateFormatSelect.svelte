@@ -3,7 +3,9 @@
     import * as Select from '$lib/components/ui/select/index.js';
     import { DATE_FORMATS, dateFormat, formatIsoDate, type DateFormat } from '$lib5/dateFormat.svelte';
 
-    const sample = '2025-10-22';
+    // today's date in local time, so the options always show what the formats look like right now
+    const t = new Date();
+    const sample = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
 </script>
 
 <Select.Root type="single" value={dateFormat.format} onValueChange={(v) => dateFormat.set(v as DateFormat)}>

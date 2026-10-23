@@ -17,10 +17,12 @@
     } = $props();
 
     let tr = useTrigger();
+    // `page.route.id` has no base path (`/admin/config/jwks`) while the href has (`/auth/v1/...`),
+    // so compare the real path instead
     let current = $derived(
         highlightWithParams
-            ? `${page.route.id}${page.url.search}`.startsWith(href)
-            : page.route.id === href.split('?')[0],
+            ? `${page.url.pathname}${page.url.search}`.startsWith(href)
+            : page.url.pathname.replace(/\/$/, '') === href.split('?')[0].replace(/\/$/, ''),
     );
 
     function onclick() {
@@ -35,7 +37,7 @@
     aria-current={current ? 'page' : undefined}
     class={cn(
         'hover:bg-accent whitespace-nowrap rounded-xl px-3 py-2 text-sm transition-colors',
-        current && 'bg-accent text-accent-foreground font-medium',
+        current && 'bg-primary text-primary-foreground hover:bg-primary font-medium',
     )}
 >
     {@render children()}

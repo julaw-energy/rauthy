@@ -4,6 +4,7 @@
     import type { CountryCode } from 'libphonenumber-js/min';
     import InputCountry from '$lib5/form/InputCountry.svelte';
     import InputPhone from '$lib5/form/InputPhone.svelte';
+    import ContactVerify from '$lib5/form/ContactVerify.svelte';
     import Msg from '$lib5/Msg.svelte';
     import { formatDateFromTs } from '$utils/helpers.js';
     import Button from '$lib5/button/Button.svelte';
@@ -577,6 +578,7 @@
                         placeholder={t.account.phone}
                         required={config.phone === 'required'}
                     />
+                    <ContactVerify userId={user.id} kind="phone" current={phone} admin />
                     <Input
                         bind:value={city}
                         autocomplete="off"

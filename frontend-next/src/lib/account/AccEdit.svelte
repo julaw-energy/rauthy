@@ -4,6 +4,7 @@
     import type { CountryCode } from 'libphonenumber-js/min';
     import InputCountry from '$lib5/form/InputCountry.svelte';
     import InputPhone from '$lib5/form/InputPhone.svelte';
+    import ContactVerify from '$lib5/form/ContactVerify.svelte';
     import Msg from '$lib5/Msg.svelte';
     import Button from '$lib5/button/Button.svelte';
     import { fade } from 'svelte/transition';
@@ -184,6 +185,7 @@
                         value={user.email}
                         required
                     />
+                    <ContactVerify userId={user.id} kind="email" current={user.email} />
                     {#if config.given_name !== 'hidden'}
                         <Input
                             name="given_name"
@@ -255,6 +257,7 @@
                             bind:country={phoneCountry}
                             required={config.phone === 'required'}
                         />
+                        <ContactVerify userId={user.id} kind="phone" current={user.user_values.phone} />
                     {/if}
                     {#if config.city !== 'hidden'}
                         <Input

@@ -1,12 +1,12 @@
 use crate::{
-    api_keys, atproto, auth_providers, backup, blacklist, clients, email, events, fed_cm, generic,
-    groups, kv, oidc, pam, roles, scopes, sessions, themes, tos, users,
+    api_keys, atproto, auth_providers, backup, blacklist, clients, contact_verification, email,
+    events, fed_cm, generic, groups, kv, oidc, pam, roles, scopes, sessions, themes, tos, users,
 };
 use rauthy_api_types::*;
 use rauthy_api_types::{
     api_keys::*, auth_providers::*, backup::*, blacklist::*, clients::*, email_jobs::*, events::*,
     fed_cm::*, forward_auth::*, generic::*, groups::*, kv::*, oidc::*, pam::*, roles::*, scopes::*,
-    sessions::*, themes::*, tos::*, users::*,
+    sessions::*, themes::*, tos::*, users::*, verification::*,
 };
 use rauthy_common::constants::{PROXY_MODE, RAUTHY_VERSION};
 use rauthy_data::ListenScheme;
@@ -77,6 +77,10 @@ use utoipa::{OpenApi, openapi};
         clients::get_forward_auth_callback,
         clients::post_client_validate_uri,
 
+        contact_verification::get_verification,
+        contact_verification::post_verification_start,
+        contact_verification::post_verification_confirm,
+        contact_verification::put_verification,
         email::get_email_jobs,
         email::get_channels,
         email::post_send_email,
@@ -302,6 +306,11 @@ use utoipa::{OpenApi, openapi};
             IpBlacklistRequest,
             DeviceRequest,
             DeviceGrantRequest,
+            VerificationStatusResponse,
+            ContactStatus,
+            ContactKind,
+            VerifyConfirmRequest,
+            VerifySetRequest,
             EmailJobRequest,
             ChannelInfo,
             MessageChannel,

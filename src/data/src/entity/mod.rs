@@ -14,6 +14,7 @@ pub mod clients;
 pub mod clients_dyn;
 pub mod clients_scim;
 pub mod config;
+pub mod contact_verifications;
 pub mod continuation_token;
 pub mod cred_stuff_detect;
 pub mod db_version;

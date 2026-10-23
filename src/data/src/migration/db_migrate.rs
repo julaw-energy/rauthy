@@ -5,6 +5,7 @@ use crate::entity::clients::Client;
 use crate::entity::clients_dyn::ClientDyn;
 use crate::entity::clients_scim::ClientScim;
 use crate::entity::config::ConfigEntity;
+use crate::entity::contact_verifications::ContactVerification;
 use crate::entity::db_version::DbVersion;
 use crate::entity::devices::DeviceEntity;
 use crate::entity::email_jobs::{EmailContentType, EmailJob, EmailJobFilter, EmailJobStatus};
@@ -321,6 +322,12 @@ pub async fn migrate_from_sqlite(db_from: &str) -> Result<(), ErrorResponse> {
     debug!("Migrating table: user_clients");
     let before = query_sqlite::<UserClientRow>(&conn, "SELECT * FROM user_clients").await?;
     inserts::user_clients(before).await?;
+
+    // CONTACT VERIFICATIONS
+    debug!("Migrating table: contact_verifications");
+    let before =
+        query_sqlite::<ContactVerification>(&conn, "SELECT * FROM contact_verifications").await?;
+    inserts::contact_verifications(before).await?;
 
     // FAILED BACKCHANNEL LOGOUTS
     debug!("Migrating table: failed_backchannel_logouts");
@@ -853,6 +860,11 @@ pub async fn migrate_from_postgres() -> Result<(), ErrorResponse> {
     debug!("Migrating table: user_clients");
     let before = DB::pg_query_map_with(&cl, "SELECT * FROM user_clients", &[], 0).await?;
     inserts::user_clients(before).await?;
+
+    // CONTACT VERIFICATIONS
+    debug!("Migrating table: contact_verifications");
+    let before = DB::pg_query_map_with(&cl, "SELECT * FROM contact_verifications", &[], 0).await?;
+    inserts::contact_verifications(before).await?;
 
     // FAILED BACKCHANNEL LOGOUTS
     debug!("Migrating table: failed_backchannel_logouts");

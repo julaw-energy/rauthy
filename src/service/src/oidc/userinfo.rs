@@ -2,7 +2,9 @@ use crate::oidc::helpers;
 use actix_web::HttpRequest;
 use actix_web::http::header::{HeaderName, HeaderValue};
 use rauthy_api_types::users::Userinfo;
+use rauthy_api_types::verification::ContactKind;
 use rauthy_data::entity::clients::Client;
+use rauthy_data::entity::contact_verifications::ContactVerification;
 use rauthy_data::entity::devices::DeviceEntity;
 use rauthy_data::entity::issued_tokens::IssuedToken;
 use rauthy_data::entity::users::User;
@@ -172,9 +174,14 @@ pub async fn get_userinfo(
         }
 
         if has_phone {
+            userinfo.phone_number_verified = Some(match &values.phone {
+                Some(phone) => {
+                    ContactVerification::is_verified(&user.id, ContactKind::Phone.as_str(), phone)
+                        .await?
+                }
+                None => false,
+            });
             userinfo.phone_number = values.phone;
-            // Note: Rauthy does not have a mechanism to send SMS and therefore verify a number.
-            userinfo.phone_number_verified = Some(false);
         }
     }
 

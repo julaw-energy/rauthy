@@ -24,6 +24,7 @@ pub mod sessions;
 pub mod themes;
 pub mod tos;
 pub mod users;
+pub mod verification;
 
 #[derive(Deserialize, ToSchema)]
 pub struct PatchOp {

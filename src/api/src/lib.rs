@@ -28,6 +28,7 @@ pub mod auth_providers;
 pub mod backup;
 pub mod blacklist;
 pub mod clients;
+pub mod contact_verification;
 pub mod cors_preflight;
 pub mod dev_only;
 pub mod email;

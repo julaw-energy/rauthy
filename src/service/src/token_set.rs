@@ -1,9 +1,11 @@
 use chrono::Utc;
 use cryptr::utils::secure_random_alnum;
 use rauthy_api_types::oidc::{Audience, JktClaim};
+use rauthy_api_types::verification::ContactKind;
 use rauthy_common::constants::REFRESH_TOKEN_VALIDATION_LEN;
 use rauthy_common::utils::base64_url_no_pad_encode;
 use rauthy_data::entity::clients::Client;
+use rauthy_data::entity::contact_verifications::ContactVerification;
 use rauthy_data::entity::issued_tokens::IssuedToken;
 use rauthy_data::entity::jwk::{JwkKeyPair, JwkKeyPairAlg};
 use rauthy_data::entity::refresh_tokens::RefreshToken;
@@ -438,8 +440,10 @@ impl TokenSet {
             && let Some(phone) = &values.phone
         {
             claims.phone_number = Some(phone.as_str());
-            // Note: Rauthy does not have a mechanism to send SMS and therefore verify a number.
-            claims.phone_number_verified = Some(false);
+            claims.phone_number_verified = Some(
+                ContactVerification::is_verified(&user.id, ContactKind::Phone.as_str(), phone)
+                    .await?,
+            );
         }
         if scope.contains("groups") {
             claims.groups = Some(user.get_groups());

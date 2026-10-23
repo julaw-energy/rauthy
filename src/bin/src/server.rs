@@ -22,9 +22,9 @@ use rauthy_data::rauthy_config::RauthyConfig;
 use rauthy_handlers::openapi::ApiDoc;
 use rauthy_handlers::swagger_ui::{OPENAPI_CONFIG, OPENAPI_JSON};
 use rauthy_handlers::{
-    api_keys, atproto, auth_providers, backup, blacklist, clients, cors_preflight, dev_only, email,
-    events, fed_cm, generic, groups, html, kv, oidc, pam, roles, scalar, scopes, sessions,
-    swagger_ui, themes, tos, users,
+    api_keys, atproto, auth_providers, backup, blacklist, clients, contact_verification,
+    cors_preflight, dev_only, email, events, fed_cm, generic, groups, html, kv, oidc, pam, roles,
+    scalar, scopes, sessions, swagger_ui, themes, tos, users,
 };
 use rauthy_middlewares::csrf_protection::CsrfProtectionMiddleware;
 use rauthy_middlewares::ip_blacklist::RauthyIpBlacklistMiddleware;
@@ -526,6 +526,10 @@ fn api_services() -> actix_web::Scope {
                 .service(cors_preflight::options_users_register)
                 .service(cors_preflight::options_atproto_metadata)
                 .service(cors_preflight::options_openid_configuration)
+                .service(contact_verification::get_verification)
+                .service(contact_verification::post_verification_start)
+                .service(contact_verification::post_verification_confirm)
+                .service(contact_verification::put_verification)
                 .service(email::get_email_jobs)
                 .service(email::get_channels)
                 .service(email::post_send_email)

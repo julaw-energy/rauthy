@@ -77,7 +77,10 @@ COPY --from=book /work/static/book ./static/book
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/work/target \
-    cargo build --release --locked \
+    # A release build embeds the FIDO MDS dataset (passkey metadata), which is fetched first. This
+    # needs network access to mds.fidoalliance.org during the build.
+    cargo run --locked --bin fido-mds-prep -- --source https://mds.fidoalliance.org/ --out assets/fido_mds/dataset.bin \
+    && cargo build --release --locked \
     && cp target/release/rauthy /rauthy
 
 # ---------------------------------------------------------------------------------------------

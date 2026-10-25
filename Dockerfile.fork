@@ -1,0 +1,105 @@
+# syntax=docker/dockerfile:1.7
+#
+# Builds our Rauthy image from source, nothing from the host is needed but this repository:
+#   ui    -> the new UI (frontend-next) and the wasm modules
+#   book  -> the documentation that Rauthy serves at /auth/v1/book/
+#   build -> the release binary, with both of the above embedded
+#   final -> the same distroless runtime as the upstream image
+#
+#   docker buildx build -f Dockerfile.fork -t rauthy-custom:local --load .
+# or tools/image/build.sh
+#
+# The old UI (frontend/) is NOT part of the image. frontend-next only shares its source with it.
+
+ARG RUST_IMAGE=rust:1.95.0-bookworm
+
+# ---------------------------------------------------------------------------------------------
+FROM ${RUST_IMAGE} AS ui
+
+COPY --from=node:24-bookworm /usr/local/ /usr/local/
+RUN npm install -g pnpm@12.9.0 wasm-pack \
+    && rustup target add wasm32-unknown-unknown
+
+WORKDIR /work
+
+# wasm modules (they are members of the Cargo workspace)
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+RUN cd src/wasm-modules \
+    && wasm-pack build -d ../../frontend/src/wasm/spow --no-pack --out-name spow --features spow \
+    && wasm-pack build -d ../../frontend/src/wasm/md --no-pack --out-name md --features md
+
+# frontend-next shares logic with ../frontend, which resolves its imports from its own node_modules
+COPY frontend/package.json frontend/package-lock.json ./frontend/
+RUN cd frontend && npm ci
+COPY frontend-next/package.json frontend-next/pnpm-lock.yaml frontend-next/pnpm-workspace.yaml ./frontend-next/
+RUN cd frontend-next && pnpm install --frozen-lockfile
+
+COPY frontend ./frontend
+COPY frontend-next ./frontend-next
+RUN ln -sfn ../frontend/static frontend-next/static \
+    && cd frontend-next && pnpm build:dropin
+
+# ---------------------------------------------------------------------------------------------
+FROM ${RUST_IMAGE} AS book
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    cargo install mdbook@0.4.52 mdbook-admonish@1.20.0 --locked
+
+WORKDIR /work
+COPY book ./book
+RUN bash book/build-embed.sh
+
+# ---------------------------------------------------------------------------------------------
+FROM ${RUST_IMAGE} AS build
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential clang libpam0g-dev libudev-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+COPY . .
+COPY --from=ui /work/templates/html ./templates/html
+COPY --from=ui /work/static/v1 ./static/v1
+COPY --from=book /work/static/book ./static/book
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/work/target \
+    cargo build --release --locked \
+    && cp target/release/rauthy /rauthy
+
+# ---------------------------------------------------------------------------------------------
+FROM busybox AS empty
+RUN mkdir /empty
+
+FROM gcr.io/distroless/cc-debian12:nonroot
+
+ARG TARGET_USER="10001:10001"
+ARG CREATED
+ARG VERSION
+ARG SOURCE="https://github.com/sebadob/rauthy"
+
+LABEL org.opencontainers.image.base.name="gcr.io/distroless/cc-debian12:nonroot"
+LABEL org.opencontainers.image.created="$CREATED"
+LABEL org.opencontainers.image.description="Rauthy with our customisations: channels, message templates, required client data, new admin UI"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.source="$SOURCE"
+LABEL org.opencontainers.image.title="Rauthy (custom)"
+LABEL org.opencontainers.image.version="$VERSION"
+
+USER $TARGET_USER
+
+# default jemalloc tuning suitable for most deployments
+ENV MALLOC_CONF="abort_conf:true,narenas:8,tcache_max:4096,dirty_decay_ms:5000,muzzy_decay_ms:5000"
+
+WORKDIR /app
+
+COPY --from=build --chown=$TARGET_USER /rauthy ./rauthy
+COPY --chown=$TARGET_USER ./config-local-test.toml ./config-local-test.toml
+
+# the empty dirs, so they have the right owner when a volume is mounted over them
+COPY --from=empty --chown=$TARGET_USER /empty ./data
+COPY --from=empty --chown=$TARGET_USER /empty ./tls
+
+ENTRYPOINT ["/app/rauthy"]

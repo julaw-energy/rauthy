@@ -1,0 +1,63 @@
+# Builds our image and pushes it to the GitHub container registry (ghcr.io).
+#
+# It runs when you push to the branch `build-image`, or a tag like `v0.37.2-custom.1`, or when you
+# start it by hand (Actions -> Build image -> Run workflow). It needs NO secrets of your own: the
+# built-in GITHUB_TOKEN is allowed to push to the packages of this repository.
+#
+# One-time setup in the repository settings:
+#   Settings -> Actions -> General -> Workflow permissions: "Read and write permissions"
+# After the first push the package is private. To pull it on a server, `docker login ghcr.io` there
+# with a personal access token that has the `read:packages` scope.
+name: Build image
+
+on:
+  push:
+    branches: [build-image]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # tags: the branch name, the git tag, and the short commit (never changes, use it on servers)
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=sha-,format=short
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.fork
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            CREATED=${{ github.event.head_commit.timestamp }}
+            SOURCE=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

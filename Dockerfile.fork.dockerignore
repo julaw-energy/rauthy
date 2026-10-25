@@ -1,0 +1,29 @@
+# Used by Dockerfile.fork. The UI and the book are built inside of the image, so nothing generated
+# or heavy on the host goes into the build context.
+.git
+.github
+.claude
+.idea
+.vscode
+.devcontainer
+.helix
+.lapce
+CLAUDE.local.md
+local-dev
+target
+out
+data
+tls
+docs
+static
+templates/html
+rauthy-client
+tools
+**/node_modules
+**/.svelte-kit
+frontend/build
+frontend-next/build
+frontend-next/static
+frontend/src/wasm
+src/bin/tests/test_data
+heaptrack.*

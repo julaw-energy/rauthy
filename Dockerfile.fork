@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 #
 # Builds our Rauthy image from source, nothing from the host is needed but this repository:
 #   ui    -> the new UI (frontend-next) and the wasm modules

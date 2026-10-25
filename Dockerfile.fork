@@ -22,16 +22,19 @@ RUN npm install -g pnpm@12.9.0 \
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo install wasm-pack@0.15.0 --locked
 
+# wasm-pack uses a wasm-opt from the PATH when there is one. Its own download is too old for what
+# rustc emits.
+RUN curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_131/binaryen-version_131-$(uname -m)-linux.tar.gz" \
+    | tar -xz -C /tmp \
+    && cp /tmp/binaryen-version_131/bin/wasm-opt /usr/local/bin/wasm-opt \
+    && cp -r /tmp/binaryen-version_131/lib/. /usr/local/lib/ 2>/dev/null; ldconfig; wasm-opt --version
+
 WORKDIR /work
 
 # wasm modules (they are members of the Cargo workspace)
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-# wasm-pack's own wasm-opt is older than rustc and rejects the float-to-int instructions rustc emits
-# by default, so these are not emitted
-ENV RUSTFLAGS_WASM="-C target-feature=-nontrapping-fptoint"
 RUN cd src/wasm-modules \
-    && export RUSTFLAGS="$RUSTFLAGS_WASM" \
     && wasm-pack build -d ../../frontend/src/wasm/spow --no-pack --out-name spow --features spow \
     && wasm-pack build -d ../../frontend/src/wasm/md --no-pack --out-name md --features md
 

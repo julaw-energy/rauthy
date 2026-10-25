@@ -46,6 +46,8 @@ RUN cd frontend-next && pnpm install --frozen-lockfile
 
 COPY frontend ./frontend
 COPY frontend-next ./frontend-next
+# the shared sources of ../frontend extend its generated tsconfig
+RUN cd frontend && npx svelte-kit sync
 RUN ln -sfn ../frontend/static frontend-next/static \
     && cd frontend-next && pnpm build:dropin
 

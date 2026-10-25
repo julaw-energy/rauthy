@@ -30,6 +30,14 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 MIGRATIONS = REPO / "migrations" / "hiqlite"
+# our own migrations, numbered apart from upstream's, tracked in `_fork_migrations`
+FORK_MIGRATIONS = REPO / "migrations_fork" / "hiqlite"
+# the first version of this fork numbered them 36-43 in upstream's table, they are adopted once
+LEGACY = {
+    36: "user_gender", 37: "user_clients", 38: "user_attr_types", 39: "email_jobs_channel",
+    40: "contact_verifications", 41: "settings", 42: "client_required_fields",
+    43: "attr_verify_channels",
+}
 
 # Short-lived data: it changes by itself while the instance runs, so a different row count after
 # a start is no sign of loss.
@@ -37,6 +45,8 @@ EPHEMERAL = {
     "sessions", "refresh_tokens", "refresh_tokens_devices", "issued_tokens", "magic_links",
     "events", "login_locations", "user_login_states", "one_time_password", "devices",
     "recent_passwords", "pwd_exp_mails", "contact_verifications", "user_revoke", "_metadata",
+    # checked on their own: adopting the early fork migrations moves rows out of _migrations
+    "_migrations", "_fork_migrations",
     "sqlite_sequence", "sqlite_stat1", "sqlite_stat4",
 }
 # What the rehearsal switches off on its copy, so nothing leaves the machine
@@ -75,9 +85,9 @@ def migration_files(directory):
     return files
 
 
-def applied(db):
+def applied(db, table="_migrations"):
     try:
-        return {r[0]: (r[1], r[2]) for r in db.execute("select id, name, hash from _migrations")}
+        return {r[0]: (r[1], r[2]) for r in db.execute(f"select id, name, hash from {table}")}
     except sqlite3.Error:
         return None
 
@@ -102,7 +112,7 @@ def cmd_snapshot(args):
     return 0 if res == "ok" else 1
 
 
-def inspect(backup, mig_dir):
+def inspect(backup, mig_dir, fork_dir):
     """Prints the findings, returns True if the upgrade can go ahead"""
     print(f"Inspecting {backup}")
     good = True
@@ -119,39 +129,54 @@ def inspect(backup, mig_dir):
     if have is None:
         fail("no _migrations table: this is not a Rauthy / Hiqlite database")
         return False
+
+    # the first fork version numbered its migrations 36-43 in upstream's table
+    adopt = sorted(i for i, (n, _) in have.items() if LEGACY.get(i) == n)
+    if adopt and len(adopt) != len(LEGACY):
+        fail(f"only some of the early fork migrations are in upstream's table: {adopt}")
+        return False
+    have_up = {i: v for i, v in have.items() if i not in adopt}
     files = migration_files(mig_dir)
 
-    unknown = sorted(set(have) - set(files))
+    unknown = sorted(set(have_up) - set(files))
     if unknown:
         fail(
-            f"the database has migrations this build does not know: {unknown}. It was written by a "
-            "NEWER build. Do not start this build on it."
+            f"the database has upstream migrations this build does not know: {unknown}. It was "
+            "written by a NEWER build. Do not start this build on it."
         )
         good = False
-    changed = [i for i, (n, h) in have.items() if i in files and files[i][1] != h]
+    changed = [i for i, (n, h) in have_up.items() if i in files and files[i][1] != h]
     if changed:
-        fail(
-            f"the applied migrations {sorted(changed)} differ from the ones in this build. A "
-            "migration that was applied must never be edited."
-        )
+        fail(f"the applied migrations {sorted(changed)} differ from the ones in this build.")
         good = False
     if not unknown and not changed:
-        ok(f"all {len(have)} applied migrations match this build")
-
-    pending = sorted(set(files) - set(have))
-    if pending:
-        print(f"  The next start will apply {len(pending)} migration(s):")
-        for i in pending:
-            print(f"        {i:>3}  {files[i][0]}")
-    else:
-        ok("nothing to migrate, the database is up to date")
-
-    # a gap would mean an applied migration is missing in the middle
-    top = max(have) if have else 0
-    gaps = [i for i in range(1, top + 1) if i not in have]
+        ok(f"all {len(have_up)} applied upstream migrations match this build")
+    gaps = [i for i in range(1, max(have_up, default=0) + 1) if i not in have_up]
     if gaps:
-        fail(f"migrations are missing in the middle of the history: {gaps}")
+        fail(f"upstream migrations are missing in the middle of the history: {gaps}")
         good = False
+    up_pending = sorted(set(files) - set(have_up))
+    if up_pending:
+        print(f"  The next start will apply {len(up_pending)} upstream migration(s): {up_pending}")
+
+    # our own migrations
+    ffiles = migration_files(fork_dir)
+    fhave = applied(db, "_fork_migrations") or {}
+    if adopt:
+        print("  The early fork migrations 36-43 in upstream's table will be adopted into the fork table.")
+        fhave = {i - 35: (LEGACY[i], ffiles[i - 35][1]) for i in adopt if (i - 35) in ffiles}
+    funknown = sorted(set(fhave) - set(ffiles))
+    fchanged = [i for i, (n, h) in fhave.items() if i in ffiles and ffiles[i][1] != h and not adopt]
+    if funknown or fchanged:
+        fail(f"fork migrations do not match this build (unknown {funknown}, changed {fchanged})")
+        good = False
+    f_pending = sorted(set(ffiles) - set(fhave))
+    if f_pending:
+        print(f"  The next start will apply {len(f_pending)} fork migration(s):")
+        for i in f_pending:
+            print(f"        {i:>3}  {ffiles[i][0]}")
+    elif not funknown and not fchanged:
+        ok("all fork migrations are applied")
 
     counts = table_counts(db)
     print("  Data in the database:")
@@ -162,7 +187,7 @@ def inspect(backup, mig_dir):
 
 
 def cmd_inspect(args):
-    return 0 if inspect(Path(args.backup), Path(args.migrations)) else 1
+    return 0 if inspect(Path(args.backup), Path(args.migrations), Path(args.fork_migrations)) else 1
 
 
 # ---------------------------------------------------------------------------------------------
@@ -210,7 +235,7 @@ def wait_healthy(port, proc, log, timeout):
 def cmd_rehearse(args):
     backup = Path(args.backup).resolve()
     mig_dir = Path(args.migrations)
-    if not inspect(backup, mig_dir):
+    if not inspect(backup, mig_dir, Path(args.fork_migrations)):
         print("\nNot starting the rehearsal: fix the findings above first.")
         return 1
 
@@ -289,9 +314,16 @@ def cmd_rehearse(args):
     have = applied(db_after) or {}
     files = migration_files(mig_dir)
     if set(have) == set(files):
-        ok(f"migrations are at {max(have)}, same as this build")
+        ok(f"upstream migrations are at {max(have)}, same as this build")
     else:
-        fail(f"migrations applied: {sorted(set(files) - set(have))} are still missing")
+        fail(f"upstream migrations: {sorted(set(files) ^ set(have))} differ from this build")
+        good = False
+    fhave = applied(db_after, "_fork_migrations") or {}
+    ffiles = migration_files(Path(args.fork_migrations))
+    if set(fhave) == set(ffiles) and all(fhave[i][1] == ffiles[i][1] for i in fhave):
+        ok(f"fork migrations are at {max(fhave)}, same as this build")
+    else:
+        fail(f"fork migrations: {sorted(set(ffiles) ^ set(fhave))} differ from this build")
         good = False
     res = db_after.execute("pragma integrity_check").fetchone()[0]
     (ok if res == "ok" else fail)(f"integrity check after the migration: {res}")
@@ -342,6 +374,7 @@ def main():
     s = sub.add_parser("inspect", help="what would be applied, anything blocking")
     s.add_argument("backup")
     s.add_argument("--migrations", default=str(MIGRATIONS))
+    s.add_argument("--fork-migrations", default=str(FORK_MIGRATIONS))
     s.set_defaults(fn=cmd_inspect)
 
     s = sub.add_parser("rehearse", help="migrate a copy with this build and compare")
@@ -350,6 +383,7 @@ def main():
     s.add_argument("--cwd", help="where the binary finds its config.toml (default: the repository)")
     s.add_argument("--env-file", help="KEY=VALUE lines, like the environment of the real instance")
     s.add_argument("--migrations", default=str(MIGRATIONS))
+    s.add_argument("--fork-migrations", default=str(FORK_MIGRATIONS))
     s.add_argument("--workdir")
     s.add_argument("--db-name", default="hiqlite.db")
     s.add_argument("--timeout", type=int, default=240)

@@ -14,17 +14,26 @@ TAG="rauthy-custom:local"
 ACTION="--load"
 EXTRA=()
 PROFILE="release"
+VERSION=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --tag) TAG="$2"; shift 2 ;;
         --push) ACTION="--push"; shift ;;
         --fast) PROFILE="fast"; shift ;;
+        --version) VERSION="$2"; shift 2 ;;
         --platform) EXTRA+=(--platform "$2"); shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
 
-VERSION="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)-custom.$(git rev-parse --short HEAD)"
+# The version is <upstream version>-custom.<n>, like 0.37.2-custom.1 (git tag v0.37.2-custom.1).
+# Without --version it is taken from the newest such git tag on this commit, else from the commit.
+if [[ -z "${VERSION:-}" ]]; then
+    VERSION="$(git describe --tags --exact-match --match 'v*-custom.*' 2>/dev/null | sed 's/^v//' || true)"
+    if [[ -z "$VERSION" ]]; then
+        VERSION="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)-custom.dev.$(git rev-parse --short HEAD)"
+    fi
+fi
 if ! git diff --quiet HEAD -- . ':!tools'; then
     echo "NOTE: there are uncommitted changes, the image contains them (version $VERSION-dirty)"
     VERSION="$VERSION-dirty"

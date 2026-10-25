@@ -2,9 +2,14 @@
 
 This build adds features (users' connected apps, typed attributes, channels, message templates, settings in the
 database, required client data, ...). An existing Rauthy v0.37 database moves to it in place: the build carries 8 new
-migrations (Hiqlite `36` to `43`, Postgres `V31` to `V38`) and applies the missing ones at the first start. They only
-**add** tables and columns, nothing is dropped or rewritten, and your users, clients, passkeys, roles and groups are
-not touched.
+migrations of its own and applies them at the first start. They only **add** tables and columns, nothing is dropped
+or rewritten, and your users, clients, passkeys, roles and groups are not touched.
+
+Our migrations are kept **apart from upstream's**: they live in `migrations_fork/`, are numbered 1 to 8 and are tracked
+in their own table `_fork_migrations`. Hiqlite refuses to start when its applied migrations are not exactly a prefix of
+the built-in ones, so sharing upstream's numbering would make every migration that upstream adds collide with ours.
+Upstream's table `_migrations` stays exactly as upstream has it, so upstream releases can be merged without touching
+the database.
 
 `tools/upgrade/hiqlite_upgrade.py` (Python 3, nothing to install) adds the safety around that: a consistent snapshot,
 a check of what would happen, a rehearsal on a throw-away copy, and a before / after comparison of your data.
@@ -34,9 +39,9 @@ also the file you restore from if you ever want to go back (see below).
 python3 tools/upgrade/hiqlite_upgrade.py inspect /safe/place/before-upgrade.sqlite
 ```
 
-It checks that the file is intact, lists the migrations that will be applied, and **blocks** if the database was written
-by a newer build, or if an already applied migration differs from the one in this build (an applied migration must never
-be edited).
+It checks that the file is intact, lists the upstream and the fork migrations that will be applied, and **blocks** if the
+database was written by a newer build, or if an already applied migration differs from the one in this build (an applied
+migration must never be edited).
 
 ## 3. Rehearse on a Copy
 
@@ -91,9 +96,13 @@ is not tested.
 
 ## For Maintainers
 
-- The migrations `36` to `43` (Hiqlite) and `V31` to `V38` (Postgres) belong to this fork. Never edit one after it was
-  deployed, always add a new number.
-- Upstream numbers its migrations too. Before merging upstream, compare `migrations/` of both sides: a migration with the
-  same number on both sides has to be renumbered here, before anything is deployed.
-- This was rehearsed on a database rebuilt to the state of upstream v0.37.2 (migration 35) with real data: 8 migrations
-  applied, all rows kept. Postgres is not covered by the script, use a `pg_dump` and the same rehearsal idea there.
+- Our migrations go into `migrations_fork/hiqlite` and `migrations_fork/postgres` (same number, same name), numbered
+  1, 2, 3 ... at the end. Never edit one after it was deployed: its hash is checked and Rauthy refuses to start.
+- Never put our changes into upstream's `migrations/` folders. When you merge upstream, its migrations arrive there and
+  nothing collides.
+- A development database from the first version of this fork has our 8 migrations as 36-43 (Hiqlite) / V31-V38
+  (Postgres) in upstream's table. At the first start they are adopted once: recorded in `_fork_migrations` and removed
+  from upstream's table.
+- Rehearsed with the script: (1) a database rebuilt to the state of upstream v0.37.2 (migration 35): the 8 fork
+  migrations applied and all rows were kept; (2) a database with the early 36-43 numbering: adopted, then "nothing to
+  migrate". The Postgres code path compiles and is not rehearsed: test it against a copy before using Postgres.

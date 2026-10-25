@@ -244,6 +244,9 @@ impl DB {
             debug!(?report, "Database Migration Report");
         }
 
+        // our own changes come after upstream's, see `migrations_fork/`
+        crate::migration::fork_migrations::apply().await?;
+
         // seed the embedded FIDO MDS dataset when its tables are still empty (fresh instance or
         // an existing one upgrading into this version)
         MdsDataset::seed_embedded().await?;

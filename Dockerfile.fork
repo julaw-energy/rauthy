@@ -27,7 +27,11 @@ WORKDIR /work
 # wasm modules (they are members of the Cargo workspace)
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+# wasm-pack's own wasm-opt is older than rustc and rejects the float-to-int instructions rustc emits
+# by default, so these are not emitted
+ENV RUSTFLAGS_WASM="-C target-feature=-nontrapping-fptoint"
 RUN cd src/wasm-modules \
+    && export RUSTFLAGS="$RUSTFLAGS_WASM" \
     && wasm-pack build -d ../../frontend/src/wasm/spow --no-pack --out-name spow --features spow \
     && wasm-pack build -d ../../frontend/src/wasm/md --no-pack --out-name md --features md
 

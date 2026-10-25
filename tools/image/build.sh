@@ -27,7 +27,10 @@ if ! git diff --quiet HEAD -- . ':!tools'; then
     VERSION="$VERSION-dirty"
 fi
 
+# The daemon's own builder by default. Set BUILDER=<name> for another one, for example a
+# docker-container builder when you build for more than one platform.
 DOCKER_BUILDKIT=1 docker buildx build \
+    --builder "${BUILDER:-default}" \
     -f Dockerfile.fork \
     --build-arg CREATED="$(date --rfc-3339=seconds)" \
     --build-arg VERSION="$VERSION" \

@@ -13,12 +13,17 @@ export interface EmailTargets {
     not_groups: string[];
 }
 
-export type MessageChannel = 'email' | 'sms' | 'whatsapp';
+export type MessageChannel = string;
 
 export interface ChannelInfo {
     channel: MessageChannel;
-    /// 'smtp' | 'notifyd' | 'webhook'
+    /// 'smtp' | 'webhook' | 'http'
     driver: string;
+    /// true if the channel can send HTML content
+    html: boolean;
+    label: string;
+    /// the user value the channel delivers to: 'email' | 'phone' | 'attr:<name>'
+    recipient: string;
 }
 
 export interface EmailJobRequest {

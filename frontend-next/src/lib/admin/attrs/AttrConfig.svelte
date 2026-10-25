@@ -16,6 +16,7 @@
     import { slide } from 'svelte/transition';
     import { untrack } from 'svelte';
     import InputSelect from '$lib5/form/InputSelect.svelte';
+    import VerifyChannels from './VerifyChannels.svelte';
     import { ATTR_TYPES, attrFromText, attrToText, validateAttr, type AttrTyp } from '$lib5/attrTypes';
 
     let {
@@ -148,6 +149,13 @@
             label="Type"
             items={ATTR_TYPES}
         />
+        {#if typ === 'verified_email' || typ === 'verified_phone' || typ === 'verified'}
+            {#if attr.typ === typ}
+                <VerifyChannels name={attr.name} {typ} />
+            {:else}
+                <p class="text-muted-foreground text-xs">Save the type first, then choose the channels.</p>
+            {/if}
+        {/if}
         {#if typ === 'enum'}
             <Input
                 bind:value={options}

@@ -36,6 +36,7 @@
     import InputArea from '$lib/form/InputArea.svelte';
     import { parseJsonValue, stringifyJsonValue } from '$utils/jsonValue';
     import { untrack } from 'svelte';
+    import RequiredFields from './RequiredFields.svelte';
     import {
         invalidPostLogoutRedirectUrisMsg,
         invalidRedirectUrisMsg,
@@ -205,7 +206,23 @@
         }
     });
 
+    let requiredFields: string[] = $state([]);
+    let requiredRef: ReturnType<typeof RequiredFields> | undefined = $state();
+    let enabledScopes = $derived([
+        ...new Set([
+            ...scopes.filter(s => s.selected).map(s => s.name),
+            ...defaultScopes.filter(s => s.selected).map(s => s.name),
+        ]),
+    ]);
+
     async function fetchClientDetails() {
+        let rf = await fetchGet<{ fields: string[] }>(
+            `/auth/v1/clients/${client.id}/required_fields`,
+        );
+        if (rf.body) {
+            requiredFields = rf.body.fields;
+        }
+
         let res = await fetchGet<ClientResponse>(`/auth/v1/clients/${client.id}`);
         if (res.body) {
             let resp = res.body;
@@ -305,6 +322,17 @@
         }
 
         let res = await fetchPut(form.action, payload);
+        if (!res.error) {
+            // only keep what the enabled scopes still release
+            let visible = requiredRef?.visibleKeys();
+            let keep = visible ? requiredFields.filter(k => visible.has(k)) : requiredFields;
+            res = await fetchPut(`/auth/v1/clients/${client.id}/required_fields`, {
+                fields: keep,
+            });
+            if (!res.error) {
+                requiredFields = keep;
+            }
+        }
         if (res.error) {
             err = res.error.message;
         } else {
@@ -478,6 +506,12 @@
                 {ta.clients.scopes.default}
             </SelectList>
         </FormSection>
+
+        <RequiredFields
+            bind:this={requiredRef}
+            scopes={enabledScopes}
+            bind:required={requiredFields}
+        />
 
         <FormSection title="Tokens">
             <p class="text-muted-foreground text-sm">{ta.clients.tokenLifetime.p1}</p>

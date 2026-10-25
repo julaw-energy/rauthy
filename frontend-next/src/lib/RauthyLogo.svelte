@@ -14,8 +14,8 @@
 
 <div style:width style:height={width}>
     {#if show === 'dark' || (show === undefined && theme.isDark())}
-        <img src="/auth/v1/assets/rauthy_light.svg" alt="Rauthy Logo" class="h-full w-full" />
+        <img src="/auth/v1/assets/app_icon.svg" alt="Logo" class="h-full w-full" />
     {:else}
-        <img src="/auth/v1/assets/rauthy_dark.svg" alt="Rauthy Logo" class="h-full w-full" />
+        <img src="/auth/v1/assets/app_icon.svg" alt="Logo" class="h-full w-full" />
     {/if}
 </div>

@@ -7,6 +7,7 @@
         SettingsTestResponse,
         SmtpSettingsRequest,
     } from '$api/types/settings';
+    import InputCheckbox from '$lib5/form/InputCheckbox.svelte';
     import Button from '$lib5/button/Button.svelte';
     import Input from '$lib5/form/Input.svelte';
     import InputPassword from '$lib5/form/InputPassword.svelte';
@@ -140,9 +141,11 @@
                     name="smtp-password"
                 />
                 {#if settings?.smtp.has_password}
-                    <label class="text-muted-foreground flex items-center gap-2 text-xs">
-                        <input type="checkbox" bind:checked={clearPassword} /> Remove the stored password
-                    </label>
+                    <div class="text-muted-foreground text-xs">
+                        <InputCheckbox bind:checked={clearPassword} ariaLabel="Remove the stored password">
+                            Remove the stored password
+                        </InputCheckbox>
+                    </div>
                 {/if}
             </div>
         </div>

@@ -78,10 +78,10 @@
     {#if msg}
         <p class="text-destructive text-xs">{msg}</p>
     {/if}
-    {#if userId && (def.typ === 'verified_email' || def.typ === 'verified_phone')}
+    {#if userId && (def.typ === 'verified_email' || def.typ === 'verified_phone' || def.typ === 'verified')}
         <ContactVerify
             {userId}
-            kind={def.typ === 'verified_email' ? 'email' : 'phone'}
+            kind={def.typ === 'verified_email' ? 'email' : def.typ === 'verified_phone' ? 'phone' : 'other'}
             attr={def.name}
             current={value}
             {admin}

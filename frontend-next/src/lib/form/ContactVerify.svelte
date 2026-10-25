@@ -5,6 +5,7 @@
     import { fetchGet, fetchPost, fetchPut } from '$api/fetch';
     import type {
         AttrVerificationResponse,
+        ChannelOption,
         ContactKind,
         VerificationStatusResponse,
     } from '$api/types/verification';
@@ -60,6 +61,9 @@
     let err = $state('');
     let info = $state('');
     let cooldown = $state(0);
+    // where the code can go. The first one is the default, the user may pick another.
+    let channels: ChannelOption[] = $state([]);
+    let channel = $state('');
 
     // loads on mount and again when the saved value was changed from outside (e.g. after saving)
     $effect(() => {
@@ -79,30 +83,40 @@
                         : undefined,
                     canSend: res.body.verify_available,
                 };
+                setChannels(res.body.channels);
             }
         } else {
             let res = await fetchGet<VerificationStatusResponse>(base);
             if (res.body) {
                 status = {
                     contact: kind === 'email' ? res.body.email : res.body.phone,
-                    canSend: kind === 'email' || res.body.phone_verify_available,
+                    canSend:
+                        (kind === 'email' ? res.body.email_channels : res.body.phone_channels).length > 0,
                 };
+                setChannels(kind === 'email' ? res.body.email_channels : res.body.phone_channels);
             }
         }
+    }
+
+    function setChannels(list: ChannelOption[]) {
+        channels = list;
+        if (!list.some(c => c.name === channel)) channel = list[0]?.name ?? '';
     }
 
     async function start() {
         err = '';
         info = '';
         busy = true;
-        let res = await fetchPost(actionUrl('start'));
+        let res = await fetchPost(
+            channel ? `${actionUrl('start')}?channel=${encodeURIComponent(channel)}` : actionUrl('start'),
+        );
         busy = false;
         if (res.error) {
             err = res.error.message;
             return;
         }
         step = 'code';
-        info = kind === 'email' ? 'Code sent by email.' : 'Code sent by SMS.';
+        info = `Code sent through ${channels.find(c => c.name === channel)?.label ?? 'the channel'}.`;
         cooldown = 60;
         const timer = setInterval(() => {
             cooldown -= 1;
@@ -160,11 +174,24 @@
                 </Badge>
                 {#if step === 'idle'}
                     {#if canSend}
+                        {#if channels.length > 1}
+                            <select
+                                class="border-input bg-background h-8 rounded-md border px-2 text-xs"
+                                aria-label="Send the code through"
+                                bind:value={channel}
+                            >
+                                {#each channels as c (c.name)}
+                                    <option value={c.name}>{c.label}</option>
+                                {/each}
+                            </select>
+                        {/if}
                         <Button type="button" size="sm" variant="outline" disabled={busy} onclick={start}>
-                            Verify
+                            {channels.length === 1 ? `Verify by ${channels[0].label}` : 'Verify'}
                         </Button>
-                    {:else if kind === 'phone'}
-                        <span class="text-muted-foreground text-xs">No SMS channel configured.</span>
+                    {:else}
+                        <span class="text-muted-foreground text-xs">
+                            No channel is set up that can verify this value.
+                        </span>
                     {/if}
                     {#if admin && (kind === 'phone' || !!attr)}
                         <Button type="button" size="sm" variant="ghost" disabled={busy} onclick={() => setVerified(true)}>

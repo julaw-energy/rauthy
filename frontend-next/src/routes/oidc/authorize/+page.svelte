@@ -814,7 +814,12 @@
 
                 <Modal bind:showModal={showModalUpdate} strict>
                     <p>{t.authorize.needsUserUpdate}</p>
-                    <Button onclick={() => window.location.replace('/auth/v1/account')}>
+                    <Button
+                        onclick={() =>
+                            window.location.replace(
+                                `/auth/v1/account?complete_for=${encodeURIComponent(clientId || '')}&client_name=${encodeURIComponent(clientName || '')}&return=${encodeURIComponent(window.location.pathname + window.location.search)}`,
+                            )}
+                    >
                         {t.authorize.navigateToAccount}
                     </Button>
                 </Modal>

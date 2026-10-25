@@ -28,6 +28,7 @@
     import AccOther from '$lib/account/AccOther.svelte';
     import AccPAM from '$lib/account/AccPAM.svelte';
     import UserClients from '$lib/account/UserClients.svelte';
+    import MissingFields from '$lib/account/MissingFields.svelte';
     import type { PamUserResponse } from '$api/types/pam';
     import { fetchGet, fetchPost } from '$api/fetch';
     import type { UserValuesConfig } from '$api/templates/UserValuesConfig';
@@ -220,6 +221,8 @@
             </Button>
         </div>
     </header>
+
+    <MissingFields {user} />
 
     <div class="grid gap-3 {viewModeWideCompact ? '' : 'lg:grid-cols-[minmax(20rem,26rem)_1fr]'}">
         {#if !viewModeWideCompact}

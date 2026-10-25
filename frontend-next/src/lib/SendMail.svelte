@@ -73,12 +73,15 @@
     // channels the backend has a driver for; the selector only shows up if there is a choice
     let channels: MessageChannel[] = $state(['email']);
     let channel: MessageChannel = $state('email');
-    let isEmail = $derived(channel === 'email');
-    const channelLabels: Record<MessageChannel, string> = {
+    // channels that send styled mail (the default mailer and own-server smtp channels) get the full editor
+    let htmlChannels: string[] = $state(['email']);
+    let isEmail = $derived(htmlChannels.includes(channel));
+    // names from the backend, channels can be added by an admin
+    let channelLabels: Record<MessageChannel, string> = $state({
         email: 'E-Mail',
         sms: 'SMS',
         whatsapp: 'WhatsApp',
-    };
+    });
 
     let roleItems: SelectItem[] = $state([]);
     let groupItems: SelectItem[] = $state([]);
@@ -113,6 +116,8 @@
         let ch = await fetchGet<ChannelInfo[]>('/auth/v1/email/channels');
         if (ch.body && ch.body.length > 0) {
             channels = ch.body.map(c => c.channel);
+            for (const c of ch.body) channelLabels[c.channel] = c.channel === 'email' ? 'E-Mail' : c.label;
+            htmlChannels = ch.body.filter(c => c.html).map(c => c.channel);
             if (!channels.includes(channel)) channel = channels[0];
         }
 

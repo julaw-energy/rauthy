@@ -11,6 +11,7 @@ export type AttrTyp =
     | 'phone'
     | 'verified_email'
     | 'verified_phone'
+    | 'verified'
     | 'number'
     | 'integer'
     | 'boolean'
@@ -27,6 +28,7 @@ export const ATTR_TYPES: { value: AttrTyp; label: string }[] = [
     { value: 'phone', label: 'Phone number' },
     { value: 'verified_email', label: 'Email address (verifiable)' },
     { value: 'verified_phone', label: 'Phone number (verifiable)' },
+    { value: 'verified', label: 'Text (verifiable through a channel)' },
     { value: 'number', label: 'Number' },
     { value: 'integer', label: 'Whole number' },
     { value: 'boolean', label: 'Yes / No' },
@@ -54,6 +56,7 @@ const DEFAULT_MSG: Record<AttrTyp, string> = {
     phone: 'Enter a phone number with country code, like +256700000000',
     verified_email: 'Enter a valid email address',
     verified_phone: 'Enter a phone number with country code, like +256700000000',
+    verified: 'Invalid value',
     number: 'Enter a number',
     integer: 'Enter a whole number',
     boolean: 'Choose yes or no',

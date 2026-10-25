@@ -1,4 +1,5 @@
-export type MessageChannel = 'email' | 'sms' | 'whatsapp';
+/// 'email' and 'sms' always exist, an admin can add more
+export type MessageChannel = string;
 
 export type UserValueRequirement = 'required' | 'optional' | 'hidden';
 
@@ -62,14 +63,44 @@ export interface SmtpSettingsResponse {
     from_db: boolean;
 }
 
+export interface HttpKvResponse {
+    name: string;
+    /// undefined for a secret, it never leaves the backend
+    value?: string;
+    secret: boolean;
+}
+
+export interface HttpSettingsResponse {
+    /// 'POST' | 'PUT' | 'PATCH'
+    method: string;
+    url: string;
+    headers: HttpKvResponse[];
+    /// 'json' | 'form'
+    body_format: string;
+    body: HttpKvResponse[];
+}
+
 export interface ChannelSettingsResponse {
     channel: MessageChannel;
-    /// '' (disabled) | 'smtp' (email only) | 'notifyd' | 'webhook'
+    /// '' (disabled) | 'smtp' | 'webhook' | 'http'
     driver: string;
+    /// webhook
     url?: string;
+    /// webhook: a signing secret is set
     has_api_key: boolean;
-    channel_name: string;
     from_db: boolean;
+    /// shown instead of the name
+    label: string;
+    /// the user value this channel delivers to: 'email' | 'phone' | 'attr:<name>'
+    recipient: string;
+    /// 'email' and 'sms' cannot be deleted
+    builtin: boolean;
+    /// Unix timestamp after which the channel stops working (custom channels)
+    expires?: number;
+    expired: boolean;
+    /// smtp of a custom channel: its own server
+    smtp?: SmtpSettingsResponse;
+    http?: HttpSettingsResponse;
 }
 
 export interface SettingsResponse {
@@ -92,12 +123,33 @@ export interface SmtpSettingsRequest {
     tls_mode: string;
 }
 
+export interface HttpKvRequest {
+    name: string;
+    /// for a secret, undefined keeps the stored value of the entry with the same name
+    value?: string;
+    secret: boolean;
+}
+
+export interface HttpSettingsRequest {
+    method: string;
+    url: string;
+    headers: HttpKvRequest[];
+    /// 'json' | 'form'. A body name like `messages.0.to` builds nested JSON.
+    body_format: string;
+    body: HttpKvRequest[];
+}
+
 export interface ChannelSettingsRequest {
     driver: string;
     url?: string;
-    /// undefined keeps the stored key, an empty string removes it
+    /// webhook signing secret. undefined keeps the stored one, an empty string removes it
     api_key?: string;
-    channel_name?: string;
+    label?: string;
+    recipient?: string;
+    /// custom channels only, undefined: never expires
+    expires?: number;
+    smtp?: SmtpSettingsRequest;
+    http?: HttpSettingsRequest;
 }
 
 export interface SettingsTestResponse {

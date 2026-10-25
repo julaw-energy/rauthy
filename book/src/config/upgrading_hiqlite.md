@@ -17,6 +17,14 @@ Works while the instance runs, and gives one consistent file:
 python3 tools/upgrade/hiqlite_upgrade.py snapshot /path/to/rauthy_data /safe/place/before-upgrade.sqlite
 ```
 
+The data dir of the container belongs to the container user (`10001`), so your own user cannot read it. Run the script
+as root (`sudo python3 ...`), or without installing anything, in a throw-away container that has Python:
+
+```bash
+docker run --rm -v /path/to/rauthy_data:/data:ro -v $PWD/tools/upgrade:/t:ro -v /safe/place:/out python:3-slim \
+    python /t/hiqlite_upgrade.py snapshot /data /out/before-upgrade.sqlite
+```
+
 The file holds everything, password hashes and encrypted secrets included. Protect it like the database itself. It is
 also the file you restore from if you ever want to go back (see below).
 
@@ -60,9 +68,15 @@ in a **config file** cannot be switched off from outside: use a config without t
 
 ## 5. Upgrade
 
-1. Stop the old container.
-2. Copy the data dir (`cp -a rauthy_data rauthy_data.before`). This is your quickest way back.
-3. Start the new image on the same data dir. The migrations are applied at startup and logged.
+The storage directory that the running container mounts (it holds the Hiqlite database, its raft logs / WAL and the
+snapshots) is upgraded **in place**: the new image is started on the same mount. Hiqlite opens the existing logs and
+state, applies the 8 missing migrations inside the database and carries on. Tested with the built image: a restore of a
+v0.37.2 database applied migrations 36 to 43, and a second start on the same data dir found "nothing to migrate".
+
+1. Stop the old container gracefully (`docker stop -t 30`), so Hiqlite flushes and closes its logs.
+2. Copy the whole data dir (`cp -a rauthy_data rauthy_data.before`). This is your quickest way back.
+3. Start the new image with the same mount, the same config and the same secrets and encryption keys. The migrations
+   are applied at startup and logged (`Applying database migration 36 user_gender` ...).
 4. Log in, open the admin UI, check **Config → Channels** and send a test message.
 
 If you prefer to start from the snapshot in a fresh data dir, set `HQL_BACKUP_RESTORE=file:/app/data/restore.sqlite`

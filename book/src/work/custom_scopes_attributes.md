@@ -36,8 +36,25 @@ choice, expand the entry and choose the `Attributed` tab.
 ![set user attribute](img/set_user_attr.png)
 
 ```admonish info
-The custom values for users are always interpreted, saved and returned `String`s without any further validation.
+Values are checked against the attribute's type when saved, by the backend as well as the UI.
 ```
+
+### Attribute Types
+
+When you create an attribute you choose its type. The editor then shows a matching input and invalid values are
+rejected:
+
+| Type | Value |
+|---|---|
+| Text (single line), Text (multi line) | text |
+| Email address, Phone number | validated format; phone numbers use `+256700216664` |
+| Email address (verifiable), Phone number (verifiable) | as above, and the user can prove them with a code, see [Verifying Email and Phone](verification.md) |
+| Number, Whole number, Yes / No | stored as a real JSON number or boolean in the token |
+| Date, Web address (URL), Country, Timezone | validated format |
+| Choice from a list | one of the options you list |
+
+For every type you can additionally set a **regular expression** and the **error message** shown to the user when
+it does not match, for example a national ID pattern.
 
 ## Create a Custom Scope
 
@@ -69,6 +86,11 @@ The `Allowed Scopes` are the ones a client is allowed to request when redirectin
 to initiate the `authorization_code` flow. The `Default Scopes` are the ones that Rauthy will simply always add. This is
 useful for instance when you are using `client_credentials` or another flow, because only the `authorization_code`
 flow can request specific scopes while all others can't.
+
+## Require It for a Client
+
+If a client cannot work without a value, you can make it mandatory for that client, see
+[Required User Data per Client](required_client_data.md).
 
 ## Finish
 

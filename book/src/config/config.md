@@ -517,6 +517,579 @@ Kubernetes secrets, or simply provide the whole config as one secret (my preferr
 # overwritten by: BOOTSTRAP_DIR
 #bootstrap_dir = 'bootstrap'
 
+[channels]
+# Settings in the database: on the first start, `[email]` SMTP values and `[channels.*]` found here
+# are copied into the database ONCE ("seeded"). From then on the database is authoritative and
+# they are edited in the admin UI (Config -> Email / Channels) without a restart; the matching
+# keys can then be removed from this file. The admin UI can also re-import the current file
+# values at any time. Without any SMTP server Rauthy still starts; emails are just not sent
+# until one is set up.
+#
+# `email` and `sms` always exist (the user's email address and phone number). More channels are
+# created in the admin UI (Config -> Channels), where `http` channels and channels with their own
+# SMTP server are set up too. Drivers here:
+# - "smtp":    the built-in mailer (email only, the default for email)
+# - "webhook": POSTs the Rauthy message contract (JSON, version 1) to `url`, signed with
+#              `X-Rauthy-Signature: sha256=<hex hmac of the raw body>` when an `api_key` is set.
+#              Any communication agent only has to understand this one format.
+# An empty driver disables the channel. If the email channel uses the webhook driver, ALL emails
+# (password resets, codes, ...) are handed to the agent instead of an SMTP server.
+#
+# Env vars: CHANNEL_<EMAIL|SMS>_<DRIVER|URL|API_KEY>
+[channels.email]
+# default: "smtp"
+#driver = "smtp"
+#url = ""
+# webhook: the HMAC signing secret
+#api_key = ""
+
+[channels.sms]
+# default: ""
+#driver = "webhook"
+#url = "https://agent.example.com/hook"
+#api_key = "signing secret"
+
+[cluster]` + `[database]` + `[email.*]` sections
+- `bootstrap.admin_email`
+- !!! `[encryption]`
+- `hashing.max_hash_threads` in combination with `server.http_workers`
+- !!! `server.pub_url` + `server.proxy_mode` + `server.trusted_proxies`
+- `[tls]` if you don't terminate TLS on your reverse proxy
+- !!! `webauthn.rp_id` + `webauthn.rp_origin` + `webauthn.rp_name`
+
+```admonish caution
+When you go into production, make sure that you provide the included secrets / sensitive
+information in this file in an appropriate way. With docker, you can leave them inside this file 
+(with proper access rights!), but when deploying with Kubernetes, either extract these values into 
+Kubernetes secrets, or simply provide the whole config as one secret (my preferred approach).
+```
+
+```toml
+[access]
+# If set to true, the `/userinfo` endpoint will do additional
+# validations. The non-strict mode will fetch the user by id from
+# the `sub` claim and make sure it still exists and is enabled. The
+# strict validation will do additional database fetches and
+# validates every possible value. Additionally, it will look up a
+# possibly linked user device from the `did` claim and make sure it
+# still exists. It will also extract the `client_id` the token has
+# been originally issued for from the `azp` claim, fetch it and
+# make sure it still exists and is enabled.
+#
+# If you need CORS headers on the /userinfo endpoint, you must
+# enable strict mode, because otherwise the additional data would
+# be missing.
+#
+# If you don't need the extra validations, you can set this to
+# `false` to save some resources, if your clients to a lot of
+# `/userinfo` lookups.
+#
+# default: true
+# overwritten by: USERINFO_STRICT
+#userinfo_strict = true
+
+# Can be set to `true` to disable authorization on `/oidc/introspect.
+# This should usually never be done, but since the auth on that
+# endpoint is not really standardized, you may run into issues with
+# your client app. If so, please open an issue about it.
+#
+# default: false
+# overwritten by: DANGER_DISABLE_INTROSPECT_AUTH
+#danger_disable_introspect_auth = false
+
+# By default, `refresh_token`s will have an `nbf` claim, making them
+# valid at `access_token_lifetime - 60 seconds`. Any usage before
+# this time will result in invalidation of not only the token itself,
+# but also all other linked sessions and tokens for this user to
+# prevent damage in case a client leaked the token by accident.
+# However, there are bad / lazy client implementations that do not
+# respect either `nbf` in the `refresh_token`, or the `exp` claim in
+# `access_token` and will refresh early while the current
+# access_token is still valid. This does not only waste resources
+# and time, but also makes it possible to have multiple valid
+# `access_token`s at the same time for the same session. You should
+# only disable the `nbf` claim if you have a good reason to do so.
+# If disabled, the `nbf` claim will still exist, but always set to
+# *now*.
+#
+# default: false
+# overwritten by: DISABLE_REFRESH_TOKEN_NBF
+#disable_refresh_token_nbf = false
+
+# If set to true, a violation inside the CSRF protection middleware
+# based on Sec-* headers will block invalid requests. Usually you
+# always want this enabled. You may only set it to false during the
+# first testing phase if you experience any issues with an already
+# existing Rauthy deployment. In future releases, it will not be
+# possible to disable these blocks.
+#
+# default: true
+# overwritten by: SEC_HEADER_BLOCK
+#sec_header_block = true
+
+# If set to 'true', this will validate the remote peer IP address with
+# each request and compare it with the IP which was used during the
+# initial session creation / login. If the IP is different, the session
+# will be rejected.
+#
+# This is a security hardening and prevents stolen access credentials,
+# for instance if an attacker might have copied the encrypted session
+# cookie and the XSRF token from the local storage from a user.
+# However, this event is really unlikely, since it may only happen if
+# an attacker has direct access to the machine itself.
+#
+# If your users are using mobile networks and get new IP addresses all
+# the time, this means they have to do a new login each time. This is
+# no big deal at all with Webauthn / FIDO keys anyway and should not
+# be a reason to deactivate this feature.
+#
+# CAUTION: If you are running behind a reverse proxy which does not
+# provide the X-FORWARDED-FOR header correctly, or you have the
+# `proxy_mode` in this config disabled, this feature will not work.
+# You can validate the IPs for each session in the Admin UI. If these
+# are correct, your setup is okay.
+#
+# default: true
+# overwritten by: SESSION_VALIDATE_IP
+#session_validate_ip = true
+
+# By default, Rauthy will log a warning into the logs, if an active
+# password reset form is being accessed multiple times from different
+# hosts. You can set this to `true` to actually block any following
+# request after the initial one. This hardens the security of the
+# password reset form a bit more, but will create problems with
+# E-Mail providers like Microsoft, which cans the customers E-Mails
+# and even uses links inside, which make them unusable with this set
+# to `true`.
+#
+# This feature works by setting an encrypted cookie to the host
+# whichever opens the password reset form for the very first time.
+# All subsequent requests either need to provide that cookie or would
+# otherwise be rejected.
+#
+# default: false
+# overwritten by: PASSWORD_RESET_COOKIE_BINDING
+#password_reset_cookie_binding = false
+
+# Can be set to extract the remote client peer IP from a custom
+# header name instead of the default mechanisms. This is needed
+# when you are running behind a proxy which does not set the
+# `X-REAL-IP` or `X-FORWARDED-FOR` headers correctly, or for
+# instance when you proxy your requests through a CDN like
+# Cloudflare, which adds custom headers in this case. For instance,
+# if your requests are proxied through cloudflare, your would set
+# `CF-Connecting-IP`.
+#
+# overwritten by: PEER_IP_HEADER_NAME
+#peer_ip_header_name = ''
+
+# You can set different security levels for Rauthy's cookies. The
+# safest option would be 'host', but may not be desirable when you
+# host an application on the same origin behind a reverse proxy.
+# In this case you might want to restrict to 'secure', which will
+# then take the `cookie_set_path` from below into account. The last
+# option is 'danger-insecure' which really should never be used
+# unless you are just testing on localhost.
+#
+# default: host
+# overwritten by: COOKIE_MODE
+#cookie_mode = 'host'
+
+# If set to 'true', Rauthy will bind the cookie to the `/auth`
+# path. You may want to change this only for very specific reasons
+# and if you are in such a situation, where you need this, you will
+# know it. Otherwise, don't change this value.
+#
+# default: true
+# overwritten by: COOKIE_SET_PATH
+#cookie_set_path = true
+
+# The `sub` claim should only contain End-User IDs. Therefore, it will
+# be `null` for the `client_credentials` flow. However, some applications
+# need the `sub` claim to contain the `client_id` in such a case for
+# whatever reason (it exists in `azp` / `aud` already anyway). You can
+# enable this setting here.
+#
+# CAUTION:
+# Theoretically, it is possible to create a client with an Id that
+# matches a user ID (if one with no uppercase chars was generated).
+# If this is the case, it is NOT possible to distinguish between
+# a user and a client token in such a scenario!
+# The chance that an ID for a user without an uppercase char exists
+# is almost 0, but it exists.
+#
+# default: false
+# overwritten by: CLIENT_CREDENTIALS_MAP_SUB
+#client_credentials_map_sub = false
+
+# Sets the limit in characters for the maximum JWT token length that
+# will be accepted when validating it. The default of 4096 is high
+# enough that you should never worry about this value. A typical
+# `id_token` with quite a few additional custom attributes and scopes,
+# signed with RS512, will usually be below 2000 characters.
+#
+# Only if you create very big tokens and you get errors on the
+# `/userinfo` for instance, you might want to increase this value.
+# Otherwise, don't worry about it.
+#
+# default: 4096
+# overwritten by: TOKEN_LEN_LIMIT
+#token_len_limit = 4096
+
+# Revoke JWT access + refresh tokens if a user does a dedicated logout
+# from the account dashboard via the logout button, or when a
+# (backchannel) logout is being triggered from a client.
+# In most situations, you want your tokens to be able to live longer
+# than a session on Rauthy, especially refresh tokens, or access tokens
+# issues to headless devices via the `device_code` flow.
+#
+# !!! CAUTION !!!
+# JWT token revocation is a myth and doesn't exist. You can only
+# blacklist, but not revoke them, even though that's the official term
+# used in the RFC. Token revocation does only work, when a client
+# validates tokens against the `/introspection` or `/userinfo`
+# endpoints, but they will still be valid, if a client just validates
+# via public keys!
+#
+# The default value of `false` makes the most sense, because token
+# revocation is NOT reliable on its own! It only works with the
+# "correct" implementation on the client side, which also involves
+# a lot more resource and traffic usage!
+#
+# If a session is being force-deleted or a user is force-logged-out
+# via the AdminUI, tokens will always be revoked, which makes the
+# most sense.
+#
+# default: false
+# overwritten by: TOKEN_REVOKE_ON_LOGOUT
+#token_revoke_on_logout = false
+
+# If set to true, tokens issued via the `device_code` flow will be
+# revoked during `/logout`.
+# These tokens are usually used on headless IoT devices or for CLIs
+# on remote servers, and logging these back in can be a lot more
+# work than the default logins via browser.
+#
+# This value will only be respected, if `token_revoke_on_logout` is
+# set to `true` as well. Otherwise, tokens will only be revoked
+# via the dedicated `revocation_endpoint` or forced logout from an
+# admin.
+#
+# default: false
+# overwritten by: TOKEN_REVOKE_DEVICE_TOKENS
+#token_revoke_device_tokens = false
+
+# If set to `true`, the `/auth/v1/whoami` endpoint will return all
+# request headers. Only the `Cookie` and Rauthys internal CSRF headers
+# will be hidden. Since this has the potential to leak sensitive
+# information, depending on your networking, this is disabled by default.
+#
+# default: false
+# overwritten by: WHOAMI_HEADERS
+#whoami_headers = false
+
+# You can hide the 'Admin' button on the root / landing page for the UI.
+# The admin interface is always reachable via `/auth/v1/admin`, and the
+# button will only redirect, of course, only when the user is assigned to
+# the `rauthy_admin` role. However, if you are hosting some public service,
+# you might not want the button to show up there.
+#
+# default: false
+# overwritten by: ADMIN_BUTTON_HIDE
+#admin_button_hide = false
+
+# If set to `true`, requests to `/auth/v1/` will be redirected to
+# `/auth/v1/account` (the account dashboard). This is useful if you want
+# users to land directly on their account page when visiting the root URL.
+#
+# default: false
+# overwritten by: REDIRECT_ROOT_TO_ACCOUNT
+#redirect_root_to_account = false
+
+[atproto]
+# Set to `true` to enable the ATProto provider. If the public URL is
+# 'localhost' it should be changed to '127.0.0.1', if `dev_mode = true`
+# this also applies for the `provider_callback_url`.
+#
+# default: false
+# overwritten by: ATPROTO_ENABLE
+#enable = false
+
+[auth_headers]
+# You can enable authn/authz headers which would be added to the
+# response of the `/auth/v1/oidc/forward_auth` endpoint. When set to
+# `true`, the headers below will be added to authenticated requests.
+# These could be used on legacy downstream applications, that don't
+# support OIDC on their own.
+#
+# However, be careful when using this, since this kind of authn/authz
+# has a lot of pitfalls out of the scope of Rauthy.
+#
+# default: false
+# overwritten by: AUTH_HEADERS_ENABLE
+#enable = false
+
+# If additionally, the preferred username header should be enabled.
+# This requires an additional DB lookup each time and is therefore
+# disabled by default.
+#
+# default: false
+# overwritten by: AUTH_HEADERS_ENABLE_PREF_USERNAME
+#enable_pref_username = false
+
+# If `true`, the values of all auth headers are percent-encoded
+# (UTF-8, like URLs), so that non-ASCII characters, for instance
+# in names, can be passed safely through proxies and backends.
+# Only non-ASCII bytes, control characters and `%` itself are
+# encoded, other ASCII characters like spaces and commas stay the
+# same. Decode the values once as UTF-8 on the receiving side
+# (a `+` is not a space here).
+#
+# default: false
+# overwritten by: AUTH_HEADERS_PERCENT_ENCODE
+#percent_encode = false
+
+# Configure the header names being used for the different values. You
+# can change them to your needs, if you cannot easily change your
+# downstream apps.
+#
+# default: x-forwarded-user
+# overwritten by: AUTH_HEADER_USER
+#user = 'x-forwarded-user'
+# default: x-forwarded-user-roles
+# overwritten by: AUTH_HEADER_ROLES
+#roles = 'x-forwarded-user-roles'
+# default: x-forwarded-user-groups
+# overwritten by: AUTH_HEADER_GROUPS
+#groups = 'x-forwarded-user-groups'
+# default: x-forwarded-user-email
+# overwritten by: AUTH_HEADER_EMAIL
+#email = 'x-forwarded-user-email'
+# default: x-forwarded-user-email-verified
+# overwritten by: AUTH_HEADER_EMAIL_VERIFIED
+#email_verified = 'x-forwarded-user-email-verified'
+# default: x-forwarded-user-family-name
+# overwritten by: AUTH_HEADER_FAMILY_NAME
+#family_name = 'x-forwarded-user-family-name'
+# default: x-forwarded-user-given-name
+# overwritten by: AUTH_HEADER_GIVEN_NAME
+#given_name = 'x-forwarded-user-given-name'
+# default: x-forwarded-user-mfa
+# overwritten by: AUTH_HEADER_MFA
+#mfa = 'x-forwarded-user-mfa'
+
+# default: x-forwarded-user-pref-username
+# overwritten by: AUTH_HEADER_PREF_USERNAME
+#preferred_username = 'x-forwarded-user-pref-username'
+
+[backchannel_logout]
+# The maximum amount of retries made for a failed backchannel logout.
+# Failed backchannel logouts will be retried every 60 - 90 seconds
+# from all cluster nodes. The timeout between retries is randomized
+# to avoid overloading clients. It will be executed on each cluster
+# member to increase the chance of a successful logout in case of
+# network segmentations.
+#
+# default: 100
+# overwritten by: BACKCHANNEL_LOGOUT_RETRY_COUNT
+#retry_count = 100
+
+# The lifetime / validity for Logout Tokens issued by Rauthy.
+# These Logout Tokens are being generated during OIDC
+# Backchannel Logout requests to configured clients. The token
+# lifetime should be as short as possible and at most 120 seconds.
+#
+# type: duration
+# default: '30s'
+# overwritten by: LOGOUT_TOKEN_LIFETIME
+#token_lifetime = '30s'
+
+# You can allow a clock skew during the validation of Logout Tokens,
+# when Rauthy is being used as a client for an upstream auth
+# provider that uses backchannel logout.
+#
+# type: duration
+# default: '5s'
+# overwritten by: LOGOUT_TOKEN_ALLOW_CLOCK_SKEW
+#allow_clock_skew = '5s'
+
+# The maximum allowed lifetime for Logout Tokens. This value is
+# a security check for upstream auth providers. If Rauthy
+# receives a Logout Token, it will check and validate, that the
+# difference between `iat` and `exp` is not greater than
+# `allowed_token_lifetime`. This means Rauthy will reject Logout
+# Tokens from clients with a way too long validity and therefore
+# poor implementations. The RFC states that tokens should be
+# valid for at most 120 seconds.
+#
+# type: duration
+# default: '120s'
+# overwritten by: LOGOUT_TOKEN_ALLOWED_LIFETIME
+#allowed_token_lifetime = '120s'
+
+[bootstrap]
+# If set, the email of the default admin will be changed during
+# the initialization of an empty production database.
+#
+# default: 'admin@localhost'
+# overwritten by: BOOTSTRAP_ADMIN_EMAIL
+#admin_email = 'admin@localhost'
+
+# If set, this plain text password will be used for the initial
+# admin password instead of generating a random password.
+#
+# default: random -> see logs on first start
+# overwritten by: BOOTSTRAP_ADMIN_PASSWORD_PLAIN
+#password_plain = '123SuperSafe'
+
+# If set, this will take the Argon2ID hashed password during the
+# initialization of an empty production database. If both
+# `password_plain` and `password_argon2id` are set, the hashed
+# version will always be prioritized.
+#
+# default: random -> see logs on first start
+# overwritten by: BOOTSTRAP_ADMIN_PASSWORD_ARGON2ID
+#password_argon2id = '$argon2id$v=19$m=32768,t=3,p=2$mK+3taI5mnA+Gx8OjjKn5Q$XsOmyvt9fr0V7Dghhv3D0aTe/FjF36BfNS5QlxOPep0'
+
+# You can provide a single API Key during the initial prod database
+# bootstrap. This legacy config value must match the format and pass validation.
+# Prefer `api_keys.json` in `bootstrap_dir` for new deployments.
+# You need to provide it as a base64 encoded JSON in the format:
+#
+# ```
+# struct ApiKeyRequest {
+#     /// Validation: `^[a-zA-Z0-9_-/]{2,24}$`
+#     name: String,
+#     /// Unix timestamp in seconds
+#     exp: Option<i64>,
+#     access: Vec<ApiKeyAccess>,
+# }
+#
+# struct ApiKeyAccess {
+#     group: AccessGroup,
+#     access_rights: Vec<AccessRights>,
+# }
+#
+# enum AccessGroup {
+#     Blacklist,
+#     Clients,
+#     Events,
+#     Generic,
+#     Groups,
+#     Roles,
+#     Secrets,
+#     Sessions,
+#     Scopes,
+#     UserAttributes,
+#     Users,
+#     Pam,
+# }
+#
+# #[serde(rename_all="lowercase")]
+# enum AccessRights {
+#     Read,
+#     Create,
+#     Update,
+#     Delete,
+# }
+# ```
+#
+# You can use the `api_key_example.json` from `/` as
+# an example. Afterward, just
+# `base64 api_key_example.json | tr -d '\n'`
+#
+# overwritten by: BOOTSTRAP_API_KEY
+#api_key = 'ewogICJuYW1lIjogImJvb3RzdHJhcCIsCiAgImV4cCI6IDE3MzU1OTk2MDAsCiAgImFjY2VzcyI6IFsKICAgIHsKICAgICAgImdyb3VwIjogIkNsaWVudHMiLAogICAgICAiYWNjZXNzX3JpZ2h0cyI6IFsKICAgICAgICAicmVhZCIsCiAgICAgICAgImNyZWF0ZSIsCiAgICAgICAgInVwZGF0ZSIsCiAgICAgICAgImRlbGV0ZSIKICAgICAgXQogICAgfSwKICAgIHsKICAgICAgImdyb3VwIjogIlJvbGVzIiwKICAgICAgImFjY2Vzc19yaWdodHMiOiBbCiAgICAgICAgInJlYWQiLAogICAgICAgICJjcmVhdGUiLAogICAgICAgICJ1cGRhdGUiLAogICAgICAgICJkZWxldGUiCiAgICAgIF0KICAgIH0sCiAgICB7CiAgICAgICJncm91cCI6ICJHcm91cHMiLAogICAgICAiYWNjZXNzX3JpZ2h0cyI6IFsKICAgICAgICAicmVhZCIsCiAgICAgICAgImNyZWF0ZSIsCiAgICAgICAgInVwZGF0ZSIsCiAgICAgICAgImRlbGV0ZSIKICAgICAgXQogICAgfQogIF0KfQ=='
+
+# The secret for the above defined bootstrap API Key.
+# This must be at least 64 alphanumeric characters long.
+# You will be able to use that key afterward with setting
+# the `Authorization` header:
+#
+# `Authorization: API-Key <your_key_name_from_above>$<this_secret>`
+#
+# overwritten by: BOOTSTRAP_API_KEY_SECRET
+#api_key_secret = 'twUA2M7RZ8H3FyJHbti2AcMADPDCxDqUKbvi8FDnm3nYidwQx57Wfv6iaVTQynMh'
+
+# Generated bootstrap secrets are written to this encrypted
+# local container before their matching database rows are
+# inserted. Later bootstrap phases use it for generated
+# client secrets, user passwords, and API-key secrets that
+# cannot be reconstructed from the database after insertion.
+#
+# The file is a single AEAD-encrypted JSON payload. The expiry
+# deadline lives inside that encrypted payload, so expiry
+# checks decrypt the container first.
+#
+# If unset, the default is `${cluster.data_dir}/bootstrap.secrets.enc`.
+#
+# overwritten by: BOOTSTRAP_GENERATED_SECRETS_FILE
+#generated_secrets_file = 'data/bootstrap.secrets.enc'
+
+# Duration before generated bootstrap secrets are purged.
+# The default keeps first-start credentials available briefly
+# for local extraction. Set to `0` to disable expiry and runtime
+# auto-purge.
+#
+# type: duration
+# default: '10m'
+# overwritten by: BOOTSTRAP_GENERATED_SECRETS_TTL
+#generated_secrets_ttl = '10m'
+
+# This is the directory where the bootstrap logic will look for
+# additional bootstrapping data. It will expect JSON files with
+# fixed names inside this folder. If it finds any of them, it will
+# try to parse and apply them during the bootstrapping process.
+#
+# The following files will be parsed in the given directory:
+# - api_keys.json
+# - roles.json
+# - groups.json
+# - scopes.json
+# - user_attributes.json
+# - users.json
+# - clients.json
+#
+# For information about the structure and the applied validations,
+# check `src/data/src/migration/bootstrap/types.rs`, and the
+# `bootstrap/*.json` files for examples.
+#
+# default: 'bootstrap'
+# overwritten by: BOOTSTRAP_DIR
+#bootstrap_dir = 'bootstrap'
+
+[channels]
+# Settings in the database: on the first start, `[email]` SMTP values and `[channels.*]` found here
+# are copied into the database ONCE ("seeded"). From then on the database is authoritative and
+# they are edited in the admin UI (Config -> Email / Channels) without a restart; the matching
+# keys can then be removed from this file. The admin UI can also re-import the current file
+# values at any time. Without any SMTP server Rauthy still starts; emails are just not sent
+# until one is set up.
+#
+# `email` and `sms` always exist (the user's email address and phone number). More channels are
+# created in the admin UI (Config -> Channels), where `http` channels and channels with their own
+# SMTP server are set up too. Drivers here:
+# - "smtp":    the built-in mailer (email only, the default for email)
+# - "webhook": POSTs the Rauthy message contract (JSON, version 1) to `url`, signed with
+#              `X-Rauthy-Signature: sha256=<hex hmac of the raw body>` when an `api_key` is set.
+#              Any communication agent only has to understand this one format.
+# An empty driver disables the channel. If the email channel uses the webhook driver, ALL emails
+# (password resets, codes, ...) are handed to the agent instead of an SMTP server.
+#
+# Env vars: CHANNEL_<EMAIL|SMS>_<DRIVER|URL|API_KEY>
+[channels.email]
+# default: "smtp"
+#driver = "smtp"
+#url = ""
+# webhook: the HMAC signing secret
+#api_key = ""
+
+[channels.sms]
+# default: ""
+#driver = "webhook"
+#url = "https://agent.example.com/hook"
+#api_key = "signing secret"
+
 [cluster]
 # Can be set to 'k8s' to try to split off the node id from the hostname
 # when Hiqlite is running as a StatefulSet inside Kubernetes.
@@ -2457,6 +3030,17 @@ sync_delete_users = false
 #retry_count = 100
 
 [server]
+# The name of this service as users see it: page titles, the admin UI, emails and the built-in
+# docs show it instead of "Rauthy". It can also be changed later in the admin UI (Config ->
+# General) without a restart; after the first start the database value wins (see "Settings in
+# the Database"). Set it here from the start so a fresh install is branded right away. The passkey
+# prompt name (`webauthn.rp_name`) follows it unless that is set explicitly (needs a restart).
+#
+# 1 to 48 characters
+# default: 'Rauthy'
+# overwritten by: APP_NAME
+#app_name = 'Rauthy'
+
 # The server address to listen on. Can bind to a specific IP.
 # When LISTEN_SCHEME is set to use UNIX sockets, this specifies
 # the path to listen on.

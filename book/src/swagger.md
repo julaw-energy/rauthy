@@ -60,3 +60,20 @@ swagger_ui_public = false
 
 By default, the SwaggerUI is only visible to `rauthy_admin`s with a valid session. You can access it via the Admin UI,
 or via `/auth/v1/docs/` on your Rauthy instance.
+
+## Scalar API Client
+
+Instead of (or next to) the Swagger UI, Rauthy can serve the [Scalar](https://scalar.com) API reference, which has a
+built-in client to try requests:
+
+```toml
+[server]
+# default: false
+# overwritten by: SCALAR_ENABLE
+scalar_enable = true
+```
+
+Scalar is loaded from a CDN, pinned to one version, nothing is bundled into Rauthy and it costs no extra memory.
+The page is at `/auth/v1/docs/scalar`, and the `Docs` page in the Admin UI links to it. It uses your **current admin
+session** for requests, so no API key is needed to try endpoints; API keys can still be used from outside with
+`Authorization: API-Key <name>$<secret>`.

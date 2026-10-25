@@ -1,4 +1,4 @@
-![Rauthy Logo](./rauthy_grey_small.png)
+![Logo](./app_icon.svg)
 
 # Rauthy
 

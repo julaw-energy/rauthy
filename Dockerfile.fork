@@ -26,10 +26,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 # wasm-pack uses a wasm-opt from the PATH when there is one. Its own download is too old for what
 # rustc emits.
-RUN curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_131/binaryen-version_131-$(uname -m)-linux.tar.gz" \
-    | tar -xz -C /tmp \
+RUN curl -fsSL --retry 8 --retry-all-errors --connect-timeout 20 --max-time 180 \
+        -o /tmp/binaryen.tar.gz \
+        "https://github.com/WebAssembly/binaryen/releases/download/version_131/binaryen-version_131-$(uname -m)-linux.tar.gz" \
+    && tar -xzf /tmp/binaryen.tar.gz -C /tmp \
     && cp /tmp/binaryen-version_131/bin/wasm-opt /usr/local/bin/wasm-opt \
-    && cp -r /tmp/binaryen-version_131/lib/. /usr/local/lib/ 2>/dev/null; ldconfig; wasm-opt --version
+    && (cp -r /tmp/binaryen-version_131/lib/. /usr/local/lib/ 2>/dev/null || true) \
+    && ldconfig \
+    && wasm-opt --version \
+    && rm -rf /tmp/binaryen*
 
 WORKDIR /work
 

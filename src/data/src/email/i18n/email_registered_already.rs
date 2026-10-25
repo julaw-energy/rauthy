@@ -1,5 +1,5 @@
 use crate::language::Language;
-use crate::rauthy_config::{RauthyConfig, VarsTemplate};
+use crate::rauthy_config::VarsTemplate;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -31,7 +31,7 @@ impl From<&'static VarsTemplate> for I18nEmailRegisteredAlready<'_> {
 
 impl I18nEmailRegisteredAlready<'_> {
     pub fn build(lang: &Language) -> Self {
-        let tpls = &RauthyConfig::get().vars.templates.email_registered_already;
+        let tpls = &crate::message_templates::email_templates().email_registered_already;
         match lang {
             Language::De => (&tpls.de).into(),
             Language::En => (&tpls.en).into(),

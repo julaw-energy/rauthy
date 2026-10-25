@@ -6,9 +6,13 @@ use actix_web::web::{Json, Query};
 use actix_web::{HttpRequest, HttpResponse, ResponseError, delete, get, patch, post, put, web};
 use chrono::Utc;
 use rauthy_api_types::PatchOp;
+use rauthy_api_types::clients::ClientRequiredFieldsResponse;
 use rauthy_api_types::generic::{PaginationParams, PasswordPolicyResponse};
 use rauthy_api_types::oidc::PasswordResetResponse;
 use rauthy_api_types::users::*;
+use rauthy_api_types::verification::{
+    AttrVerifyChannelsRequest, AttrVerifyChannelsResponse, ChannelOption,
+};
 use rauthy_common::constants::{
     COOKIE_MFA, HEADER_ALLOW_ALL_ORIGINS, HEADER_HTML, HEADER_JSON, PWD_CSRF_HEADER,
     PWD_RESET_COOKIE, TEXT_TURTLE,
@@ -18,7 +22,9 @@ use rauthy_data::api_cookie::ApiCookie;
 use rauthy_data::email::email_registered_already::send_email_registered_already;
 use rauthy_data::email::notification::send_email_passkey_removed;
 use rauthy_data::entity::api_keys::{AccessGroup, AccessRights};
+use rauthy_data::entity::attr_verify_channels::AttrVerifyChannels;
 use rauthy_data::entity::browser_id::BrowserId;
+use rauthy_data::entity::client_required_fields::ClientRequiredFields;
 use rauthy_data::entity::clients::Client;
 use rauthy_data::entity::clients_scim::ClientScim;
 use rauthy_data::entity::continuation_token::ContinuationToken;
@@ -295,6 +301,88 @@ pub async fn put_cust_attr(
     }
 
     Ok(HttpResponse::Ok().json(UserAttrConfigValueResponse::from(entity)))
+}
+
+/// The channels a verifiable attribute can be verified through, and the ones it could be linked to
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    get,
+    path = "/users/attr/{name}/verify_channels",
+    tag = "users",
+    responses(
+        (status = 200, description = "Ok", body = AttrVerifyChannelsResponse),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "NotFound"),
+    ),
+)]
+#[get("/users/attr/{name}/verify_channels")]
+pub async fn get_cust_attr_verify_channels(
+    path: web::Path<String>,
+    principal: ReqPrincipal,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_api_key_or_admin_session(AccessGroup::UserAttributes, AccessRights::Read)?;
+
+    let name = path.into_inner();
+    let cfg = UserAttrConfigEntity::find(name.clone()).await?;
+    Ok(HttpResponse::Ok().json(AttrVerifyChannelsResponse {
+        channels: AttrVerifyChannels::find(&name).await?,
+        candidates: AttrVerifyChannels::candidates(&name, cfg.typ)
+            .await
+            .iter()
+            .map(|ch| ChannelOption {
+                name: ch.as_str().to_string(),
+                label: rauthy_data::settings::channel(ch).label,
+            })
+            .collect(),
+    }))
+}
+
+/// Set the channels a verifiable attribute can be verified through
+///
+/// A code is sent to the value of the attribute through the channel the user picks, the first
+/// one is the default. A channel can only be linked if it is able to deliver to the attribute:
+/// it is tied to the attribute itself, or to `email` / `phone` for attributes of the matching
+/// type.
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    put,
+    path = "/users/attr/{name}/verify_channels",
+    tag = "users",
+    request_body = AttrVerifyChannelsRequest,
+    responses(
+        (status = 200, description = "Ok", body = AttrVerifyChannelsResponse),
+        (status = 400, description = "BadRequest"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "NotFound"),
+    ),
+)]
+#[put("/users/attr/{name}/verify_channels")]
+pub async fn put_cust_attr_verify_channels(
+    path: web::Path<String>,
+    principal: ReqPrincipal,
+    Json(payload): Json<AttrVerifyChannelsRequest>,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal
+        .validate_api_key_or_admin_session(AccessGroup::UserAttributes, AccessRights::Update)?;
+
+    let name = path.into_inner();
+    let channels = AttrVerifyChannels::save(&name, payload.channels).await?;
+    let cfg = UserAttrConfigEntity::find(name.clone()).await?;
+    Ok(HttpResponse::Ok().json(AttrVerifyChannelsResponse {
+        channels,
+        candidates: AttrVerifyChannels::candidates(&name, cfg.typ)
+            .await
+            .iter()
+            .map(|ch| ChannelOption {
+                name: ch.as_str().to_string(),
+                label: rauthy_data::settings::channel(ch).label,
+            })
+            .collect(),
+    }))
 }
 
 /// Delete an additional custom user attribute
@@ -1097,6 +1185,30 @@ pub async fn get_user_clients(
         .collect::<Vec<_>>();
 
     Ok(HttpResponse::Ok().json(resp))
+}
+
+/// GET the fields a client needs from this user which are still empty
+#[utoipa::path(
+    get,
+    path = "/users/{id}/missing_fields/{client_id}",
+    tag = "users",
+    responses(
+        (status = 200, description = "Ok", body = ClientRequiredFieldsResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[get("/users/{id}/missing_fields/{client_id}")]
+pub async fn get_user_missing_fields(
+    path: web::Path<(String, String)>,
+    principal: ReqPrincipal,
+) -> Result<HttpResponse, ErrorResponse> {
+    let (user_id, client_id) = path.into_inner();
+    principal.validate_user_or_admin(&user_id)?;
+
+    let user = User::find(user_id).await?;
+    let fields = ClientRequiredFields::missing_for(&user, &client_id).await?;
+    Ok(HttpResponse::Ok().json(ClientRequiredFieldsResponse { fields }))
 }
 
 /// GET all devices for this user linked via the `device_code` flow

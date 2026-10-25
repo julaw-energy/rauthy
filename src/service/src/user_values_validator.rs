@@ -1,4 +1,5 @@
 use rauthy_api_types::users::UserValuesRequest;
+use rauthy_data::entity::client_required_fields::ClientRequiredFields;
 use rauthy_data::entity::users::User;
 use rauthy_data::entity::users_values::UserValues;
 use rauthy_data::rauthy_config::{RauthyConfig, UserValueConfigValue};
@@ -146,6 +147,14 @@ impl UserValuesValidator<'_> {
     ) -> Result<bool, ErrorResponse> {
         if client_id == "rauthy" {
             return Ok(false);
+        }
+
+        // fields this client needs before it gets a login
+        if !ClientRequiredFields::missing_for(user, client_id)
+            .await?
+            .is_empty()
+        {
+            return Ok(true);
         }
 
         if settings::user_values().revalidate_during_login {

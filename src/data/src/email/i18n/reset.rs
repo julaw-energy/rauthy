@@ -1,5 +1,5 @@
 use crate::language::Language;
-use crate::rauthy_config::{RauthyConfig, VarsTemplate};
+use crate::rauthy_config::VarsTemplate;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -45,7 +45,7 @@ impl From<&'static VarsTemplate> for I18nEmailReset<'_> {
 
 impl I18nEmailReset<'_> {
     pub fn build(lang: &Language) -> Self {
-        let tpls = &RauthyConfig::get().vars.templates.password_reset;
+        let tpls = &crate::message_templates::email_templates().password_reset;
         match lang {
             Language::De => (&tpls.de).into(),
             Language::En => (&tpls.en).into(),

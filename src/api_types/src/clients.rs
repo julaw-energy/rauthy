@@ -373,3 +373,14 @@ pub struct DynamicClientResponse {
     pub token_endpoint_auth_method: String,
     pub token_endpoint_auth_signing_alg: String,
 }
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ClientRequiredFieldsRequest {
+    /// Built-in names like `phone` or `city`, and `attr:<name>` for custom attributes
+    pub fields: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ClientRequiredFieldsResponse {
+    pub fields: Vec<String>,
+}

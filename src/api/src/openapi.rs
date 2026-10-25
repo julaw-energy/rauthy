@@ -1,13 +1,14 @@
 use crate::{
     api_keys, atproto, auth_providers, backup, blacklist, clients, contact_verification, email,
-    events, fed_cm, generic, groups, kv, oidc, pam, roles, scopes, sessions, settings, themes, tos,
-    users,
+    events, fed_cm, generic, groups, kv, message_templates, oidc, pam, roles, scopes, sessions,
+    settings, themes, tos, users,
 };
 use rauthy_api_types::*;
 use rauthy_api_types::{
     api_keys::*, auth_providers::*, backup::*, blacklist::*, clients::*, email_jobs::*, events::*,
-    fed_cm::*, forward_auth::*, generic::*, groups::*, kv::*, oidc::*, pam::*, roles::*, scopes::*,
-    sessions::*, settings::*, themes::*, tos::*, users::*, verification::*,
+    fed_cm::*, forward_auth::*, generic::*, groups::*, kv::*, message_templates::*, oidc::*,
+    pam::*, roles::*, scopes::*, sessions::*, settings::*, themes::*, tos::*, users::*,
+    verification::*,
 };
 use rauthy_common::constants::{PROXY_MODE, RAUTHY_VERSION};
 use rauthy_data::ListenScheme;
@@ -69,6 +70,8 @@ use utoipa::{OpenApi, openapi};
         clients::delete_client_favicon,
         clients::delete_client_logo,
         clients::get_client_secret,
+        clients::get_client_required_fields,
+        clients::put_client_required_fields,
         clients::post_clients,
         clients::post_clients_dyn,
         clients::put_clients,
@@ -95,6 +98,14 @@ use utoipa::{OpenApi, openapi};
         settings::post_settings_smtp_test,
         settings::put_settings_channel,
         settings::post_settings_channel_test,
+        settings::delete_settings_channel,
+        settings::post_settings_channel_send_test,
+        message_templates::get_templates,
+        message_templates::get_template,
+        message_templates::put_template,
+        message_templates::delete_template,
+        message_templates::post_template_preview,
+        message_templates::post_template_test,
         settings::post_settings_import,
         email::get_email_jobs,
         email::get_channels,
@@ -231,6 +242,8 @@ use utoipa::{OpenApi, openapi};
         users::post_cust_attr,
         users::put_cust_attr,
         users::delete_cust_attr,
+        users::get_cust_attr_verify_channels,
+        users::put_cust_attr_verify_channels,
         users::get_users_register,
         users::post_users_register,
         users::get_user_by_id,
@@ -242,6 +255,7 @@ use utoipa::{OpenApi, openapi};
         users::delete_user_picture,
         users::get_user_devices,
         users::get_user_clients,
+        users::get_user_missing_fields,
         users::put_user_device_name,
         users::delete_user_device,
         users::get_user_webid,
@@ -337,6 +351,17 @@ use utoipa::{OpenApi, openapi};
             VerificationStatusResponse,
             AttrVerificationResponse,
             ContactStatus,
+            ChannelOption,
+            TemplateInfo,
+            TemplateFieldInfo,
+            TemplatePlaceholderInfo,
+            TemplateDetail,
+            TemplateSaveRequest,
+            TemplateTestRequest,
+            TemplatePreviewResponse,
+            TemplateTestResponse,
+            AttrVerifyChannelsRequest,
+            AttrVerifyChannelsResponse,
             ContactKind,
             VerifyConfirmRequest,
             VerifySetRequest,
@@ -437,6 +462,8 @@ use utoipa::{OpenApi, openapi};
             PasswordResetResponse,
             LoginTimeResponse,
             ClientResponse,
+            ClientRequiredFieldsRequest,
+            ClientRequiredFieldsResponse,
             DeviceCodeResponse,
             DynamicClientResponse,
             ClientSecretResponse,
@@ -546,9 +573,16 @@ impl ApiDoc {
     pub fn build() -> openapi::OpenApi {
         let mut doc = Self::openapi();
 
-        doc.info = openapi::Info::new("Rauthy Single Sign-on", &format!("v{RAUTHY_VERSION}"));
+        doc.info = openapi::Info::new(
+            &format!("{} Single Sign-on", rauthy_data::settings::app_name()),
+            &format!("v{RAUTHY_VERSION}"),
+        );
 
-        doc.external_docs = Some(ExternalDocs::new("https://sebadob.github.io/rauthy/"));
+        // our own docs, served by this instance
+        doc.external_docs = Some(ExternalDocs::new(format!(
+            "{}/auth/v1/book/",
+            RauthyConfig::get().pub_url_with_scheme
+        )));
 
         let desc = "OpenID Connect Single Sign-On Identity & Access Management";
         doc.info.description = Some(desc.to_string());

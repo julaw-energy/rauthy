@@ -1,3 +1,4 @@
+use crate::channels::{self, ChannelConfig, ChannelDriver};
 use crate::email::mailer_callback::EMailCallback;
 use crate::email::mailer_microsoft_graph::sender_microsoft_graph;
 use crate::email::smtp_oauth_token::SmtpOauthToken;
@@ -8,6 +9,7 @@ use lettre::message::{Mailbox, MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::Mechanism;
 use lettre::transport::smtp::{authentication, client};
 use lettre::{AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
+use rauthy_api_types::email_jobs::MessageChannel;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
 use serde::Deserialize;
 use std::fmt::{Display, Formatter};
@@ -84,23 +86,46 @@ pub async fn sender(rx: mpsc::Receiver<(EMail, EMailCallback)>) {
     }
 }
 
+/// The templates and translations say "Rauthy"; show the configured name instead. The default
+/// subject prefix is "Rauthy IAM", which becomes just the name.
+pub fn brand(req: &mut EMail) {
+    let app_name = settings::app_name();
+    if app_name == "Rauthy" {
+        return;
+    }
+    let brand = |s: &str| {
+        s.replace("Rauthy IAM", &app_name)
+            .replace("Rauthy", &app_name)
+    };
+    let html_name = app_name.replace('&', "&amp;");
+    req.subject = brand(&req.subject);
+    req.text = req.text.as_deref().map(brand);
+    req.html = req.html.as_deref().map(|s| {
+        s.replace("Rauthy IAM", &html_name)
+            .replace("Rauthy", &html_name)
+    });
+}
+
 /// Builds the message to send. Fails for an invalid sender or recipient instead of panicking.
 fn build_message(from: &Mailbox, mut req: EMail) -> Result<lettre::Message, String> {
-    // The templates and translations say "Rauthy"; show the configured name instead.
+    brand(&mut req);
+    let mut from = from.clone();
+    // the sender's display name, e.g. `Rauthy <rauthy@example.com>`
     let app_name = settings::app_name();
-    if app_name != "Rauthy" {
-        let brand = |s: &str| s.replace("Rauthy", &app_name);
-        let html_name = app_name.replace('&', "&amp;");
-        req.subject = brand(&req.subject);
-        req.text = req.text.as_deref().map(brand);
-        req.html = req.html.as_deref().map(|s| s.replace("Rauthy", &html_name));
+    if app_name != "Rauthy"
+        && let Some(name) = from.name.as_deref()
+    {
+        from.name = Some(
+            name.replace("Rauthy IAM", &app_name)
+                .replace("Rauthy", &app_name),
+        );
     }
 
     let to: Mailbox = format!("{} <{}>", req.recipient_name, req.address)
         .parse()
         .map_err(|err| format!("invalid recipient '{}': {err}", req.address))?;
     let builder = lettre::Message::builder()
-        .from(from.clone())
+        .from(from)
         .to(to)
         .subject(req.subject);
 
@@ -136,6 +161,23 @@ async fn sender_smtp(mut rx: mpsc::Receiver<(EMail, EMailCallback)>) {
             break;
         };
         debug!("New E-Mail for address: {:?}", req.address);
+
+        // The `email` channel may deliver through an agent instead of the SMTP server
+        let channel_cfg = settings::channel(&MessageChannel::email());
+        match channel_cfg.driver {
+            ChannelDriver::Webhook | ChannelDriver::Http => {
+                send_via_agent(&channel_cfg, req, callback).await;
+                continue;
+            }
+            ChannelDriver::Disabled => {
+                warn!(
+                    "The email channel is disabled, dropping the E-Mail to '{}'",
+                    req.address
+                );
+                continue;
+            }
+            ChannelDriver::Smtp => {}
+        }
 
         let cfg = settings::smtp();
         if vars.smtp_conn_mode == SmtpConnMode::Test || !cfg.is_configured() {
@@ -227,6 +269,95 @@ async fn sender_smtp(mut rx: mpsc::Receiver<(EMail, EMailCallback)>) {
     }
 }
 
+/// Sends the E-Mail through the agent of the `email` channel (webhook / http). One retry after a
+/// short pause, then it is dropped with a log line and an event, like a failed SMTP send.
+async fn send_via_agent(cfg: &ChannelConfig, mut req: EMail, callback: EMailCallback) {
+    if cfg.expired() {
+        warn!(
+            "The email channel has expired, dropping the E-Mail to '{}'",
+            req.address
+        );
+        return;
+    }
+    brand(&mut req);
+
+    let mut res = channels::send_system_email(cfg, &req).await;
+    if res.is_err() {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        res = channels::send_system_email(cfg, &req).await;
+    }
+    match res {
+        Ok(_) => {
+            info!("E-Mail to '{}' handed to the email channel", req.address);
+            callback.call().await;
+        }
+        Err(err) => {
+            error!(
+                "Could not hand the E-Mail to '{}' to the email channel: {}",
+                req.address, err.message
+            );
+            if let Err(err) = Event::email_send_err(req.typ, &req.address).send().await {
+                error!(?err, "Could not push EmailSendError event");
+            }
+        }
+    }
+}
+
+/// Transports of custom `smtp` channels, one per channel, reconnected when the settings change
+static CHANNEL_TRANSPORTS: std::sync::LazyLock<
+    tokio::sync::Mutex<
+        std::collections::HashMap<String, (u64, AsyncSmtpTransport<Tokio1Executor>)>,
+    >,
+> = std::sync::LazyLock::new(Default::default);
+
+/// Sends an E-Mail through the own SMTP server of a custom channel
+pub async fn send_with(
+    channel: &str,
+    cfg: &EffectiveSmtp,
+    req: EMail,
+) -> Result<(), ErrorResponse> {
+    if !cfg.is_configured() {
+        return Err(smtp_err("No SMTP server is set up for this channel"));
+    }
+    let from: Mailbox = cfg.from.parse().map_err(|err| {
+        ErrorResponse::new(
+            ErrorResponseType::BadRequest,
+            format!("Invalid sender '{}': {err}", cfg.from),
+        )
+    })?;
+    let message = build_message(&from, req)
+        .map_err(|err| ErrorResponse::new(ErrorResponseType::BadRequest, err))?;
+
+    let mut map = CHANNEL_TRANSPORTS.lock().await;
+    for attempt in 0..2 {
+        if map.get(channel).map(|(g, _)| *g) != Some(cfg.generation) || attempt > 0 {
+            let t = create_mailer(cfg).await?;
+            map.insert(channel.to_string(), (cfg.generation, t));
+        }
+        let Some((_, t)) = map.get(channel) else {
+            continue;
+        };
+        match t.send(message.clone()).await {
+            Ok(_) => return Ok(()),
+            Err(err) if attempt == 1 => {
+                return Err(smtp_err(format!(
+                    "The SMTP server rejected the message: {err}"
+                )));
+            }
+            Err(err) => debug!(error = ?err, "channel {channel}: sending failed, reconnecting"),
+        }
+    }
+    Err(smtp_err("Could not send the message"))
+}
+
+/// Connects to a custom channel's SMTP server to see that the address and credentials work
+pub async fn test_connection(cfg: &EffectiveSmtp) -> Result<(), ErrorResponse> {
+    if !cfg.is_configured() {
+        return Err(smtp_err("No SMTP server is set up for this channel"));
+    }
+    create_mailer(cfg).await.map(|_| ())
+}
+
 /// Sends a test E-Mail right now with the current settings and reports the real result.
 /// Used by the admin UI, so it does not go through the queue.
 pub async fn send_test(to: &str, recipient_name: &str) -> Result<(), ErrorResponse> {
@@ -296,7 +427,7 @@ async fn connect_test_smtp(
         .to_string();
 
     let mut mechanisms = Vec::with_capacity(2);
-    let creds = if vars.smtp_conn_mode == SmtpConnMode::XOauth2 {
+    let creds = if !cfg.custom && vars.smtp_conn_mode == SmtpConnMode::XOauth2 {
         mechanisms.push(Mechanism::Xoauth2);
 
         let token = SmtpOauthToken::get().await.map_err(|_| {
@@ -327,7 +458,7 @@ async fn connect_test_smtp(
         builder = builder.port(port);
     }
 
-    if let Some(root_ca) = &vars.root_ca {
+    if let Some(root_ca) = vars.root_ca.as_ref().filter(|_| !cfg.custom) {
         let cert = client::Certificate::from_pem(root_ca.as_bytes())
             .map_err(|err| smtp_err(format!("Invalid `email.root_ca`: {err}")))?;
 

@@ -1,6 +1,8 @@
 use crate::database::DB;
 use crate::entity::api_keys::ApiKeyEntity;
+use crate::entity::attr_verify_channels::AttrVerifyChannelsRow;
 use crate::entity::auth_providers::AuthProvider;
+use crate::entity::client_required_fields::ClientRequiredFieldsRow;
 use crate::entity::clients::Client;
 use crate::entity::clients_dyn::ClientDyn;
 use crate::entity::clients_scim::ClientScim;
@@ -2115,6 +2117,50 @@ pub async fn webids(data_before: Vec<WebId>) -> Result<(), ErrorResponse> {
         DB::pg_execute(sql_1, &[]).await?;
         for b in data_before {
             DB::pg_execute(sql_2, &[&b.user_id, &b.custom_triples, &b.expose_email]).await?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn client_required_fields(
+    data_before: Vec<ClientRequiredFieldsRow>,
+) -> Result<(), ErrorResponse> {
+    let sql_1 = "DELETE FROM client_required_fields";
+    let sql_2 = "INSERT INTO client_required_fields (client_id, fields) VALUES ($1, $2)";
+
+    if is_hiqlite() {
+        DB::hql().execute(sql_1, params!()).await?;
+        for b in data_before {
+            DB::hql()
+                .execute(sql_2, params!(b.client_id, b.fields))
+                .await?;
+        }
+    } else {
+        DB::pg_execute(sql_1, &[]).await?;
+        for b in data_before {
+            DB::pg_execute(sql_2, &[&b.client_id, &b.fields]).await?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn attr_verify_channels(
+    data_before: Vec<AttrVerifyChannelsRow>,
+) -> Result<(), ErrorResponse> {
+    let sql_1 = "DELETE FROM attr_verify_channels";
+    let sql_2 = "INSERT INTO attr_verify_channels (attr_name, channels) VALUES ($1, $2)";
+
+    if is_hiqlite() {
+        DB::hql().execute(sql_1, params!()).await?;
+        for b in data_before {
+            DB::hql()
+                .execute(sql_2, params!(b.attr_name, b.channels))
+                .await?;
+        }
+    } else {
+        DB::pg_execute(sql_1, &[]).await?;
+        for b in data_before {
+            DB::pg_execute(sql_2, &[&b.attr_name, &b.channels]).await?;
         }
     }
     Ok(())

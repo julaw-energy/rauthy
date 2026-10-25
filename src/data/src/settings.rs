@@ -8,15 +8,17 @@
 //! Groups so far: `smtp` (the built-in mailer) and `channel.<email|sms|whatsapp>` (see
 //! [`crate::channels`]). Secrets are stored encrypted and never leave the backend.
 
-use crate::channels::{ChannelConfig, ChannelDriver};
+use crate::channels::{BodyFormat, ChannelConfig, ChannelDriver, HttpKv, HttpRuntime};
 use crate::database::DB;
+use crate::entity::user_attr::UserAttrConfigEntity;
 use crate::rauthy_config::{EmailTlsMode, RauthyConfig, UserValueConfigValue};
 use chrono::Utc;
 use cryptr::EncValue;
 use hiqlite::macros::{FromRow, params};
 use rauthy_api_types::email_jobs::MessageChannel;
 use rauthy_api_types::settings::{
-    ChannelSettingsRequest, ChannelSettingsResponse, LifetimesSettings, LifetimesSettingsResponse,
+    ChannelSettingsRequest, ChannelSettingsResponse, HttpKvRequest, HttpKvResponse,
+    HttpSettingsRequest, HttpSettingsResponse, LifetimesSettings, LifetimesSettingsResponse,
     SmtpSettingsRequest, SmtpSettingsResponse,
 };
 use rauthy_common::is_hiqlite;
@@ -159,8 +161,8 @@ pub struct GeneralStored {
     pub app_name: String,
 }
 
-fn key_channel(channel: MessageChannel) -> String {
-    format!("channel.{}", channel.as_str())
+fn key_channel(channel: &MessageChannel) -> String {
+    format!("channel.{channel}")
 }
 
 #[derive(Debug, Clone, Deserialize, FromRow, FromPgRow)]
@@ -184,14 +186,48 @@ pub struct SmtpStored {
     pub tls_mode: String,
 }
 
-/// A `channel.*` group as it is stored. `api_key` is base64 encoded and encrypted.
+/// A `channel.*` group as it is stored. Secrets are base64 encoded and encrypted.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ChannelStored {
-    /// `""` (disabled), `smtp` (email only), `notifyd` or `webhook`
+    /// `""` (disabled), `smtp`, `webhook` or `http`
     pub driver: String,
+    /// `webhook`
     pub url: Option<String>,
+    /// `webhook`: the signing secret
     pub api_key: Option<String>,
-    pub channel_name: String,
+    /// Shown in the UI. Empty: the name.
+    #[serde(default)]
+    pub label: String,
+    /// `email`, `phone` or `attr:<name>`. Empty: `email` for the channel `email`, else `phone`.
+    #[serde(default)]
+    pub recipient: String,
+    /// Unix timestamp after which the channel stops working
+    #[serde(default)]
+    pub expires: Option<i64>,
+    /// `smtp` of a custom channel: its own server
+    #[serde(default)]
+    pub smtp: Option<SmtpStored>,
+    #[serde(default)]
+    pub http: Option<HttpStored>,
+}
+
+/// An `http` channel as stored
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct HttpStored {
+    pub method: String,
+    pub url: String,
+    pub headers: Vec<HttpKvStored>,
+    /// `json` or `form`
+    pub body_format: String,
+    pub body: Vec<HttpKvStored>,
+}
+
+/// `value` of a secret is encrypted
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct HttpKvStored {
+    pub name: String,
+    pub value: String,
+    pub secret: bool,
 }
 
 // ---- effective (runtime) shapes --------------------------------------------------------
@@ -208,6 +244,8 @@ pub struct EffectiveSmtp {
     pub from_db: bool,
     /// changes with every settings reload, lets the mailer notice and reconnect
     pub generation: u64,
+    /// the own server of a custom channel, never uses the XOAUTH2 of the default mailer
+    pub custom: bool,
 }
 
 impl EffectiveSmtp {
@@ -353,7 +391,8 @@ struct Live {
     user_values: Option<UserValuesEffective>,
     general: Option<GeneralStored>,
     smtp: Option<(SmtpStored, Option<String>)>,
-    channels: HashMap<MessageChannel, (ChannelStored, Option<String>)>,
+    /// ready to use: secrets decrypted once here, not per message
+    channels: HashMap<String, ChannelConfig>,
     stamps: HashMap<String, i64>,
     generation: u64,
 }
@@ -441,6 +480,7 @@ pub fn smtp() -> EffectiveSmtp {
             tls_mode: tls_from_str(&s.tls_mode),
             from_db: true,
             generation: live.generation,
+            custom: false,
         };
     }
 
@@ -454,51 +494,162 @@ pub fn smtp() -> EffectiveSmtp {
         tls_mode: tls_from_str(tls_to_str(&v.smtp_tls_mode)),
         from_db: false,
         generation: live.generation,
+        custom: false,
     }
 }
 
-/// The config of a channel to use right now.
-pub fn channel(channel: MessageChannel) -> ChannelConfig {
-    if let Some((c, api_key)) = live().channels.get(&channel) {
-        return ChannelConfig {
-            driver: driver_from_str(channel, &c.driver),
-            url: c.url.clone().filter(|u| !u.trim().is_empty()),
-            api_key: api_key.clone(),
-            channel_name: if c.channel_name.is_empty() {
-                channel.as_str().to_string()
-            } else {
-                c.channel_name.clone()
-            },
-        };
+fn default_recipient(channel: &MessageChannel) -> &'static str {
+    if channel.is_email() { "email" } else { "phone" }
+}
+
+fn decrypt_opt(what: &str, v: Option<&str>) -> Option<String> {
+    match v.map(decrypt_secret) {
+        Some(Ok(p)) => Some(p),
+        Some(Err(err)) => {
+            error!("Cannot decrypt the stored {what}: {}", err.message);
+            None
+        }
+        None => None,
     }
-    RauthyConfig::get().vars.channels.get(channel).clone()
+}
+
+fn smtp_effective(s: &SmtpStored, password: Option<String>, generation: u64) -> EffectiveSmtp {
+    EffectiveSmtp {
+        url: s.url.clone().filter(|u| !u.trim().is_empty()),
+        port: s.port,
+        username: s.username.clone().filter(|u| !u.trim().is_empty()),
+        password,
+        from: s.from.clone(),
+        tls_mode: tls_from_str(&s.tls_mode),
+        from_db: true,
+        generation,
+        custom: true,
+    }
+}
+
+fn body_format(s: &str) -> BodyFormat {
+    if s == "form" {
+        BodyFormat::Form
+    } else {
+        BodyFormat::Json
+    }
+}
+
+/// The ready-to-use config of a stored channel, secrets decrypted
+fn build_channel(name: &str, c: &ChannelStored, generation: u64) -> ChannelConfig {
+    let ch: MessageChannel = name.parse().unwrap_or_default();
+    let driver = match ChannelDriver::from_name(&c.driver) {
+        Some(ChannelDriver::Smtp) if ch.is_builtin() && !ch.is_email() => ChannelDriver::Disabled,
+        Some(d) => d,
+        None => {
+            warn!(
+                "Channel '{name}' uses the driver '{}', which does not exist (any more). It is \
+                disabled until a new driver is chosen in the admin UI.",
+                c.driver
+            );
+            ChannelDriver::Disabled
+        }
+    };
+
+    let label = if c.label.is_empty() {
+        // the built-in channels have a proper name, a custom one only its id
+        RauthyConfig::get()
+            .vars
+            .channels
+            .get(&ch)
+            .map(|f| f.label.clone())
+            .unwrap_or_else(|| name.to_string())
+    } else {
+        c.label.clone()
+    };
+
+    ChannelConfig {
+        driver,
+        url: c.url.clone().filter(|u| !u.trim().is_empty()),
+        api_key: decrypt_opt(&format!("{name} signing secret"), c.api_key.as_deref()),
+        label,
+        recipient: if c.recipient.is_empty() {
+            default_recipient(&ch).to_string()
+        } else {
+            c.recipient.clone()
+        },
+        expires: c.expires,
+        smtp: c.smtp.as_ref().map(|s| {
+            Arc::new(smtp_effective(
+                s,
+                decrypt_opt(&format!("{name} SMTP password"), s.password.as_deref()),
+                generation,
+            ))
+        }),
+        http: c.http.as_ref().map(|h| {
+            let kv = |v: &Vec<HttpKvStored>| -> Vec<HttpKv> {
+                v.iter()
+                    .map(|e| HttpKv {
+                        name: e.name.clone(),
+                        value: if e.secret {
+                            decrypt_opt(&format!("{name} secret '{}'", e.name), Some(&e.value))
+                                .unwrap_or_default()
+                        } else {
+                            e.value.clone()
+                        },
+                        secret: e.secret,
+                    })
+                    .collect()
+            };
+            Arc::new(HttpRuntime {
+                method: h.method.clone(),
+                url: h.url.clone(),
+                headers: kv(&h.headers),
+                body_format: body_format(&h.body_format),
+                body: kv(&h.body),
+            })
+        }),
+    }
+}
+
+/// The config of a channel to use right now. A channel that does not exist is `Disabled`.
+pub fn channel(channel: &MessageChannel) -> ChannelConfig {
+    if let Some(c) = live().channels.get(channel.as_str()) {
+        return c.clone();
+    }
+    if let Some(c) = RauthyConfig::get().vars.channels.get(channel) {
+        return c.clone();
+    }
+    ChannelConfig::missing(channel)
 }
 
 /// `true` if the channel's current config comes from the DB
-pub fn channel_from_db(channel: MessageChannel) -> bool {
-    live().channels.contains_key(&channel)
+pub fn channel_from_db(channel: &MessageChannel) -> bool {
+    live().channels.contains_key(channel.as_str())
 }
 
-/// Channels that can be used for sending right now
-pub fn available_channels() -> Vec<(MessageChannel, ChannelDriver)> {
-    [
-        MessageChannel::Email,
-        MessageChannel::Sms,
-        MessageChannel::Whatsapp,
-    ]
-    .into_iter()
-    .map(|c| (c, channel(c).driver))
-    .filter(|(_, d)| *d != ChannelDriver::Disabled)
-    .collect()
+/// All channels, the built-in ones first, then the custom ones by name
+pub fn all_channels() -> Vec<MessageChannel> {
+    let mut custom: Vec<String> = live()
+        .channels
+        .keys()
+        .filter(|k| !MessageChannel::BUILTIN.contains(&k.as_str()))
+        .cloned()
+        .collect();
+    custom.sort();
+    MessageChannel::BUILTIN
+        .iter()
+        .map(|s| s.to_string())
+        .chain(custom)
+        .filter_map(|n| n.parse().ok())
+        .collect()
 }
 
-pub fn driver_from_str(channel: MessageChannel, s: &str) -> ChannelDriver {
-    match (s.trim().to_ascii_lowercase().as_str(), channel) {
-        ("notifyd", _) => ChannelDriver::Notifyd,
-        ("webhook", _) => ChannelDriver::Webhook,
-        ("smtp", MessageChannel::Email) | ("", MessageChannel::Email) => ChannelDriver::Smtp,
-        _ => ChannelDriver::Disabled,
-    }
+/// Channels that can be used for sending right now: configured and not expired
+pub fn available_channels() -> Vec<(MessageChannel, ChannelConfig)> {
+    all_channels()
+        .into_iter()
+        .map(|c| {
+            let cfg = channel(&c);
+            (c, cfg)
+        })
+        .filter(|(_, cfg)| cfg.is_usable())
+        .collect()
 }
 
 // ---- views for the admin API (no secrets) ----------------------------------------------
@@ -520,15 +671,45 @@ pub fn smtp_view() -> SmtpSettingsResponse {
     }
 }
 
+fn kv_view(v: &[HttpKv]) -> Vec<HttpKvResponse> {
+    v.iter()
+        .map(|e| HttpKvResponse {
+            name: e.name.clone(),
+            value: (!e.secret).then(|| e.value.clone()),
+            secret: e.secret,
+        })
+        .collect()
+}
+
 pub fn channel_view(ch: MessageChannel) -> ChannelSettingsResponse {
-    let c = channel(ch);
+    let c = channel(&ch);
     ChannelSettingsResponse {
-        channel: ch,
         driver: c.driver.as_str().to_string(),
-        url: c.url,
+        expired: c.expired(),
+        expires: c.expires,
+        url: c.url.clone(),
         has_api_key: c.api_key.is_some(),
-        channel_name: c.channel_name,
-        from_db: channel_from_db(ch),
+        from_db: channel_from_db(&ch),
+        label: c.label.clone(),
+        recipient: c.recipient.clone(),
+        builtin: ch.is_builtin(),
+        smtp: c.smtp.as_deref().map(|s| SmtpSettingsResponse {
+            url: s.url.clone(),
+            port: s.port,
+            username: s.username.clone(),
+            has_password: s.password.is_some(),
+            from: s.from.clone(),
+            tls_mode: tls_to_str(&s.tls_mode).to_string(),
+            from_db: true,
+        }),
+        http: c.http.as_deref().map(|h| HttpSettingsResponse {
+            method: h.method.clone(),
+            url: h.url.clone(),
+            headers: kv_view(&h.headers),
+            body_format: h.body_format.as_str().to_string(),
+            body: kv_view(&h.body),
+        }),
+        channel: ch,
     }
 }
 
@@ -542,6 +723,20 @@ async fn find_all() -> Result<Vec<SettingRow>, ErrorResponse> {
         DB::pg_query(sql, &[], 0).await?
     };
     Ok(rows)
+}
+
+pub(crate) async fn upsert_raw(key: &str, value: &str) -> Result<(), ErrorResponse> {
+    upsert(key, value).await
+}
+
+pub(crate) async fn delete_raw(key: &str) -> Result<(), ErrorResponse> {
+    let sql = "DELETE FROM settings WHERE key = $1";
+    if is_hiqlite() {
+        DB::hql().execute(sql, params!(key)).await?;
+    } else {
+        DB::pg_execute(sql, &[&key]).await?;
+    }
+    Ok(())
 }
 
 async fn upsert(key: &str, value: &str) -> Result<(), ErrorResponse> {
@@ -561,9 +756,15 @@ ON CONFLICT (key) DO UPDATE SET value = $2, updated = $3"#;
 pub async fn reload() -> Result<(), ErrorResponse> {
     let rows = find_all().await?;
 
+    let generation = LIVE.read().expect("settings lock poisoned").generation + 1;
     let mut new = Live::default();
+    let mut template_rows = Vec::new();
     for row in rows {
         new.stamps.insert(row.key.clone(), row.updated);
+        if row.key.starts_with("template.") {
+            template_rows.push((row.key.clone(), row.value.clone()));
+            continue;
+        }
 
         if row.key == KEY_LIFETIMES {
             match serde_json::from_str::<LifetimesSettings>(&row.value) {
@@ -601,29 +802,26 @@ pub async fn reload() -> Result<(), ErrorResponse> {
                 Err(err) => error!(?err, "Invalid `smtp` settings in the DB"),
             }
         } else if let Some(name) = row.key.strip_prefix("channel.") {
-            let Ok(ch) = name.parse::<MessageChannel>() else {
+            if name.parse::<MessageChannel>().is_err() {
                 continue;
-            };
+            }
             match serde_json::from_str::<ChannelStored>(&row.value) {
                 Ok(c) => {
-                    let api_key = match c.api_key.as_deref().map(decrypt_secret) {
-                        Some(Ok(p)) => Some(p),
-                        Some(Err(err)) => {
-                            error!("Cannot decrypt the stored {name} api key: {}", err.message);
-                            None
-                        }
-                        None => None,
-                    };
-                    new.channels.insert(ch, (c, api_key));
+                    new.channels
+                        .insert(name.to_string(), build_channel(name, &c, generation));
                 }
                 Err(err) => error!(?err, "Invalid `{}` settings in the DB", row.key),
             }
         }
     }
 
-    let mut lock = LIVE.write().expect("settings lock poisoned");
-    new.generation = lock.generation + 1;
-    *lock = Arc::new(new);
+    {
+        let mut lock = LIVE.write().expect("settings lock poisoned");
+        new.generation = generation;
+        *lock = Arc::new(new);
+    }
+    // the wording of the messages follows the same swap
+    crate::message_templates::apply(&template_rows);
     Ok(())
 }
 
@@ -680,31 +878,24 @@ pub async fn init() -> Result<(), ErrorResponse> {
         }
     }
 
-    for ch in [
-        MessageChannel::Email,
-        MessageChannel::Sms,
-        MessageChannel::Whatsapp,
-    ] {
-        let from_file = RauthyConfig::get().vars.channels.get(ch);
+    for name in MessageChannel::BUILTIN {
+        let ch: MessageChannel = name.parse().expect("built-in channel name");
+        let Some(from_file) = RauthyConfig::get().vars.channels.get(&ch) else {
+            continue;
+        };
         let is_default = from_file.driver
-            == if ch == MessageChannel::Email {
+            == if ch.is_email() {
                 ChannelDriver::Smtp
             } else {
                 ChannelDriver::Disabled
             };
-        if !live.channels.contains_key(&ch) && !is_default {
-            let stored = ChannelStored {
-                driver: from_file.driver.as_str().to_string(),
-                url: from_file.url.clone(),
-                api_key: from_file
-                    .api_key
-                    .as_deref()
-                    .map(encrypt_secret)
-                    .transpose()?,
-                channel_name: from_file.channel_name.clone(),
-            };
-            upsert(&key_channel(ch), &serde_json::to_string(&stored)?).await?;
-            seeded.push(ch.as_str());
+        if !live.channels.contains_key(name) && !is_default {
+            upsert(
+                &key_channel(&ch),
+                &serde_json::to_string(&stored_from_file(from_file)?)?,
+            )
+            .await?;
+            seeded.push(name);
         }
     }
 
@@ -753,7 +944,12 @@ fn valid_url(u: &str) -> bool {
     (u.starts_with("http://") || u.starts_with("https://")) && !u.contains(char::is_whitespace)
 }
 
-pub async fn save_smtp(update: SmtpSettingsRequest) -> Result<(), ErrorResponse> {
+/// Checks the SMTP settings of a request and turns them into what is stored. `old_password` is
+/// kept if the request has none.
+fn smtp_stored_from(
+    update: SmtpSettingsRequest,
+    old_password: Option<&str>,
+) -> Result<SmtpStored, ErrorResponse> {
     let url = update
         .url
         .map(|u| u.trim().to_string())
@@ -779,14 +975,13 @@ pub async fn save_smtp(update: SmtpSettingsRequest) -> Result<(), ErrorResponse>
         ));
     }
 
-    let old = smtp();
     let password = match update.password.as_deref() {
-        None => old.password.as_deref().map(encrypt_secret).transpose()?,
+        None => old_password.map(encrypt_secret).transpose()?,
         Some("") => None,
         Some(p) => Some(encrypt_secret(p)?),
     };
 
-    let stored = SmtpStored {
+    Ok(SmtpStored {
         url,
         port: update.port,
         username: update
@@ -796,7 +991,12 @@ pub async fn save_smtp(update: SmtpSettingsRequest) -> Result<(), ErrorResponse>
         password,
         from: update.from.trim().to_string(),
         tls_mode: update.tls_mode,
-    };
+    })
+}
+
+pub async fn save_smtp(update: SmtpSettingsRequest) -> Result<(), ErrorResponse> {
+    let old = smtp();
+    let stored = smtp_stored_from(update, old.password.as_deref())?;
     upsert(KEY_SMTP, &serde_json::to_string(&stored)?).await?;
     reload().await
 }
@@ -879,49 +1079,283 @@ pub async fn save_general(app_name: &str) -> Result<(), ErrorResponse> {
     Ok(())
 }
 
+const HTTP_METHODS: [&str; 3] = ["POST", "PUT", "PATCH"];
+/// headers Rauthy or the HTTP client set themselves
+const FORBIDDEN_HEADERS: [&str; 5] = [
+    "host",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "upgrade",
+];
+
+fn valid_header_name(n: &str) -> bool {
+    !n.is_empty()
+        && n.len() <= 64
+        && n.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b))
+}
+
+fn kv_stored(
+    section: &str,
+    req: Vec<HttpKvRequest>,
+    old: &[HttpKv],
+    header: bool,
+) -> Result<Vec<HttpKvStored>, ErrorResponse> {
+    if req.len() > 30 {
+        return Err(bad(format!("At most 30 {section} entries")));
+    }
+    let mut out: Vec<HttpKvStored> = Vec::with_capacity(req.len());
+    for kv in req {
+        let name = kv.name.trim().to_string();
+        if header {
+            if !valid_header_name(&name) {
+                return Err(bad(format!("'{name}' is not a valid header name")));
+            }
+            if FORBIDDEN_HEADERS.contains(&name.to_ascii_lowercase().as_str()) {
+                return Err(bad(format!("The header '{name}' is set by Rauthy")));
+            }
+        } else if name.is_empty()
+            || name.len() > 64
+            || name.contains(char::is_whitespace)
+            || name.starts_with('.')
+            || name.ends_with('.')
+            || name.contains("..")
+        {
+            return Err(bad(format!("'{name}' is not a valid body attribute name")));
+        }
+        if out.iter().any(|o| o.name.eq_ignore_ascii_case(&name)) {
+            return Err(bad(format!("'{name}' is in the {section} twice")));
+        }
+
+        let value = match (kv.secret, kv.value) {
+            // a secret that is not sent again stays as it is
+            (true, None) => {
+                let old_v = old
+                    .iter()
+                    .find(|o| o.secret && o.name.eq_ignore_ascii_case(&name))
+                    .ok_or_else(|| bad(format!("The secret '{name}' needs a value")))?;
+                encrypt_secret(&old_v.value)?
+            }
+            (true, Some(v)) => encrypt_secret(&v)?,
+            (false, v) => v.unwrap_or_default(),
+        };
+        if value.len() > 4000 {
+            return Err(bad(format!("The value of '{name}' is too long")));
+        }
+        out.push(HttpKvStored {
+            name,
+            value,
+            secret: kv.secret,
+        });
+    }
+    Ok(out)
+}
+
+/// Checks an `http` channel and turns it into what is stored. Secrets that are not sent again
+/// are taken over from `old`.
+fn http_stored_from(
+    req: HttpSettingsRequest,
+    old: Option<&HttpRuntime>,
+) -> Result<HttpStored, ErrorResponse> {
+    let method = req.method.trim().to_ascii_uppercase();
+    if !HTTP_METHODS.contains(&method.as_str()) {
+        return Err(bad("method must be one of: POST, PUT, PATCH"));
+    }
+    let url = req.url.trim().to_string();
+    if !valid_url(&url) {
+        return Err(bad("A valid http(s) URL is required"));
+    }
+    if !matches!(req.body_format.as_str(), "json" | "form") {
+        return Err(bad("body_format must be json or form"));
+    }
+
+    let no_kv: Vec<HttpKv> = Vec::new();
+    let headers = kv_stored(
+        "header",
+        req.headers,
+        old.map(|o| &o.headers).unwrap_or(&no_kv),
+        true,
+    )?;
+    let body = kv_stored(
+        "body",
+        req.body,
+        old.map(|o| &o.body).unwrap_or(&no_kv),
+        false,
+    )?;
+
+    // without the recipient and the text, nothing useful can be sent. Secrets do not count, they
+    // are used as they are.
+    let visible = |p: &str| {
+        url.contains(p)
+            || headers
+                .iter()
+                .chain(body.iter())
+                .any(|e| !e.secret && e.value.contains(p))
+    };
+    for needed in ["{{to}}", "{{text}}"] {
+        if !visible(needed) {
+            return Err(bad(format!(
+                "Nothing in the request uses {needed}: the provider would never learn the {}",
+                if needed == "{{to}}" {
+                    "recipient"
+                } else {
+                    "message"
+                }
+            )));
+        }
+    }
+
+    Ok(HttpStored {
+        method,
+        url,
+        headers,
+        body_format: req.body_format,
+        body,
+    })
+}
+
+/// Creates or changes a channel. A new name creates a custom channel.
 pub async fn save_channel(
     ch: MessageChannel,
     update: ChannelSettingsRequest,
 ) -> Result<(), ErrorResponse> {
-    let driver = driver_from_str(ch, &update.driver);
-    if !update.driver.is_empty()
-        && driver == ChannelDriver::Disabled
-        && !update.driver.eq_ignore_ascii_case("none")
+    let driver = ChannelDriver::from_name(&update.driver)
+        .ok_or_else(|| bad("driver must be one of: smtp, webhook, http, or empty to disable"))?;
+    let exists = channel_from_db(&ch) || ch.is_builtin();
+    if driver == ChannelDriver::Disabled && !exists {
+        return Err(bad("A new channel needs a driver"));
+    }
+    if driver == ChannelDriver::Smtp && ch.as_str() == "sms" {
+        return Err(bad("SMS cannot be sent through SMTP"));
+    }
+    let old = channel(&ch);
+
+    // the built-in channels use the default email and phone number and never expire
+    let recipient = if ch.is_builtin() {
+        default_recipient(&ch).to_string()
+    } else {
+        match update.recipient.map(|r| r.trim().to_string()) {
+            Some(r) if !r.is_empty() => r,
+            _ => old.recipient.clone(),
+        }
+    };
+    if !crate::channels::recipient_source_is_valid(&recipient) {
+        return Err(bad("recipient must be `email`, `phone` or `attr:<name>`"));
+    }
+    if let Some(attr) = recipient.strip_prefix("attr:")
+        && !UserAttrConfigEntity::find_all_as_set()
+            .await?
+            .contains(attr)
     {
+        return Err(bad(format!("The attribute '{attr}' does not exist")));
+    }
+    if ch.is_builtin() && update.expires.is_some() {
+        return Err(bad("The email and sms channels cannot expire"));
+    }
+
+    let label = update
+        .label
+        .map(|l| l.trim().to_string())
+        .unwrap_or_else(|| old.label.clone());
+    if label.chars().count() > 64 || label.contains(['<', '>', '"', '\\', '\n', '\r']) {
         return Err(bad(
-            "driver must be one of: smtp (email only), notifyd, webhook, or empty",
+            "The label must be at most 64 characters without < > \" \\ or line breaks",
         ));
     }
-    let url = update
-        .url
-        .map(|u| u.trim().trim_end_matches('/').to_string())
-        .filter(|u| !u.is_empty());
-    if matches!(driver, ChannelDriver::Notifyd | ChannelDriver::Webhook) {
-        match &url {
-            Some(u) if valid_url(u) => {}
-            _ => return Err(bad("A valid http(s) URL is required for this driver")),
+
+    let mut stored = ChannelStored {
+        driver: driver.as_str().to_string(),
+        label,
+        recipient,
+        expires: update.expires,
+        ..Default::default()
+    };
+
+    match driver {
+        ChannelDriver::Disabled => {}
+        ChannelDriver::Smtp => {
+            // `email` uses the server under Email (SMTP), a custom channel has its own
+            if !ch.is_email() {
+                let req = update
+                    .smtp
+                    .ok_or_else(|| bad("The SMTP server of this channel is missing"))?;
+                let old_pw = old.smtp.as_ref().and_then(|s| s.password.clone());
+                let smtp = smtp_stored_from(req, old_pw.as_deref())?;
+                if smtp.url.is_none() {
+                    return Err(bad("The SMTP server is missing"));
+                }
+                stored.smtp = Some(smtp);
+            }
+        }
+        ChannelDriver::Webhook => {
+            let url = update
+                .url
+                .map(|u| u.trim().trim_end_matches('/').to_string())
+                .filter(|u| !u.is_empty());
+            match &url {
+                Some(u) if valid_url(u) => {}
+                _ => return Err(bad("A valid http(s) URL is required for this driver")),
+            }
+            stored.url = url;
+            stored.api_key = match update.api_key.as_deref() {
+                None => old.api_key.as_deref().map(encrypt_secret).transpose()?,
+                Some("") => None,
+                Some(k) => Some(encrypt_secret(k)?),
+            };
+        }
+        ChannelDriver::Http => {
+            let req = update
+                .http
+                .ok_or_else(|| bad("The request of this http channel is missing"))?;
+            stored.http = Some(http_stored_from(req, old.http.as_deref())?);
         }
     }
 
-    let old = channel(ch);
-    let api_key = match update.api_key.as_deref() {
-        None => old.api_key.as_deref().map(encrypt_secret).transpose()?,
-        Some("") => None,
-        Some(k) => Some(encrypt_secret(k)?),
-    };
-
-    let stored = ChannelStored {
-        driver: driver.as_str().to_string(),
-        url,
-        api_key,
-        channel_name: update
-            .channel_name
-            .map(|n| n.trim().to_string())
-            .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| ch.as_str().to_string()),
-    };
-    upsert(&key_channel(ch), &serde_json::to_string(&stored)?).await?;
+    upsert(&key_channel(&ch), &serde_json::to_string(&stored)?).await?;
     reload().await
+}
+
+/// Removes an expired custom channel and every link of an attribute to it. A channel that works
+/// has to be given an expiry date in the past first, so users have been told. The built-in
+/// channels can only be disabled.
+pub async fn delete_channel(ch: &MessageChannel) -> Result<(), ErrorResponse> {
+    if ch.is_builtin() {
+        return Err(bad(
+            "The email and sms channels cannot be deleted, disable them instead",
+        ));
+    }
+    if !channel_from_db(ch) {
+        return Err(ErrorResponse::new(
+            ErrorResponseType::NotFound,
+            "Unknown channel",
+        ));
+    }
+    if !channel(ch).expired() {
+        return Err(bad(
+            "Only an expired channel can be deleted. Set its expiry date to now or the past first.",
+        ));
+    }
+    crate::entity::attr_verify_channels::AttrVerifyChannels::remove_channel(ch.as_str()).await?;
+
+    let sql = "DELETE FROM settings WHERE key = $1";
+    let key = key_channel(ch);
+    if is_hiqlite() {
+        DB::hql().execute(sql, params!(key)).await?;
+    } else {
+        DB::pg_execute(sql, &[&key]).await?;
+    }
+    reload().await
+}
+
+/// A built-in channel as the config file describes it, ready to store
+fn stored_from_file(f: &ChannelConfig) -> Result<ChannelStored, ErrorResponse> {
+    Ok(ChannelStored {
+        driver: f.driver.as_str().to_string(),
+        url: f.url.clone(),
+        api_key: f.api_key.as_deref().map(encrypt_secret).transpose()?,
+        ..Default::default()
+    })
 }
 
 /// Copies the current config file / env values of a group into the DB, replacing what is there.
@@ -968,14 +1402,11 @@ pub async fn import_from_file(group: &str) -> Result<(), ErrorResponse> {
         .strip_prefix("channel.")
         .map(|n| n.parse::<MessageChannel>())
     {
-        let f = RauthyConfig::get().vars.channels.get(ch);
-        let stored = ChannelStored {
-            driver: f.driver.as_str().to_string(),
-            url: f.url.clone(),
-            api_key: f.api_key.as_deref().map(encrypt_secret).transpose()?,
-            channel_name: f.channel_name.clone(),
+        let Some(f) = RauthyConfig::get().vars.channels.get(&ch) else {
+            return Err(bad("Only the built-in channels exist in the config file"));
         };
-        upsert(&key_channel(ch), &serde_json::to_string(&stored)?).await?;
+        let stored = stored_from_file(f)?;
+        upsert(&key_channel(&ch), &serde_json::to_string(&stored)?).await?;
     } else {
         return Err(bad("Unknown settings group"));
     }
@@ -1001,15 +1432,35 @@ mod tests {
     }
 
     #[test]
-    fn driver_parsing_per_channel() {
-        use MessageChannel::*;
-        assert_eq!(driver_from_str(Email, ""), ChannelDriver::Smtp);
-        assert_eq!(driver_from_str(Email, "SMTP"), ChannelDriver::Smtp);
-        assert_eq!(driver_from_str(Sms, ""), ChannelDriver::Disabled);
-        // `smtp` is the built-in mailer, it only exists for email
-        assert_eq!(driver_from_str(Sms, "smtp"), ChannelDriver::Disabled);
-        assert_eq!(driver_from_str(Whatsapp, "notifyd"), ChannelDriver::Notifyd);
-        assert_eq!(driver_from_str(Sms, "webhook"), ChannelDriver::Webhook);
+    fn driver_names() {
+        assert_eq!(ChannelDriver::from_name("SMTP"), Some(ChannelDriver::Smtp));
+        assert_eq!(
+            ChannelDriver::from_name("webhook"),
+            Some(ChannelDriver::Webhook)
+        );
+        assert_eq!(ChannelDriver::from_name("http"), Some(ChannelDriver::Http));
+        assert_eq!(ChannelDriver::from_name(""), Some(ChannelDriver::Disabled));
+        // gone
+        assert_eq!(ChannelDriver::from_name("notifyd"), None);
+    }
+
+    #[test]
+    fn header_names() {
+        assert!(valid_header_name("Authorization"));
+        assert!(valid_header_name("X-Api-Key"));
+        assert!(!valid_header_name("Bad Header"));
+        assert!(!valid_header_name(""));
+        assert!(!valid_header_name("a:b"));
+    }
+
+    #[test]
+    fn channel_names() {
+        assert!("sms".parse::<MessageChannel>().is_ok());
+        assert!("whatsapp_user2".parse::<MessageChannel>().is_ok());
+        assert!("".parse::<MessageChannel>().is_err());
+        assert!("2fa".parse::<MessageChannel>().is_err());
+        assert!("Has-Dash".parse::<MessageChannel>().is_err());
+        assert!("a".repeat(33).parse::<MessageChannel>().is_err());
     }
 
     #[test]

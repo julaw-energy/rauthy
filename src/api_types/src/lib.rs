@@ -16,6 +16,7 @@ pub mod forward_auth;
 pub mod generic;
 pub mod groups;
 pub mod kv;
+pub mod message_templates;
 pub mod oidc;
 pub mod pam;
 pub mod roles;

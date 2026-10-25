@@ -1,27 +1,74 @@
 use crate::ReqPrincipal;
-use actix_web::web::{Json, Path};
+use actix_web::web::{Json, Path, Query};
 use actix_web::{HttpResponse, get, post, put};
 use rauthy_api_types::email_jobs::MessageChannel;
 use rauthy_api_types::users::UserAttrConfigTyp;
 use rauthy_api_types::verification::{
-    AttrVerificationResponse, ContactKind, ContactStatus, VerificationStatusResponse,
-    VerifyConfirmRequest, VerifySetRequest,
+    AttrVerificationResponse, ChannelOption, ContactKind, ContactStatus,
+    VerificationStatusResponse, VerifyConfirmRequest, VerifySetRequest, VerifyStartQuery,
 };
-use rauthy_data::channels::{
-    self, ChannelDriver, ChannelMessage, ChannelRecipient, MessagePurpose,
-};
-use rauthy_data::email::custom::send_custom;
+use rauthy_data::channels::{self, MessagePurpose};
+use rauthy_data::entity::attr_verify_channels::AttrVerifyChannels;
 use rauthy_data::entity::contact_verifications::ContactVerification;
 use rauthy_data::entity::user_attr::{UserAttrConfigEntity, UserAttrValueEntity};
 use rauthy_data::entity::users::User;
 use rauthy_data::entity::users_values::UserValues;
-use rauthy_data::rauthy_config::RauthyConfig;
 use rauthy_data::settings;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
 use validator::Validate;
 
-fn sms_available() -> bool {
-    settings::channel(MessageChannel::Sms).driver != ChannelDriver::Disabled
+fn option(ch: &MessageChannel) -> ChannelOption {
+    ChannelOption {
+        name: ch.as_str().to_string(),
+        label: settings::channel(ch).label,
+    }
+}
+
+/// The working channels a code for the user's own email address / phone number can go through:
+/// the ones tied to that value. The first one is the default.
+fn standard_channels(kind: ContactKind) -> Vec<MessageChannel> {
+    let wanted = match kind {
+        ContactKind::Email => "email",
+        ContactKind::Phone => "phone",
+        ContactKind::Other => return Vec::new(),
+    };
+    settings::available_channels()
+        .into_iter()
+        .filter(|(_, cfg)| cfg.recipient == wanted)
+        .map(|(ch, _)| ch)
+        .collect()
+}
+
+/// The channel the user asked for, or the first one
+fn pick(options: &[MessageChannel], wanted: Option<&str>) -> Result<MessageChannel, ErrorResponse> {
+    match wanted.filter(|w| !w.is_empty()) {
+        Some(w) => options
+            .iter()
+            .find(|c| c.as_str() == w)
+            .cloned()
+            .ok_or_else(|| {
+                ErrorResponse::new(
+                    ErrorResponseType::BadRequest,
+                    format!("The channel '{w}' cannot be used for this value"),
+                )
+            }),
+        None => options.first().cloned().ok_or_else(|| {
+            ErrorResponse::new(
+                ErrorResponseType::BadRequest,
+                "No channel is configured that can verify this value",
+            )
+        }),
+    }
+}
+
+/// `(subject, body)` of the verification message, in the language of the user. The wording is
+/// editable under Config -> Message templates.
+fn verification_message(user: &User, code: &str) -> (String, String) {
+    rauthy_data::message_templates::verification(
+        user.language.as_str(),
+        code,
+        &user.email_recipient_name(),
+    )
 }
 
 async fn phone_of(user_id: &str) -> Result<Option<String>, ErrorResponse> {
@@ -36,6 +83,7 @@ async fn value_of(user: &User, kind: ContactKind) -> Result<Option<String>, Erro
     match kind {
         ContactKind::Email => Ok(Some(user.email.clone())),
         ContactKind::Phone => phone_of(&user.id).await,
+        ContactKind::Other => Ok(None),
     }
 }
 
@@ -70,6 +118,7 @@ pub async fn get_verification(
     principal.validate_user_or_admin(&id)?;
 
     let user = User::find(id).await?;
+    let phone_channels = standard_channels(ContactKind::Phone);
     let phone = match phone_of(&user.id).await? {
         Some(p) => {
             let verified =
@@ -85,14 +134,20 @@ pub async fn get_verification(
             verified: user.email_verified,
         },
         phone,
-        phone_verify_available: sms_available(),
+        phone_verify_available: !phone_channels.is_empty(),
+        email_channels: standard_channels(ContactKind::Email)
+            .iter()
+            .map(option)
+            .collect(),
+        phone_channels: phone_channels.iter().map(option).collect(),
     }))
 }
 
 /// Send a verification code to the user's email address or phone number
 ///
 /// A code is valid for 10 minutes and allows 5 wrong guesses. A new one can be requested after
-/// 60 seconds.
+/// 60 seconds. `channel` picks the channel to send it through, the default is the first one that
+/// can deliver to the value.
 ///
 /// **Permissions**
 /// - the user itself
@@ -112,6 +167,7 @@ pub async fn get_verification(
 #[post("/users/{id}/verification/{kind}/start")]
 pub async fn post_verification_start(
     path: Path<(String, ContactKind)>,
+    query: Query<VerifyStartQuery>,
     principal: ReqPrincipal,
 ) -> Result<HttpResponse, ErrorResponse> {
     let (id, kind) = path.into_inner();
@@ -126,38 +182,19 @@ pub async fn post_verification_start(
             "This value is already verified",
         ));
     }
-    if kind == ContactKind::Phone && !sms_available() {
-        return Err(ErrorResponse::new(
-            ErrorResponseType::BadRequest,
-            "No SMS channel is configured",
-        ));
-    }
+    let channel = pick(&standard_channels(kind), query.channel.as_deref())?;
 
     let code = ContactVerification::start(&user.id, kind.as_str(), &value).await?;
-    let prefix = &RauthyConfig::get().vars.email.sub_prefix;
-    let text = format!("Your {prefix} verification code is {code}. It is valid for 10 minutes.");
-
-    match kind {
-        ContactKind::Email => {
-            send_custom(&user, "Verification code", Some(text), None).await?;
-        }
-        ContactKind::Phone => {
-            let msg = ChannelMessage::new(
-                MessageChannel::Sms,
-                MessagePurpose::Verification,
-                ChannelRecipient {
-                    user_id: user.id.clone(),
-                    name: user.email_recipient_name(),
-                    to: value,
-                },
-                None,
-                text,
-                None,
-                None,
-            );
-            channels::send(MessageChannel::Sms, &msg).await?;
-        }
-    }
+    let (subject, body) = verification_message(&user, &code);
+    channels::deliver(
+        &channel,
+        &user,
+        value,
+        MessagePurpose::Verification,
+        &subject,
+        body,
+    )
+    .await?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -245,11 +282,12 @@ pub async fn put_verification(
 async fn attr_contact(
     user_id: &str,
     name: &str,
-) -> Result<(ContactKind, Option<String>), ErrorResponse> {
+) -> Result<(ContactKind, Option<UserAttrConfigTyp>, Option<String>), ErrorResponse> {
     let config = UserAttrConfigEntity::find(name.to_string()).await?;
     let kind = match config.typ {
         Some(UserAttrConfigTyp::VerifiedEmail) => ContactKind::Email,
         Some(UserAttrConfigTyp::VerifiedPhone) => ContactKind::Phone,
+        Some(UserAttrConfigTyp::Verified) => ContactKind::Other,
         _ => {
             return Err(ErrorResponse::new(
                 ErrorResponseType::BadRequest,
@@ -266,7 +304,7 @@ async fn attr_contact(
         .and_then(|v| v.as_str().map(String::from))
         .filter(|v| !v.is_empty());
 
-    Ok((kind, value))
+    Ok((kind, config.typ, value))
 }
 
 fn attr_key(name: &str) -> String {
@@ -297,7 +335,8 @@ pub async fn get_attr_verification(
     let (id, name) = path.into_inner();
     principal.validate_user_or_admin(&id)?;
 
-    let (kind, value) = attr_contact(&id, &name).await?;
+    let (kind, typ, value) = attr_contact(&id, &name).await?;
+    let channels = AttrVerifyChannels::usable(&name, typ).await?;
     let verified = match &value {
         Some(v) => ContactVerification::is_verified(&id, &attr_key(&name), v).await?,
         None => false,
@@ -307,11 +346,13 @@ pub async fn get_attr_verification(
         kind,
         value,
         verified,
-        verify_available: kind == ContactKind::Email || sms_available(),
+        verify_available: !channels.is_empty(),
+        channels: channels.iter().map(option).collect(),
     }))
 }
 
-/// Send a verification code to the email address / phone number stored in the attribute
+/// Send a verification code to the value stored in the attribute, through one of the channels
+/// linked to it (`channel`, default: the first one)
 ///
 /// **Permissions**
 /// - the user itself
@@ -331,54 +372,33 @@ pub async fn get_attr_verification(
 #[post("/users/{id}/attr/{name}/verification/start")]
 pub async fn post_attr_verification_start(
     path: Path<(String, String)>,
+    query: Query<VerifyStartQuery>,
     principal: ReqPrincipal,
 ) -> Result<HttpResponse, ErrorResponse> {
     let (id, name) = path.into_inner();
     principal.validate_user_or_admin(&id)?;
 
-    let (kind, value) = attr_contact(&id, &name).await?;
+    let (_, typ, value) = attr_contact(&id, &name).await?;
     let value = value.ok_or_else(|| {
         ErrorResponse::new(ErrorResponseType::BadRequest, "The attribute has no value")
     })?;
-    if kind == ContactKind::Phone && !sms_available() {
-        return Err(ErrorResponse::new(
-            ErrorResponseType::BadRequest,
-            "No SMS channel is configured",
-        ));
-    }
+    let channel = pick(
+        &AttrVerifyChannels::usable(&name, typ).await?,
+        query.channel.as_deref(),
+    )?;
 
     let user = User::find(id).await?;
     let code = ContactVerification::start(&user.id, &attr_key(&name), &value).await?;
-    let prefix = &RauthyConfig::get().vars.email.sub_prefix;
-    let text = format!("Your {prefix} verification code is {code}. It is valid for 10 minutes.");
-
-    match kind {
-        ContactKind::Email => {
-            channels::send_email_to(
-                &value,
-                &user.email_recipient_name(),
-                "Verification code",
-                text,
-            )
-            .await?;
-        }
-        ContactKind::Phone => {
-            let msg = ChannelMessage::new(
-                MessageChannel::Sms,
-                MessagePurpose::Verification,
-                ChannelRecipient {
-                    user_id: user.id.clone(),
-                    name: user.email_recipient_name(),
-                    to: value,
-                },
-                None,
-                text,
-                None,
-                None,
-            );
-            channels::send(MessageChannel::Sms, &msg).await?;
-        }
-    }
+    let (subject, body) = verification_message(&user, &code);
+    channels::deliver(
+        &channel,
+        &user,
+        value,
+        MessagePurpose::Verification,
+        &subject,
+        body,
+    )
+    .await?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -410,7 +430,7 @@ pub async fn post_attr_verification_confirm(
     principal.validate_user_or_admin(&id)?;
     payload.validate()?;
 
-    let (_, value) = attr_contact(&id, &name).await?;
+    let (_, _, value) = attr_contact(&id, &name).await?;
     let value = value.ok_or_else(|| {
         ErrorResponse::new(ErrorResponseType::BadRequest, "The attribute has no value")
     })?;
@@ -444,7 +464,7 @@ pub async fn put_attr_verification(
     principal.validate_admin_session()?;
     let (id, name) = path.into_inner();
 
-    let (_, value) = attr_contact(&id, &name).await?;
+    let (_, _, value) = attr_contact(&id, &name).await?;
     let value = value.ok_or_else(|| {
         ErrorResponse::new(ErrorResponseType::BadRequest, "The attribute has no value")
     })?;

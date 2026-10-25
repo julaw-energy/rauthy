@@ -39,6 +39,7 @@ pub mod generic;
 pub mod groups;
 pub mod html;
 pub mod kv;
+pub mod message_templates;
 pub mod oidc;
 pub mod openapi;
 pub mod pam;

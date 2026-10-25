@@ -8,13 +8,15 @@ use actix_web::web::{Json, Query};
 use actix_web::{HttpRequest, HttpResponse, delete, get, post, put, web};
 use actix_web_lab::__reexports::futures_util::StreamExt;
 use rauthy_api_types::clients::{
-    ClientResponse, ClientSecretRequest, ClientSecretResponse, ClientValidateRedirectUriRequest,
-    DynamicClientRequest, DynamicClientResponse, NewClientRequest, UpdateClientRequest,
+    ClientRequiredFieldsRequest, ClientRequiredFieldsResponse, ClientResponse, ClientSecretRequest,
+    ClientSecretResponse, ClientValidateRedirectUriRequest, DynamicClientRequest,
+    DynamicClientResponse, NewClientRequest, UpdateClientRequest,
 };
 use rauthy_api_types::forward_auth::{ForwardAuthCallbackParams, ForwardAuthParams};
 use rauthy_api_types::generic::LogoParams;
 use rauthy_common::utils::real_ip_from_req;
 use rauthy_data::entity::api_keys::{AccessGroup, AccessRights};
+use rauthy_data::entity::client_required_fields::ClientRequiredFields;
 use rauthy_data::entity::clients::{Client, validate_dyn_client_redirect_uri};
 use rauthy_data::entity::clients_dyn::ClientDyn;
 use rauthy_data::entity::clients_scim::ClientScim;
@@ -742,4 +744,61 @@ pub async fn post_client_validate_uri(
         validate_reg_redirect_uri(&payload.redirect_uri).await?;
     }
     Ok(HttpResponse::Ok().finish())
+}
+
+/// The user fields and attributes this client needs before a login for it may complete.
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    get,
+    path = "/clients/{id}/required_fields",
+    tag = "clients",
+    responses(
+        (status = 200, description = "Ok", body = ClientRequiredFieldsResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+)]
+#[get("/clients/{id}/required_fields")]
+pub async fn get_client_required_fields(
+    path: web::Path<String>,
+    principal: ReqPrincipal,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_api_key_or_admin_session(AccessGroup::Clients, AccessRights::Read)?;
+
+    let id = path.into_inner();
+    let client = Client::find(id).await?;
+    let fields = ClientRequiredFields::find(&client.id).await?;
+    Ok(HttpResponse::Ok().json(ClientRequiredFieldsResponse { fields }))
+}
+
+/// Sets the user fields and attributes this client needs. Users who lack some of them are asked
+/// to complete their account before the login for this client continues.
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    put,
+    path = "/clients/{id}/required_fields",
+    tag = "clients",
+    request_body = ClientRequiredFieldsRequest,
+    responses(
+        (status = 200, description = "Ok", body = ClientRequiredFieldsResponse),
+        (status = 400, description = "BadRequest"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+)]
+#[put("/clients/{id}/required_fields")]
+pub async fn put_client_required_fields(
+    path: web::Path<String>,
+    principal: ReqPrincipal,
+    Json(payload): Json<ClientRequiredFieldsRequest>,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_api_key_or_admin_session(AccessGroup::Clients, AccessRights::Update)?;
+
+    let client = Client::find(path.into_inner()).await?;
+    let fields = ClientRequiredFields::save(&client.id, payload.fields).await?;
+    Ok(HttpResponse::Ok().json(ClientRequiredFieldsResponse { fields }))
 }

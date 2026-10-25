@@ -17,17 +17,76 @@ pub struct SmtpSettingsResponse {
     pub from_db: bool,
 }
 
-/// The config of a message channel in use. The API key is never returned.
+/// One name / value pair of an `http` channel, for a header or a body attribute
+#[derive(Debug, Serialize, ToSchema)]
+#[cfg_attr(debug_assertions, derive(Deserialize))]
+pub struct HttpKvResponse {
+    pub name: String,
+    /// `None` for a secret, it never leaves the backend
+    pub value: Option<String>,
+    pub secret: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[cfg_attr(debug_assertions, derive(Deserialize))]
+pub struct HttpSettingsResponse {
+    /// `POST`, `PUT` or `PATCH`
+    pub method: String,
+    pub url: String,
+    pub headers: Vec<HttpKvResponse>,
+    /// `json` or `form`
+    pub body_format: String,
+    pub body: Vec<HttpKvResponse>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct HttpKvRequest {
+    pub name: String,
+    /// For a secret, `None` keeps the stored value of the entry with the same name
+    pub value: Option<String>,
+    /// Secrets are stored encrypted and never shown again
+    pub secret: bool,
+}
+
+/// How an `http` channel calls its provider. Values can contain `{{to}}`, `{{text}}`, `{{html}}`,
+/// `{{subject}}`, `{{name}}`, `{{purpose}}`, `{{channel}}`, `{{app_name}}` and
+/// `{{idempotency_key}}`. Secrets are used as they are.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct HttpSettingsRequest {
+    /// `POST`, `PUT` or `PATCH`
+    pub method: String,
+    pub url: String,
+    pub headers: Vec<HttpKvRequest>,
+    /// `json` or `form`. A body name like `messages.0.to` builds nested JSON.
+    pub body_format: String,
+    pub body: Vec<HttpKvRequest>,
+}
+
+/// The config of a message channel in use. Secrets are never returned.
 #[derive(Debug, Serialize, ToSchema)]
 #[cfg_attr(debug_assertions, derive(Deserialize))]
 pub struct ChannelSettingsResponse {
     pub channel: MessageChannel,
-    /// `""` (disabled), `smtp` (email only), `notifyd` or `webhook`
+    /// `""` (disabled), `smtp`, `webhook` or `http`
     pub driver: String,
+    /// `webhook`
     pub url: Option<String>,
+    /// `webhook`: a signing secret is set
     pub has_api_key: bool,
-    pub channel_name: String,
     pub from_db: bool,
+    /// Shown in the UI instead of the name
+    pub label: String,
+    /// Which value of a user this channel delivers to: `email`, `phone` or `attr:<name>` for a
+    /// custom attribute. A user without such a value is skipped / rejected.
+    pub recipient: String,
+    /// `email` and `sms` always exist and cannot be deleted
+    pub builtin: bool,
+    /// Unix timestamp after which the channel stops working. Custom channels only.
+    pub expires: Option<i64>,
+    pub expired: bool,
+    /// `smtp` of a custom channel: its own server
+    pub smtp: Option<SmtpSettingsResponse>,
+    pub http: Option<HttpSettingsResponse>,
 }
 
 /// Which profile fields users see and must fill in. Every value is `required`, `optional` or
@@ -137,12 +196,22 @@ pub struct SmtpSettingsRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ChannelSettingsRequest {
-    /// `""` (disabled), `smtp` (email only), `notifyd` or `webhook`
+    /// `""` (disabled), `smtp`, `webhook` or `http`. `smtp` is the server under Email (SMTP) for
+    /// the channel `email`, and the channel's own server for a custom channel.
     pub driver: String,
+    /// `webhook`
     pub url: Option<String>,
-    /// `None` keeps the stored key, an empty string removes it
+    /// `webhook`: the signing secret. `None` keeps the stored one, an empty string removes it.
     pub api_key: Option<String>,
-    pub channel_name: Option<String>,
+    /// Shown in the UI, defaults to the name
+    pub label: Option<String>,
+    /// `email`, `phone` or `attr:<name>`. Fixed for `email` and `sms`.
+    pub recipient: Option<String>,
+    /// Custom channels only. `None` means it never expires.
+    pub expires: Option<i64>,
+    /// `smtp` of a custom channel
+    pub smtp: Option<SmtpSettingsRequest>,
+    pub http: Option<HttpSettingsRequest>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

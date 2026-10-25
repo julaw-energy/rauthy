@@ -1,6 +1,8 @@
 use crate::database::DB;
 use crate::entity::api_keys::ApiKeyEntity;
+use crate::entity::attr_verify_channels::AttrVerifyChannelsRow;
 use crate::entity::auth_providers::AuthProvider;
+use crate::entity::client_required_fields::ClientRequiredFieldsRow;
 use crate::entity::clients::Client;
 use crate::entity::clients_dyn::ClientDyn;
 use crate::entity::clients_scim::ClientScim;
@@ -323,6 +325,19 @@ pub async fn migrate_from_sqlite(db_from: &str) -> Result<(), ErrorResponse> {
     debug!("Migrating table: user_clients");
     let before = query_sqlite::<UserClientRow>(&conn, "SELECT * FROM user_clients").await?;
     inserts::user_clients(before).await?;
+
+    // CLIENT REQUIRED FIELDS
+    debug!("Migrating table: client_required_fields");
+    let before =
+        query_sqlite::<ClientRequiredFieldsRow>(&conn, "SELECT * FROM client_required_fields")
+            .await?;
+    inserts::client_required_fields(before).await?;
+
+    // ATTR VERIFY CHANNELS
+    debug!("Migrating table: attr_verify_channels");
+    let before =
+        query_sqlite::<AttrVerifyChannelsRow>(&conn, "SELECT * FROM attr_verify_channels").await?;
+    inserts::attr_verify_channels(before).await?;
 
     // CONTACT VERIFICATIONS
     debug!("Migrating table: contact_verifications");
@@ -866,6 +881,16 @@ pub async fn migrate_from_postgres() -> Result<(), ErrorResponse> {
     debug!("Migrating table: user_clients");
     let before = DB::pg_query_map_with(&cl, "SELECT * FROM user_clients", &[], 0).await?;
     inserts::user_clients(before).await?;
+
+    // CLIENT REQUIRED FIELDS
+    debug!("Migrating table: client_required_fields");
+    let before = DB::pg_query_map_with(&cl, "SELECT * FROM client_required_fields", &[], 0).await?;
+    inserts::client_required_fields(before).await?;
+
+    // ATTR VERIFY CHANNELS
+    debug!("Migrating table: attr_verify_channels");
+    let before = DB::pg_query_map_with(&cl, "SELECT * FROM attr_verify_channels", &[], 0).await?;
+    inserts::attr_verify_channels(before).await?;
 
     // CONTACT VERIFICATIONS
     debug!("Migrating table: contact_verifications");

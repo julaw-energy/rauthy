@@ -120,7 +120,7 @@ pub async fn get_tos_latest(
     <meta name="robots" content="noindex, nofollow" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Rauthy ToS</title>
-    <link rel="icon" href="/auth/v1/assets/rauthy_light.svg" />
+    <link rel="icon" href="/auth/v1/assets/app_icon.svg" />
     <link rel="stylesheet" href="/auth/v1/theme/rauthy/{theme_ts}" />
 </head>
 <body>{div}</body>

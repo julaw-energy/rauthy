@@ -586,6 +586,43 @@ impl AdminConfigPolicyHtml<'_> {
     }
 }
 
+/// The admin config pages that only exist in this fork. Same shape as the ones above.
+macro_rules! admin_config_page {
+    ($name:ident, $path:literal) => {
+        #[derive(Default, Template)]
+        #[template(path = $path)]
+        pub struct $name<'a> {
+            lang: &'a str,
+            client_id: &'a str,
+            theme_ts: i64,
+            templates: &'a [HtmlTemplate],
+        }
+
+        impl $name<'_> {
+            pub fn build(lang: &Language, theme_ts: i64) -> String {
+                let res = $name {
+                    lang: lang.html_lang(),
+                    client_id: "rauthy",
+                    theme_ts,
+                    ..Default::default()
+                };
+
+                res.render().unwrap()
+            }
+        }
+    };
+}
+
+admin_config_page!(AdminConfigGeneralHtml, "html/admin/config/general.html");
+admin_config_page!(
+    AdminConfigUserFieldsHtml,
+    "html/admin/config/user_fields.html"
+);
+admin_config_page!(AdminConfigLifetimesHtml, "html/admin/config/lifetimes.html");
+admin_config_page!(AdminConfigEmailHtml, "html/admin/config/email.html");
+admin_config_page!(AdminConfigChannelsHtml, "html/admin/config/channels.html");
+admin_config_page!(AdminConfigTemplatesHtml, "html/admin/config/templates.html");
+
 #[derive(Default, Template)]
 #[template(path = "html/admin/docs.html")]
 pub struct AdminDocsHtml<'a> {

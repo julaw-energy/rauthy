@@ -23,8 +23,8 @@ use rauthy_handlers::openapi::ApiDoc;
 use rauthy_handlers::swagger_ui::{OPENAPI_CONFIG, OPENAPI_JSON};
 use rauthy_handlers::{
     api_keys, atproto, auth_providers, backup, blacklist, book, clients, contact_verification,
-    cors_preflight, dev_only, email, events, fed_cm, generic, groups, html, kv, oidc, pam, roles,
-    scalar, scopes, sessions, settings, swagger_ui, themes, tos, users,
+    cors_preflight, dev_only, email, events, fed_cm, generic, groups, html, kv, message_templates,
+    oidc, pam, roles, scalar, scopes, sessions, settings, swagger_ui, themes, tos, users,
 };
 use rauthy_middlewares::csrf_protection::CsrfProtectionMiddleware;
 use rauthy_middlewares::ip_blacklist::RauthyIpBlacklistMiddleware;
@@ -552,7 +552,15 @@ fn api_services() -> actix_web::Scope {
                 .service(settings::post_settings_smtp_test)
                 .service(settings::put_settings_channel)
                 .service(settings::post_settings_channel_test)
+                .service(settings::delete_settings_channel)
+                .service(settings::post_settings_channel_send_test)
                 .service(settings::post_settings_import)
+                .service(message_templates::get_templates)
+                .service(message_templates::get_template)
+                .service(message_templates::put_template)
+                .service(message_templates::delete_template)
+                .service(message_templates::post_template_preview)
+                .service(message_templates::post_template_test)
                 .service(email::get_email_jobs)
                 .service(email::get_channels)
                 .service(email::post_send_email)
@@ -574,6 +582,12 @@ fn api_services() -> actix_web::Scope {
                 .service(html::get_admin_config_encryption_html)
                 .service(html::get_admin_config_jwks_html)
                 .service(html::get_admin_config_policy_html)
+                .service(html::get_admin_config_general_html)
+                .service(html::get_admin_config_user_fields_html)
+                .service(html::get_admin_config_lifetimes_html)
+                .service(html::get_admin_config_email_html)
+                .service(html::get_admin_config_channels_html)
+                .service(html::get_admin_config_templates_html)
                 .service(html::get_admin_docs_html)
                 .service(html::get_admin_events_html)
                 .service(html::get_admin_groups_html)
@@ -635,6 +649,8 @@ fn api_services() -> actix_web::Scope {
                 .service(clients::delete_client_favicon)
                 .service(clients::delete_client_logo)
                 .service(clients::get_client_secret)
+                .service(clients::get_client_required_fields)
+                .service(clients::put_client_required_fields)
                 .service(clients::post_clients)
                 .service(clients::put_clients)
                 .service(clients::put_generate_client_secret)
@@ -693,6 +709,8 @@ fn api_services() -> actix_web::Scope {
                 .service(users::post_cust_attr)
                 .service(users::put_cust_attr)
                 .service(users::delete_cust_attr)
+                .service(users::get_cust_attr_verify_channels)
+                .service(users::put_cust_attr_verify_channels)
                 .service(users::get_user_picture_config)
                 .service(users::get_user_by_id)
                 .service(users::get_user_attr)
@@ -704,6 +722,7 @@ fn api_services() -> actix_web::Scope {
                 .service(users::delete_user_picture)
                 .service(users::get_user_devices)
                 .service(users::get_user_clients)
+                .service(users::get_user_missing_fields)
                 .service(users::put_user_device_name)
                 .service(users::delete_user_device)
                 .service(users::get_user_webid_data)

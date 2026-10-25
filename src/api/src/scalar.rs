@@ -43,6 +43,9 @@ pub fn scalar_page(principal: &ReqPrincipal) -> Result<HttpResponse, ErrorRespon
     ]
     .join("; ");
 
+    let app_name = rauthy_data::settings::app_name()
+        .replace('&', "&amp;")
+        .replace('<', "&lt;");
     let body = format!(
         r#"<!doctype html>
 <html lang="en">
@@ -50,7 +53,7 @@ pub fn scalar_page(principal: &ReqPrincipal) -> Result<HttpResponse, ErrorRespon
     <meta charset="utf-8">
     <meta name="referrer" content="no-referrer">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Rauthy API Reference</title>
+    <title>{app_name} API Reference</title>
   </head>
   <body>
     <script id="api-reference" data-url="openapi.json" data-configuration='{{"hideClientButton":false,"persistAuth":false,"withCredentials":true}}'></script>

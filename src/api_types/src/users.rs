@@ -267,6 +267,9 @@ pub enum UserAttrConfigTyp {
     /// like `Phone`, but the user can verify with an SMS code that the number is theirs
     #[serde(rename = "verified_phone")]
     VerifiedPhone,
+    /// any text, like a messenger username. The user verifies it with a code that is sent
+    /// through one of the channels linked to the attribute.
+    Verified,
     Number,
     Integer,
     Boolean,
@@ -288,6 +291,7 @@ impl FromStr for UserAttrConfigTyp {
             "phone" => Self::Phone,
             "verified_email" => Self::VerifiedEmail,
             "verified_phone" => Self::VerifiedPhone,
+            "verified" => Self::Verified,
             "number" => Self::Number,
             "integer" => Self::Integer,
             "boolean" => Self::Boolean,
@@ -316,6 +320,7 @@ impl UserAttrConfigTyp {
             UserAttrConfigTyp::Phone => "phone",
             UserAttrConfigTyp::VerifiedEmail => "verified_email",
             UserAttrConfigTyp::VerifiedPhone => "verified_phone",
+            UserAttrConfigTyp::Verified => "verified",
             UserAttrConfigTyp::Number => "number",
             UserAttrConfigTyp::Integer => "integer",
             UserAttrConfigTyp::Boolean => "boolean",

@@ -157,6 +157,58 @@ pub async fn get_admin_config_policy_html(req: HttpRequest) -> Result<HttpRespon
         .await
 }
 
+#[get("/admin/config/general")]
+pub async fn get_admin_config_general_html(
+    req: HttpRequest,
+) -> Result<HttpResponse, ErrorResponse> {
+    HtmlCached::ConfigGeneral
+        .handle(req, ThemeCssFull::find_theme_ts_rauthy().await?, true)
+        .await
+}
+
+#[get("/admin/config/user_fields")]
+pub async fn get_admin_config_user_fields_html(
+    req: HttpRequest,
+) -> Result<HttpResponse, ErrorResponse> {
+    HtmlCached::ConfigUserFields
+        .handle(req, ThemeCssFull::find_theme_ts_rauthy().await?, true)
+        .await
+}
+
+#[get("/admin/config/lifetimes")]
+pub async fn get_admin_config_lifetimes_html(
+    req: HttpRequest,
+) -> Result<HttpResponse, ErrorResponse> {
+    HtmlCached::ConfigLifetimes
+        .handle(req, ThemeCssFull::find_theme_ts_rauthy().await?, true)
+        .await
+}
+
+#[get("/admin/config/email")]
+pub async fn get_admin_config_email_html(req: HttpRequest) -> Result<HttpResponse, ErrorResponse> {
+    HtmlCached::ConfigEmail
+        .handle(req, ThemeCssFull::find_theme_ts_rauthy().await?, true)
+        .await
+}
+
+#[get("/admin/config/channels")]
+pub async fn get_admin_config_channels_html(
+    req: HttpRequest,
+) -> Result<HttpResponse, ErrorResponse> {
+    HtmlCached::ConfigChannels
+        .handle(req, ThemeCssFull::find_theme_ts_rauthy().await?, true)
+        .await
+}
+
+#[get("/admin/config/templates")]
+pub async fn get_admin_config_templates_html(
+    req: HttpRequest,
+) -> Result<HttpResponse, ErrorResponse> {
+    HtmlCached::ConfigTemplates
+        .handle(req, ThemeCssFull::find_theme_ts_rauthy().await?, true)
+        .await
+}
+
 #[get("/admin/docs")]
 pub async fn get_admin_docs_html(req: HttpRequest) -> Result<HttpResponse, ErrorResponse> {
     HtmlCached::Docs

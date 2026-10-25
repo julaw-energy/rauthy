@@ -565,41 +565,29 @@ bootstrap_dir = 'bootstrap'
 # values at any time. Without any SMTP server Rauthy still starts; emails are just not sent
 # until one is set up.
 #
-# Delivery channels for bulk messages sent from the admin UI and verification codes.
-# Rauthy talks to every notification agent through ONE contract, so the agent can be swapped
-# without touching anything else. Drivers:
+# `email` and `sms` always exist (the user's email address and phone number). More channels are
+# created in the admin UI (Config -> Channels), where `http` channels and channels with their own
+# SMTP server are set up too. Drivers here:
 # - "smtp":    the built-in mailer (email only, the default for email)
-# - "notifyd": adapter for https://github.com/rmzlb/notifyd -> POST {url}/v1/send, `X-Api-Key`
-# - "webhook": generic. POSTs the Rauthy message contract (JSON, version 1) to `url`, signed with
+# - "webhook": POSTs the Rauthy message contract (JSON, version 1) to `url`, signed with
 #              `X-Rauthy-Signature: sha256=<hex hmac of the raw body>` when an `api_key` is set.
-# An empty driver disables the channel. Only enabled channels show up in the admin UI.
+#              Any communication agent only has to understand this one format.
+# An empty driver disables the channel. If the email channel uses the webhook driver, ALL emails
+# (password resets, codes, ...) are handed to the agent instead of an SMTP server.
 #
-# Every channel has the same keys. Env vars: CHANNEL_<EMAIL|SMS|WHATSAPP>_<DRIVER|URL|API_KEY|NAME>
+# Env vars: CHANNEL_<EMAIL|SMS>_<DRIVER|URL|API_KEY>
 [channels.email]
 # default: "smtp"
 #driver = "smtp"
 #url = ""
-# notifyd: the project API key, webhook: the HMAC signing secret
+# webhook: the HMAC signing secret
 #api_key = ""
-# the name the agent knows this channel by
-# default: "email"
-#channel_name = "email"
 
 [channels.sms]
 # default: ""
-#driver = "notifyd"
-#url = "http://127.0.0.1:3400"
-#api_key = "sk_myapp_..."
-# default: "sms"
-#channel_name = "sms"
-
-[channels.whatsapp]
-# default: ""
-#driver = "notifyd"
-#url = "http://127.0.0.1:3400"
-#api_key = "sk_myapp_..."
-# default: "whatsapp"
-#channel_name = "whatsapp"
+#driver = "webhook"
+#url = "https://agent.example.com/hook"
+#api_key = "signing secret"
 
 [cluster]
 # Can be set to 'k8s' to try to split off the node id from the hostname

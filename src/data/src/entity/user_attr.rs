@@ -806,7 +806,9 @@ impl UserAttrConfigEntity {
             },
             // everything else is text and must have been sent as such
             _ if !value.is_string() => return Err(invalid()),
-            UserAttrConfigTyp::String | UserAttrConfigTyp::Text => Value::String(text.clone()),
+            UserAttrConfigTyp::String | UserAttrConfigTyp::Text | UserAttrConfigTyp::Verified => {
+                Value::String(text.clone())
+            }
             UserAttrConfigTyp::Email | UserAttrConfigTyp::VerifiedEmail => {
                 if !text.validate_email() {
                     return Err(invalid());

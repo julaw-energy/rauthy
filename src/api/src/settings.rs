@@ -1,6 +1,6 @@
 use crate::ReqPrincipal;
 use actix_web::web::{Json, Path};
-use actix_web::{HttpResponse, get, post, put};
+use actix_web::{HttpResponse, delete, get, post, put};
 use rauthy_api_types::email_jobs::MessageChannel;
 use rauthy_api_types::settings::{
     AppNameResponse, ChannelSettingsRequest, GeneralSettingsRequest, GeneralSettingsResponse,
@@ -47,14 +47,10 @@ pub async fn get_settings(principal: ReqPrincipal) -> Result<HttpResponse, Error
         },
         smtp: settings::smtp_view(),
         smtp_configured: settings::smtp().is_configured(),
-        channels: [
-            MessageChannel::Email,
-            MessageChannel::Sms,
-            MessageChannel::Whatsapp,
-        ]
-        .into_iter()
-        .map(settings::channel_view)
-        .collect(),
+        channels: settings::all_channels()
+            .into_iter()
+            .map(settings::channel_view)
+            .collect(),
     }))
 }
 
@@ -208,7 +204,11 @@ pub async fn post_settings_smtp_test(
     }))
 }
 
-/// Change the config of a message channel (`email`, `sms` or `whatsapp`). Applies immediately.
+/// Create or change a message channel. A new name creates a custom channel. Applies immediately.
+///
+/// `recipient` ties the channel to the user value it delivers to: `email`, `phone` or
+/// `attr:<name>` for a custom attribute. A user without that value gets no message through the
+/// channel.
 ///
 /// **Permissions**
 /// - rauthy_admin
@@ -256,8 +256,79 @@ pub async fn post_settings_channel_test(
     principal: ReqPrincipal,
 ) -> Result<HttpResponse, ErrorResponse> {
     principal.validate_admin_session()?;
-    let message = channels::test(channel_from_path(&path)?).await?;
+    let message = channels::test(&channel_from_path(&path)?).await?;
     Ok(HttpResponse::Ok().json(SettingsTestResponse { message }))
+}
+
+/// Delete a custom message channel. The built-in channels can only be disabled.
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    delete,
+    path = "/settings/channel/{channel}",
+    tag = "settings",
+    responses(
+        (status = 200, description = "Ok"),
+        (status = 400, description = "BadRequest", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+        (status = 404, description = "NotFound", body = ErrorResponse),
+    ),
+)]
+#[delete("/settings/channel/{channel}")]
+pub async fn delete_settings_channel(
+    path: Path<String>,
+    principal: ReqPrincipal,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_admin_session()?;
+    settings::delete_channel(&channel_from_path(&path)?).await?;
+    Ok(HttpResponse::Ok().finish())
+}
+
+/// Send a test message through a channel to the admin who is logged in
+///
+/// The message goes to the value of the admin the channel is tied to (email address, phone
+/// number or attribute). An admin who has none fails the test.
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    post,
+    path = "/settings/channel/{channel}/send_test",
+    tag = "settings",
+    responses(
+        (status = 200, description = "Ok", body = SettingsTestResponse),
+        (status = 400, description = "BadRequest", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[post("/settings/channel/{channel}/send_test")]
+pub async fn post_settings_channel_send_test(
+    path: Path<String>,
+    principal: ReqPrincipal,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_admin_session()?;
+    let channel = channel_from_path(&path)?;
+
+    let user = User::find(principal.user_id()?.to_string()).await?;
+    let cfg = settings::channel(&channel);
+    let to = channels::resolve_recipient(&user, &cfg.recipient).await?;
+    let text = format!("Test message from {}.", settings::app_name());
+    channels::deliver(
+        &channel,
+        &user,
+        to.clone(),
+        channels::MessagePurpose::Security,
+        "Test message",
+        text,
+    )
+    .await?;
+
+    Ok(HttpResponse::Ok().json(SettingsTestResponse {
+        message: format!("Test message sent to {to}"),
+    }))
 }
 
 /// Replace a settings group with the values of the config file / env as they are right now.

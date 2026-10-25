@@ -4,7 +4,6 @@ use crate::channels::{
 use crate::database::DB;
 use crate::email;
 use crate::entity::users::User;
-use crate::entity::users_values::UserValues;
 use crate::rauthy_config::RauthyConfig;
 use chrono::Utc;
 use hiqlite::macros::{FromRow, params};
@@ -427,8 +426,8 @@ impl EmailJob {
         };
 
         // everything except the built-in SMTP mailer goes through the configured agent driver
-        let via_smtp = self.channel == MessageChannel::Email
-            && crate::settings::channel(self.channel).driver == ChannelDriver::Smtp;
+        let via_smtp = self.channel.is_email()
+            && crate::settings::channel(&self.channel).driver == ChannelDriver::Smtp;
         let mut consecutive_failures = 0;
 
         let mut cancel_check_ts = Utc::now().timestamp();
@@ -556,33 +555,30 @@ impl EmailJob {
         text: &Option<String>,
         html: &Option<String>,
     ) -> Result<(), ErrorResponse> {
-        let to = match self.channel {
-            MessageChannel::Email => user.email.clone(),
-            MessageChannel::Sms | MessageChannel::Whatsapp => {
-                match UserValues::find(&user.id).await?.and_then(|v| v.phone) {
-                    Some(p) if !p.is_empty() => p,
-                    _ => {
-                        trace!("EmailJob {}: user {} has no phone number", self.id, user.id);
-                        return Ok(());
-                    }
-                }
-            }
+        // each channel delivers to the user value it is tied to, a user without it is skipped
+        let source = crate::settings::channel(&self.channel).recipient;
+        let Some(to) = crate::channels::recipient_value(user, &source).await? else {
+            trace!(
+                "EmailJob {}: user {} has no value for '{}'",
+                self.id, user.id, source
+            );
+            return Ok(());
         };
 
         let msg = ChannelMessage::new(
-            self.channel,
+            &self.channel,
             MessagePurpose::Admin,
             ChannelRecipient {
                 user_id: user.id.clone(),
                 name: user.email_recipient_name(),
                 to,
             },
-            (self.channel == MessageChannel::Email).then(|| self.subject.clone()),
+            self.channel.is_email().then(|| self.subject.clone()),
             text.clone().unwrap_or_default(),
             html.clone(),
             Some(format!("emailjob-{}-{}", self.id, user.id)),
         );
-        channel_send(self.channel, &msg).await.map(|_| ())
+        channel_send(&self.channel, &msg).await.map(|_| ())
     }
 
     #[inline]

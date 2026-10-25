@@ -4,10 +4,9 @@ use actix_web::{HttpResponse, get, post};
 use chrono::Utc;
 use rauthy_api_types::email_jobs::{
     ChannelInfo, EmailContentType, EmailJobFilterType, EmailJobRequest, EmailJobResponse,
-    EmailTargets, MessageChannel,
+    EmailTargets,
 };
 use rauthy_common::sanitize_html::sanitize_html;
-use rauthy_data::channels::ChannelDriver;
 use rauthy_data::entity::email_jobs::{EmailJob, EmailJobFilter, EmailJobStatus};
 use rauthy_data::settings;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
@@ -101,9 +100,12 @@ pub async fn get_channels(principal: ReqPrincipal) -> Result<HttpResponse, Error
 
     let resp = settings::available_channels()
         .into_iter()
-        .map(|(channel, driver)| ChannelInfo {
+        .map(|(channel, cfg)| ChannelInfo {
+            driver: cfg.driver.as_str().to_string(),
+            html: cfg.supports_html(&channel),
             channel,
-            driver: driver.as_str().to_string(),
+            label: cfg.label,
+            recipient: cfg.recipient,
         })
         .collect::<Vec<_>>();
 
@@ -112,8 +114,9 @@ pub async fn get_channels(principal: ReqPrincipal) -> Result<HttpResponse, Error
 
 /// Send out a custom email, SMS or WhatsApp message to users
 ///
-/// The `channel` defaults to `email`. SMS and WhatsApp need a configured driver, only support
-/// plain text, and skip users without a phone number.
+/// The `channel` defaults to `email`. Other channels need a configured driver, only support plain
+/// text, and skip users who have no value for the user value the channel is tied to (like a
+/// phone number).
 ///
 /// **Permissions**
 /// - rauthy_admin
@@ -159,16 +162,25 @@ pub async fn post_send_email(
     }
     payload.validate()?;
 
-    if settings::channel(payload.channel).driver == ChannelDriver::Disabled {
+    let cfg = settings::channel(&payload.channel);
+    if !cfg.is_usable() {
         return Err(ErrorResponse::new(
             ErrorResponseType::BadRequest,
-            format!("Channel '{}' is not configured", payload.channel.as_str()),
+            format!(
+                "Channel '{}' is {}",
+                payload.channel,
+                if cfg.expired() {
+                    "expired"
+                } else {
+                    "not configured"
+                }
+            ),
         ));
     }
-    if payload.channel != MessageChannel::Email && payload.content_type != EmailContentType::Text {
+    if !cfg.supports_html(&payload.channel) && payload.content_type != EmailContentType::Text {
         return Err(ErrorResponse::new(
             ErrorResponseType::BadRequest,
-            "SMS and WhatsApp only support plain text",
+            "This channel only supports plain text",
         ));
     }
 

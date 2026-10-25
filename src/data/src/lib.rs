@@ -16,6 +16,7 @@ pub mod html;
 pub mod http_client;
 pub mod ipgeo;
 pub mod language;
+pub mod message_templates;
 pub mod migration;
 pub mod rauthy_config;
 pub mod secrets;

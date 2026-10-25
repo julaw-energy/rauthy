@@ -54,23 +54,53 @@ fn validate_target_names(names: &[String]) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// Delivery channel of a bulk message
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum MessageChannel {
-    #[default]
-    Email,
-    Sms,
-    Whatsapp,
-}
+/// The name of a message channel. `email` and `sms` always exist, an admin can add more. Lowercase letters, digits and `_`, starting with a letter, 32 characters at most.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(try_from = "String", into = "String")]
+#[schema(value_type = String, example = "sms")]
+pub struct MessageChannel(String);
 
 impl MessageChannel {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Email => "email",
-            Self::Sms => "sms",
-            Self::Whatsapp => "whatsapp",
-        }
+    pub const BUILTIN: [&'static str; 2] = ["email", "sms"];
+
+    pub fn email() -> Self {
+        Self("email".into())
+    }
+
+    pub fn sms() -> Self {
+        Self("sms".into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn is_email(&self) -> bool {
+        self.0 == "email"
+    }
+
+    /// `email` or `sms`: these cannot be deleted
+    pub fn is_builtin(&self) -> bool {
+        Self::BUILTIN.contains(&self.0.as_str())
+    }
+
+    pub fn is_valid_name(s: &str) -> bool {
+        let mut chars = s.chars();
+        s.len() <= 32
+            && chars.next().is_some_and(|c| c.is_ascii_lowercase())
+            && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    }
+}
+
+impl Default for MessageChannel {
+    fn default() -> Self {
+        Self::email()
+    }
+}
+
+impl std::fmt::Display for MessageChannel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
     }
 }
 
@@ -78,12 +108,33 @@ impl std::str::FromStr for MessageChannel {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "email" => Ok(Self::Email),
-            "sms" => Ok(Self::Sms),
-            "whatsapp" => Ok(Self::Whatsapp),
-            _ => Err(()),
+        if Self::is_valid_name(s) {
+            Ok(Self(s.to_string()))
+        } else {
+            Err(())
         }
+    }
+}
+
+impl TryFrom<String> for MessageChannel {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        if Self::is_valid_name(&s) {
+            Ok(Self(s))
+        } else {
+            Err(
+                "invalid channel name: use lowercase letters, digits and _, starting with a \
+                letter"
+                    .to_string(),
+            )
+        }
+    }
+}
+
+impl From<MessageChannel> for String {
+    fn from(c: MessageChannel) -> Self {
+        c.0
     }
 }
 
@@ -91,8 +142,12 @@ impl std::str::FromStr for MessageChannel {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ChannelInfo {
     pub channel: MessageChannel,
-    /// `smtp`, `notifyd` or `webhook`
+    /// `smtp`, `webhook` or `http`
     pub driver: String,
+    /// `true` for the channels that send HTML (the default email and custom smtp ones)
+    pub html: bool,
+    pub label: String,
+    pub recipient: String,
 }
 
 #[derive(Deserialize, Validate, ToSchema)]

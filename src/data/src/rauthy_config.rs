@@ -4692,7 +4692,7 @@ pub struct VarsSuspiciousRequests {
     pub log: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VarsTemplates {
     pub password_new: VarsTemplatesLanguages,
     pub password_reset: VarsTemplatesLanguages,
@@ -4700,7 +4700,7 @@ pub struct VarsTemplates {
     pub email_otp: VarsTemplatesLanguages,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VarsTemplatesLanguages {
     pub de: VarsTemplate,
     pub en: VarsTemplate,

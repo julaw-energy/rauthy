@@ -33,9 +33,14 @@ pub async fn get_openapi_doc(principal: ReqPrincipal) -> Result<HttpResponse, Er
     // With the Swagger UI the document is built once at startup. With only Scalar enabled it is
     // built per request instead, so it never stays in memory.
     if let Some(json) = OPENAPI_JSON.get() {
-        return Ok(HttpResponse::Ok()
-            .content_type(APPLICATION_JSON)
-            .body(json.as_str()));
+        // the cached document was built at startup, the name may have changed since
+        let name = rauthy_data::settings::app_name();
+        let body = json.replacen(
+            "Rauthy Single Sign-on",
+            &format!("{name} Single Sign-on"),
+            1,
+        );
+        return Ok(HttpResponse::Ok().content_type(APPLICATION_JSON).body(body));
     }
     let json = crate::openapi::ApiDoc::build().to_json().map_err(|err| {
         ErrorResponse::new(ErrorResponseType::Internal, format!("OpenAPI: {err}"))

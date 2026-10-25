@@ -4,6 +4,7 @@
 #   tools/image/build.sh                      -> rauthy-custom:local (loaded into the local docker)
 #   tools/image/build.sh --tag ghcr.io/me/rauthy:test
 #   tools/image/build.sh --push --tag ghcr.io/me/rauthy:1   (needs `docker login ghcr.io` first)
+#   tools/image/build.sh --fast               -> a quicker test image (thin LTO), never for a rollout
 #
 # The first build takes a while (Rust release build, UI, docs). Later ones reuse the layers.
 set -euo pipefail
@@ -12,10 +13,12 @@ cd "$(dirname "$0")/../.."
 TAG="rauthy-custom:local"
 ACTION="--load"
 EXTRA=()
+PROFILE="release"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --tag) TAG="$2"; shift 2 ;;
         --push) ACTION="--push"; shift ;;
+        --fast) PROFILE="fast"; shift ;;
         --platform) EXTRA+=(--platform "$2"); shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -34,9 +37,10 @@ DOCKER_BUILDKIT=1 docker buildx build \
     -f Dockerfile.fork \
     --build-arg CREATED="$(date --rfc-3339=seconds)" \
     --build-arg VERSION="$VERSION" \
+    --build-arg PROFILE="$PROFILE" \
     -t "$TAG" \
     "${EXTRA[@]}" \
     "$ACTION" \
     .
 
-echo "Built $TAG ($VERSION)"
+echo "Built $TAG ($VERSION, profile $PROFILE)"

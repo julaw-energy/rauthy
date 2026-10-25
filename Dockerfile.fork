@@ -14,6 +14,8 @@ ARG RUST_IMAGE=rust:1.95.0-bookworm
 
 # ---------------------------------------------------------------------------------------------
 FROM ${RUST_IMAGE} AS ui
+# a slow connection should retry instead of failing the whole build
+ENV CARGO_HTTP_TIMEOUT=180 CARGO_NET_RETRY=10
 
 COPY --from=node:24-bookworm /usr/local/ /usr/local/
 # wasm-pack from source: the npm package bundles an old wasm-opt that rejects the output
@@ -31,9 +33,12 @@ RUN curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/versio
 
 WORKDIR /work
 
-# wasm modules (they are members of the Cargo workspace)
+# wasm modules. They are members of the Cargo workspace, but only they are needed here: a
+# workspace of just this crate keeps the layer independent of the rest of the Rust code and spares
+# `cargo metadata` the download of every dependency.
 COPY Cargo.toml Cargo.lock ./
-COPY src ./src
+RUN sed -i 's#members = \["src/\*"\]#members = ["src/wasm-modules"]#' Cargo.toml
+COPY src/wasm-modules ./src/wasm-modules
 RUN cd src/wasm-modules \
     && wasm-pack build -d ../../frontend/src/wasm/spow --no-pack --out-name spow --features spow \
     && wasm-pack build -d ../../frontend/src/wasm/md --no-pack --out-name md --features md
@@ -53,6 +58,8 @@ RUN ln -sfn ../frontend/static frontend-next/static \
 
 # ---------------------------------------------------------------------------------------------
 FROM ${RUST_IMAGE} AS book
+# a slow connection should retry instead of failing the whole build
+ENV CARGO_HTTP_TIMEOUT=180 CARGO_NET_RETRY=10
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo install mdbook@0.4.52 mdbook-admonish@1.20.0 --locked
@@ -63,6 +70,11 @@ RUN bash book/build-embed.sh
 
 # ---------------------------------------------------------------------------------------------
 FROM ${RUST_IMAGE} AS build
+# a slow connection should retry instead of failing the whole build
+ENV CARGO_HTTP_TIMEOUT=180 CARGO_NET_RETRY=10
+
+# `release` for the images you roll out, `fast` for a quick test image (see Cargo.toml)
+ARG PROFILE=release
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential clang libpam0g-dev libudev-dev pkg-config \
@@ -80,8 +92,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     # A release build embeds the FIDO MDS dataset (passkey metadata), which is fetched first. This
     # needs network access to mds.fidoalliance.org during the build.
     cargo run --locked --bin fido-mds-prep -- --source https://mds.fidoalliance.org/ --out assets/fido_mds/dataset.bin \
-    && cargo build --release --locked \
-    && cp target/release/rauthy /rauthy
+    && cargo build --profile ${PROFILE} --locked \
+    && cp target/${PROFILE}/rauthy /rauthy
 
 # ---------------------------------------------------------------------------------------------
 FROM busybox AS empty

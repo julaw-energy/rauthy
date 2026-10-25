@@ -20,6 +20,13 @@ lto = true
 strip = true
 panic = "abort"
 
+# For test images: builds a lot faster than `release`, the binary is a bit bigger and slower.
+# Not for the images you roll out.
+[profile.fast]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+
 [profile.profiling]
 inherits = "release"
 codegen-units = 16

@@ -1,11 +1,27 @@
-# Builds our image and pushes it to the GitHub container registry (ghcr.io).
+# Builds our image on a GitHub runner and pushes it to the GitHub container registry (ghcr.io).
 #
-# It runs when you push to the branch `build-image`, or a tag like `v0.37.2-custom.1`, or when you
-# start it by hand (Actions -> Build image -> Run workflow). It needs NO secrets of your own: the
-# built-in GITHUB_TOKEN is allowed to push to the packages of this repository.
+# It only runs when you start it by hand (Actions -> Build image -> Run workflow), so nothing is
+# built, and no Actions minutes are used, unless you ask for it. Normally you build on your own
+# machine with tools/image/build.sh --push, which is faster because it keeps its build cache.
 #
-# One-time setup in the repository settings:
+# It needs NO secrets of your own: the built-in GITHUB_TOKEN may push to the packages of this
+# repository. One-time setup in the repository settings:
 #   Settings -> Actions -> General -> Workflow permissions: "Read and write permissions"
+# The package is private after the first push. To pull it on a server, `docker login ghcr.io`
+# there with a personal access token that has the `read:packages` scope.
+name: Build image
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag, for example 1.0.0 or 1.0.0-rc1"
+        required: true
+      profile:
+        description: "release (for rollouts) or fast (a quicker test image)"
+        default: release
+
+permissions: "Read and write permissions"
 # After the first push the package is private. To pull it on a server, `docker login ghcr.io` there
 # with a personal access token that has the `read:packages` scope.
 name: Build image
@@ -38,14 +54,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # tags: the branch name, the git tag, and the short commit (never changes, use it on servers)
+      # the tag you typed, and the short commit (never changes, use it on servers)
       - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=tag
+            type=raw,value=${{ inputs.tag }}
             type=sha,prefix=sha-,format=short
 
       - uses: docker/build-push-action@v6
@@ -57,6 +72,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
+            PROFILE=${{ inputs.profile }}
             CREATED=${{ github.event.head_commit.timestamp }}
             SOURCE=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha

@@ -91,12 +91,23 @@ COPY --from=ui /work/templates/html ./templates/html
 COPY --from=ui /work/static/v1 ./static/v1
 COPY --from=book /work/static/book ./static/book
 
+# A release build embeds the FIDO MDS dataset (passkey metadata). In order of preference:
+#   1. assets/fido_mds/dataset.bin from your checkout (`just fido-mds-prep`, not in git)
+#   2. the copy kept in a build cache from an earlier build
+#   3. a fresh download from mds.fidoalliance.org, which then goes into the cache
+# The server answers 429 when it is asked too often, so a download happens as rarely as possible.
+# To force a fresh one, build with --build-arg MDS_REFRESH=$(date +%s).
+ARG MDS_REFRESH=0
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/work/target \
-    # A release build embeds the FIDO MDS dataset (passkey metadata), which is fetched first. This
-    # needs network access to mds.fidoalliance.org during the build.
-    cargo run --locked --bin fido-mds-prep -- --source https://mds.fidoalliance.org/ --out assets/fido_mds/dataset.bin \
+    --mount=type=cache,target=/mds-cache,id=rauthy-mds \
+    if [ -s assets/fido_mds/dataset.bin ] && [ "${MDS_REFRESH}" = "0" ]; then \
+        cp assets/fido_mds/dataset.bin /mds-cache/dataset.bin; \
+    elif [ ! -s /mds-cache/dataset.bin ] || [ "${MDS_REFRESH}" != "0" ]; then \
+        cargo run --locked --bin fido-mds-prep -- --source https://mds.fidoalliance.org/ --out /mds-cache/dataset.bin; \
+    fi \
+    && cp /mds-cache/dataset.bin assets/fido_mds/dataset.bin \
     && cargo build --profile ${PROFILE} --locked \
     && cp target/${PROFILE}/rauthy /rauthy
 

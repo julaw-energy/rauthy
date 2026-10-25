@@ -12,7 +12,7 @@ name = "wasm"
 #opt-level = "s"
 
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = ["-O", "--enable-bulk-memory"]
+wasm-opt = ["-O", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
 
 [features]
 default = ["console_error_panic_hook"]

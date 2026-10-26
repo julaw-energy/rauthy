@@ -20,8 +20,12 @@ rollout), not only what changed.
   It came from a refactor made after the feature had been tested. custom.3 fixes it and was checked against the real
   endpoints (marker read, marker moved, stream with the `read` event).
 
-No other change, no new migration. Moving from custom.1 or custom.2 needs nothing special (the data written by custom.2 is
-compatible).
+- **A failing SMTP server could flood the event log (upstream behaviour).** With an unreachable SMTP server and an events
+  address set, a failed email raises a Critical `EmailSendError` event; that event is itself notified by email, which fails
+  and raises the next event, without end (1558 events in 4 seconds were seen in a test). A failed *event notification*
+  email no longer raises an event, so one failure gives two events and stops. It is logged instead.
+
+No new migration. Moving from custom.1 or custom.2 needs nothing special (the data written by custom.2 is compatible).
 
 ---
 

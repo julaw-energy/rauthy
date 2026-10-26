@@ -17,6 +17,26 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
+/// `Notification` is the type the event notifier sends its E-Mails with.
+fn raises_send_error_event(typ: EmailType) -> bool {
+    typ != EmailType::Notification
+}
+
+/// Raises the `EmailSendError` event for an E-Mail that could not be sent.
+///
+/// A failed *notification* E-Mail does not raise one. The event itself is notified by E-Mail, so
+/// with an unreachable SMTP server every failure would create the next event, without end
+/// (about 1500 events in 4 seconds). It is logged instead.
+pub(crate) async fn report_send_error(typ: EmailType, address: &str) {
+    if !raises_send_error_event(typ) {
+        error!("Could not send the event notification E-Mail to '{address}'");
+        return;
+    }
+    if let Err(err) = Event::email_send_err(typ, address).send().await {
+        error!(?err, "Could not push EmailSendError event");
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EmailType {
     Custom,
@@ -201,9 +221,7 @@ async fn sender_smtp(mut rx: mpsc::Receiver<(EMail, EMailCallback)>) {
                         "Cannot reach the SMTP server, dropping the E-Mail to '{}': {}",
                         req.address, err.message
                     );
-                    if let Err(err) = Event::email_send_err(req.typ, &req.address).send().await {
-                        error!(?err, "Could not push EmailSendError event");
-                    }
+                    report_send_error(req.typ, &req.address).await;
                     continue;
                 }
             }
@@ -261,9 +279,7 @@ async fn sender_smtp(mut rx: mpsc::Receiver<(EMail, EMailCallback)>) {
                     error = ?err,
                     "Could not send E-Mail to '{address}' even after retrying - dropping it"
                 );
-                if let Err(err) = Event::email_send_err(typ, &address).send().await {
-                    error!(?err, "Could not push EmailSendError event");
-                }
+                report_send_error(typ, &address).await;
             }
         }
     }
@@ -298,9 +314,7 @@ async fn send_via_agent(cfg: &ChannelConfig, mut req: EMail, callback: EMailCall
                 "Could not hand the E-Mail to '{}' to the email channel: {}",
                 req.address, err.message
             );
-            if let Err(err) = Event::email_send_err(req.typ, &req.address).send().await {
-                error!(?err, "Could not push EmailSendError event");
-            }
+            report_send_error(req.typ, &req.address).await;
         }
     }
 }
@@ -524,5 +538,28 @@ async fn conn_test_smtp_insecure(
         Err(err) => Err(smtp_err(format!(
             "Could not connect to the insecure SMTP relay {smtp_url}:{port}: {err}"
         ))),
+    }
+}
+
+#[cfg(test)]
+mod send_error_tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_notification_email_must_not_raise_another_event() {
+        // the event is notified by E-Mail again, which loops with an unreachable server
+        assert!(!raises_send_error_event(EmailType::Notification));
+        for t in [
+            EmailType::Custom,
+            EmailType::EmailChangeConfirm,
+            EmailType::EmailChangeInfo,
+            EmailType::EmailRegisteredAlready,
+            EmailType::LoginLocation,
+            EmailType::PasswordReset,
+            EmailType::PasswordResetInfo,
+            EmailType::OtpRequest,
+        ] {
+            assert!(raises_send_error_event(t), "{t}");
+        }
     }
 }

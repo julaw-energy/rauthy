@@ -178,8 +178,11 @@ impl UserPicture {
     ) -> Result<HttpResponse, ErrorResponse> {
         // make sure to always create a new picture with a new id for more efficient caching
         let mut user = User::find(user_id).await?;
-        if let Some(picture_id) = user.picture_id {
-            Self::remove(picture_id, user.id.clone()).await?;
+        if let Some(picture_id) = user.picture_id.take() {
+            // the link of a federation provider has nothing in our storage that could be removed
+            if !User::is_external_picture(&picture_id) {
+                Self::remove(picture_id, user.id.clone()).await?;
+            }
         }
 
         // read image data into memory (actix web limits max body size)

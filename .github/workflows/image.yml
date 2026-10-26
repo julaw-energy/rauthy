@@ -15,22 +15,11 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Image tag, for example 1.0.0 or 1.0.0-rc1"
+        description: "Image tag, for example 0.37.2-custom.2"
         required: true
       profile:
         description: "release (for rollouts) or fast (a quicker test image)"
         default: release
-
-permissions: "Read and write permissions"
-# After the first push the package is private. To pull it on a server, `docker login ghcr.io` there
-# with a personal access token that has the `read:packages` scope.
-name: Build image
-
-on:
-  push:
-    branches: [build-image]
-    tags: ["v*"]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -71,9 +60,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ steps.meta.outputs.version }}
+            VERSION=${{ inputs.tag }}
             PROFILE=${{ inputs.profile }}
-            CREATED=${{ github.event.head_commit.timestamp }}
             SOURCE=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -2,7 +2,8 @@ use crate::ReqPrincipal;
 use actix_web::http::header::{CONTENT_SECURITY_POLICY, HeaderValue};
 use actix_web::{HttpResponse, get};
 use rauthy_data::rauthy_config::RauthyConfig;
-use rauthy_error::ErrorResponse;
+use rauthy_common::constants::APPLICATION_JSON;
+use rauthy_error::{ErrorResponse, ErrorResponseType};
 use tracing::warn;
 
 /// Pinned, so a CDN update can never change what an admin session loads.
@@ -16,15 +17,39 @@ pub async fn get_scalar(principal: ReqPrincipal) -> Result<HttpResponse, ErrorRe
     scalar_page(&principal)
 }
 
-/// Also used by `swagger_ui::get_swagger_ui` to show Scalar on the `/docs/` root when enabled.
-pub fn scalar_page(principal: &ReqPrincipal) -> Result<HttpResponse, ErrorResponse> {
+/// The `/docs/` root shows the API reference too.
+#[get("/docs/")]
+pub async fn get_docs_root(principal: ReqPrincipal) -> Result<HttpResponse, ErrorResponse> {
+    scalar_page(&principal)
+}
+
+/// The OpenAPI document Scalar reads. It is built per request, so it never stays in memory.
+#[get("/docs/openapi.json")]
+pub async fn get_openapi_doc(principal: ReqPrincipal) -> Result<HttpResponse, ErrorResponse> {
+    let cfg = &RauthyConfig::get().vars.server;
+    if !cfg.scalar_enable {
+        warn!("Request for /docs/openapi.json but `scalar_enable` is set to `false`");
+        return Ok(HttpResponse::NotFound().finish());
+    }
+    if !cfg.scalar_public && principal.validate_session_auth().is_err() {
+        warn!("Public request for /docs/openapi.json but `scalar_public` is set to `false`");
+        return Ok(HttpResponse::Unauthorized().finish());
+    }
+
+    let json = crate::openapi::ApiDoc::build().to_json().map_err(|err| {
+        ErrorResponse::new(ErrorResponseType::Internal, format!("OpenAPI: {err}"))
+    })?;
+    Ok(HttpResponse::Ok().content_type(APPLICATION_JSON).body(json))
+}
+
+fn scalar_page(principal: &ReqPrincipal) -> Result<HttpResponse, ErrorResponse> {
     let cfg = &RauthyConfig::get().vars.server;
     if !cfg.scalar_enable {
         warn!("Request for the Scalar UI but `scalar_enable` is set to `false`");
         return Ok(HttpResponse::NotFound().finish());
     }
-    if !cfg.swagger_ui_public && principal.validate_session_auth().is_err() {
-        warn!("Public request for the Scalar UI but `swagger_ui_public` is set to `false`");
+    if !cfg.scalar_public && principal.validate_session_auth().is_err() {
+        warn!("Public request for the Scalar UI but `scalar_public` is set to `false`");
         return Ok(HttpResponse::Unauthorized().finish());
     }
 
@@ -72,7 +97,7 @@ pub fn scalar_page(principal: &ReqPrincipal) -> Result<HttpResponse, ErrorRespon
         .body(body))
 }
 
-/// Makes "Send request" work with the logged-in session, like the Swagger UI did: requests to this
+/// Makes "Send request" work with the logged-in session, requests to this
 /// origin carry the session cookie, and mutating ones get the CSRF token the UI keeps in the
 /// browser. An API key is still possible, but not needed.
 const SCALAR_INIT_JS: &str = r#"(function () {
@@ -110,7 +135,7 @@ pub async fn get_scalar_init(principal: ReqPrincipal) -> Result<HttpResponse, Er
     if !cfg.scalar_enable {
         return Ok(HttpResponse::NotFound().finish());
     }
-    if !cfg.swagger_ui_public && principal.validate_session_auth().is_err() {
+    if !cfg.scalar_public && principal.validate_session_auth().is_err() {
         return Ok(HttpResponse::Unauthorized().finish());
     }
     Ok(HttpResponse::Ok()

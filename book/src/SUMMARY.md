@@ -59,4 +59,4 @@
     - [Modules](work/pam_nss_modules.md)
 
 - [Reference Config](./config/config.md)
-- [Swagger UI and Scalar](swagger.md)
+- [API Reference (Scalar)](scalar.md)

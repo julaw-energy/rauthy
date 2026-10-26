@@ -243,8 +243,7 @@ export let I18nAdminNb: I18nAdmin = {
             mCost3: 'Den minimale tillatte verdien for <code>m_cost</code> er <code>32768</code>.',
         },
         openapi: 'For integrering av en ekstern applikasjon via Rauthys API, se',
-        openapiNote: `I standardkonfigurasjonen er ikke Swagger-grensesnittet aktivt via lenken ovenfor. Det kan 
-            aktiveres via konfigurasjon 'server.swagger_ui_enable' og muligens 'server.swagger_ui_public'.`,
+        openapiNote: `The API reference is not active by default. An administrator can enable it with 'server.scalar_enable' and possibly 'server.scalar_public' in the configuration.`,
         source: 'Kildekoden finnes her',
     },
     editor: {

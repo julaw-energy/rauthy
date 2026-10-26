@@ -160,7 +160,6 @@ tokio-util = { version = "0.7.18", features = ["rt"] }
 utoipa = { version = "5", features = [
     "actix_extras", "chrono", "openapi_extensions"
 ] }
-utoipa-swagger-ui = { version = "9.0.0", features = ["actix-web", "vendored"] }
 uuid = { version = "1.24.0", features = ["v4"] }
 validator = { version = "0.21", features = ["derive"] }
 wasm-bindgen = "0.2.105"

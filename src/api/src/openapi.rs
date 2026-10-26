@@ -1,7 +1,7 @@
 use crate::{
     api_keys, atproto, auth_providers, backup, blacklist, clients, contact_verification, email,
     events, fed_cm, generic, groups, kv, message_templates, oidc, pam, roles, scopes, sessions,
-    settings, themes, tos, users,
+    settings, static_settings, themes, tos, users,
 };
 use rauthy_api_types::*;
 use rauthy_api_types::{
@@ -90,6 +90,7 @@ use utoipa::{OpenApi, openapi};
         contact_verification::post_attr_verification_confirm,
         contact_verification::put_attr_verification,
         settings::get_settings,
+        static_settings::get_settings_static,
         settings::get_app_name,
         settings::put_settings_general,
         settings::put_settings_user_values,

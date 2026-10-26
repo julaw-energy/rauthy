@@ -142,7 +142,7 @@ services:
         pub_url = "localhost:8443"
         http_workers = 1
         metrics_enable = false
-        swagger_ui_enable = true
+        scalar_enable = true
         [tls]
         cert_path = "tls/cert-chain.pem"
         key_path = "tls/key.pem"
@@ -301,7 +301,7 @@ services:
         pub_url = "localhost:8443"
         http_workers = 1
         metrics_enable = false
-        swagger_ui_enable = true
+        scalar_enable = true
         [tls]
         cert_path = "tls/cert-chain.pem"
         key_path = "tls/key.pem"

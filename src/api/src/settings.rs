@@ -316,7 +316,7 @@ pub async fn post_settings_channel_send_test(
     let cfg = settings::channel(&channel);
     let to = channels::resolve_recipient(&user, &cfg.recipient).await?;
     let text = format!("Test message from {}.", settings::app_name());
-    channels::deliver(
+    let delivery = channels::deliver(
         &channel,
         &user,
         to.clone(),
@@ -326,9 +326,16 @@ pub async fn post_settings_channel_send_test(
     )
     .await?;
 
-    Ok(HttpResponse::Ok().json(SettingsTestResponse {
-        message: format!("Test message sent to {to}"),
-    }))
+    // what the other side answered, so an admin sees that it really arrived there
+    let mut message = format!("Test message sent to {to}");
+    if let Some(status) = delivery.status {
+        message.push_str(&format!(". The endpoint answered {status}"));
+        let answer = delivery.answer.trim();
+        if !answer.is_empty() {
+            message.push_str(&format!(": {answer}"));
+        }
+    }
+    Ok(HttpResponse::Ok().json(SettingsTestResponse { message }))
 }
 
 /// Replace a settings group with the values of the config file / env as they are right now.

@@ -281,10 +281,12 @@ async fn send_via_agent(cfg: &ChannelConfig, mut req: EMail, callback: EMailCall
     }
     brand(&mut req);
 
-    let mut res = channels::send_system_email(cfg, &req).await;
+    // the retry carries the same key, so the agent can drop a duplicate
+    let key = rauthy_common::utils::get_rand(24);
+    let mut res = channels::send_system_email(cfg, &req, &key).await;
     if res.is_err() {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        res = channels::send_system_email(cfg, &req).await;
+        res = channels::send_system_email(cfg, &req, &key).await;
     }
     match res {
         Ok(_) => {

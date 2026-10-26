@@ -2650,31 +2650,31 @@ metrics_enable = true
 # overwritten by: METRICS_PORT
 #metrics_port = 9090
 
-# Can be set to `true` to enable the Swagger UI.
-# This will consume ~13mb of additional memory.
-#
-# default: false
-# overwritten by: SWAGGER_UI_ENABLE
-swagger_ui_enable = true
-
-# Can be set to `true` to make the Swagger UI publicly
-# available. By default, you can only access it with a
-# valid `rauthy_admin` session.
-#
-# default: false
-# overwritten by: SWAGGER_UI_PUBLIC
-#swagger_ui_public = false
-
-# Can be set to `true` to enable the Scalar API reference at
-# `/docs/scalar`. It uses the same OpenAPI document as the
-# Swagger UI, but it is only a tiny HTML page that loads Scalar
-# from a CDN. Nothing is bundled or kept in memory, and the
-# OpenAPI document is built per request. It can be enabled
-# without `swagger_ui_enable`. Access follows `swagger_ui_public`.
+# Can be set to `true` to enable the API reference (Scalar) at
+# `/docs/` and `/docs/scalar`. It is only a tiny HTML page that
+# loads Scalar from a CDN, pinned to one version. Nothing is
+# bundled and nothing is kept in memory, the OpenAPI document is
+# built per request. The Swagger UI has been removed.
 #
 # default: false
 # overwritten by: SCALAR_ENABLE
 #scalar_enable = false
+
+# Can be set to `true` to make the API reference publicly
+# available. By default, you can only access it with a valid
+# session. The old name `swagger_ui_public` still works.
+#
+# default: false
+# overwritten by: SCALAR_PUBLIC
+#scalar_public = false
+
+# Can be set to `true` to make the documentation book at
+# `/auth/v1/book/` publicly available. By default, only a
+# logged-in user can open it.
+#
+# default: false
+# overwritten by: BOOK_PUBLIC
+#book_public = false
 
 # The interval in which keep-alives should be sent to SSE
 # clients. Depending on your network setup, proxy timeouts,

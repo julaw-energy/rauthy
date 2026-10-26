@@ -244,8 +244,7 @@ export let I18nAdminPt: I18nAdmin = {
             máximo partido dele, tem de ser ajustado em cada instalação.`,
         },
         openapi: 'Se pretende integrar uma aplicação externa e usar a API do Rauthy, consulte a',
-        openapiNote: `Na configuração predefinida, a Swagger UI não está ativa através da ligação acima. Pode ser
-            ativada através da configuração 'server.swagger_ui_enable' e, eventualmente, 'server.swagger_ui_public'.`,
+        openapiNote: `The API reference is not active by default. An administrator can enable it with 'server.scalar_enable' and possibly 'server.scalar_public' in the configuration.`,
         source: 'O código-fonte pode ser consultado aqui',
     },
     editor: {

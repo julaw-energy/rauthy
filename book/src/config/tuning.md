@@ -248,21 +248,16 @@ CPU. Leave it to `false` if not needed.
 metrics_enable = false
 ```
 
-### `swagger_ui_enable`
+### `scalar_enable`
 
-If enable `swagger_ui_enable` and set it to `true`, it will consume ~13 MB of additional memory. To
-reduce overall memory fragmentation further down the road, if enabled, it will be initialized at the
-very start of the application instead of being lazily initialized. If you don't need the API
-documentation, leave it to the default, which is `false`.
+The API reference (Scalar) is a tiny HTML page that loads Scalar from a CDN. It costs no additional memory,
+because the OpenAPI document is built per request instead of being kept around. It is disabled by default.
 
 ```toml
 [server]
-# Can be set to `true` to enable the Swagger UI.
-# This will consume ~13mb of additional memory.
-#
 # default: false
-# overwritten by: SWAGGER_UI_ENABLE
-swagger_ui_enable = false
+# overwritten by: SCALAR_ENABLE
+scalar_enable = false
 ```
 
 ## Password Hashing

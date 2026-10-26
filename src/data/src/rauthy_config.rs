@@ -649,9 +649,9 @@ impl Default for Vars {
                 metrics_enable: false,
                 metrics_addr: "0.0.0.0".into(),
                 metrics_port: 9090,
-                swagger_ui_enable: false,
-                swagger_ui_public: false,
                 scalar_enable: false,
+                scalar_public: false,
+                book_public: false,
                 app_name: "Rauthy".into(),
                 see_keep_alive: Duration::from_secs(30),
                 ssp_threshold: 1000,
@@ -3436,13 +3436,21 @@ impl Vars {
             self.server.metrics_port = v;
         }
 
-        if let Some(v) = t_bool(
+        // The Swagger UI has been removed, Scalar is the only API reference. The old keys are
+        // still read, so an existing config does not break: `swagger_ui_public` keeps its
+        // meaning for Scalar, `swagger_ui_enable` is ignored.
+        if t_bool(
             &mut table,
             "server",
             "swagger_ui_enable",
             "SWAGGER_UI_ENABLE",
-        ) {
-            self.server.swagger_ui_enable = v;
+        )
+        .is_some_and(|v| v)
+        {
+            warn!(
+                "`server.swagger_ui_enable` is ignored, the Swagger UI has been removed. \
+                Use `server.scalar_enable` for the API reference."
+            );
         }
         if let Some(v) = t_bool(
             &mut table,
@@ -3450,10 +3458,16 @@ impl Vars {
             "swagger_ui_public",
             "SWAGGER_UI_PUBLIC",
         ) {
-            self.server.swagger_ui_public = v;
+            self.server.scalar_public = v;
         }
         if let Some(v) = t_bool(&mut table, "server", "scalar_enable", "SCALAR_ENABLE") {
             self.server.scalar_enable = v;
+        }
+        if let Some(v) = t_bool(&mut table, "server", "scalar_public", "SCALAR_PUBLIC") {
+            self.server.scalar_public = v;
+        }
+        if let Some(v) = t_bool(&mut table, "server", "book_public", "BOOK_PUBLIC") {
+            self.server.book_public = v;
         }
         if let Some(v) = t_str(&mut table, "server", "app_name", "APP_NAME") {
             let v = v.trim();
@@ -4672,9 +4686,10 @@ pub struct VarsServer {
     pub metrics_enable: bool,
     pub metrics_addr: Cow<'static, str>,
     pub metrics_port: u16,
-    pub swagger_ui_enable: bool,
-    pub swagger_ui_public: bool,
     pub scalar_enable: bool,
+    pub scalar_public: bool,
+    /// Whether the documentation book at `/auth/v1/book/` is open to everyone
+    pub book_public: bool,
     /// The name shown to users instead of "Rauthy" (pages, titles, emails, docs)
     pub app_name: Cow<'static, str>,
     pub see_keep_alive: Duration,

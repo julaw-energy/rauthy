@@ -1032,6 +1032,11 @@ pub struct AuthProviderIdClaims<'a> {
     pub preferred_username: Option<Cow<'a, str>>,
     pub zoneinfo: Option<Cow<'a, str>>,
 
+    // the profile picture: `picture` is the OIDC claim (Google, Microsoft, ...), `avatar_url` is
+    // what Github sends
+    pub picture: Option<Cow<'a, str>>,
+    pub avatar_url: Option<Cow<'a, str>>,
+
     pub json_bytes: Option<&'a [u8]>,
 }
 
@@ -1046,6 +1051,24 @@ impl<'a> TryFrom<&'a [u8]> for AuthProviderIdClaims<'a> {
 }
 
 impl AuthProviderIdClaims<'_> {
+    /// The profile picture link of the provider, if it sent a usable one. Only `https` links are
+    /// taken, they are used as they are and never fetched by Rauthy.
+    fn picture_url(&self) -> Option<String> {
+        let url = self
+            .picture
+            .as_deref()
+            .or(self.avatar_url.as_deref())?
+            .trim();
+        if url.len() <= 2048
+            && url.starts_with("https://")
+            && !url.chars().any(|c| c.is_whitespace() || c.is_control())
+        {
+            Some(url.to_string())
+        } else {
+            None
+        }
+    }
+
     fn given_name(&self) -> &str {
         if let Some(given_name) = &self.given_name {
             given_name
@@ -1346,6 +1369,15 @@ impl AuthProviderIdClaims<'_> {
                 user.family_name = family_name.map(String::from);
             }
 
+            // Keep the provider's picture link current, but never replace a picture the user
+            // uploaded. After an upload the link is gone, see `UserPicture::upload`.
+            if let Some(url) = self.picture_url()
+                && user.picture_id.as_deref().is_none_or(User::is_external_picture)
+                && user.picture_id.as_deref() != Some(url.as_str())
+            {
+                user.picture_id = Some(url);
+            }
+
             // should this user be a rauthy admin?
             let roles = user.roles_iter().collect::<Vec<_>>();
 
@@ -1404,6 +1436,7 @@ impl AuthProviderIdClaims<'_> {
                     .unwrap_or_default(),
                 auth_provider_id: Some(provider.id.clone()),
                 federation_uid: Some(claims_user_id.to_string()),
+                picture_id: self.picture_url(),
                 ..Default::default()
             };
             User::create_federated(new_user).await?
@@ -1510,6 +1543,32 @@ mod tests {
             email_verified,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn picture_url_takes_only_plain_https_links() {
+        let with = |picture: Option<&'static str>, avatar: Option<&'static str>| {
+            AuthProviderIdClaims {
+                picture: picture.map(Cow::from),
+                avatar_url: avatar.map(Cow::from),
+                ..Default::default()
+            }
+            .picture_url()
+        };
+
+        assert_eq!(
+            with(Some("https://lh3.googleusercontent.com/a/abc=s96-c"), None).as_deref(),
+            Some("https://lh3.googleusercontent.com/a/abc=s96-c")
+        );
+        // Github
+        assert_eq!(
+            with(None, Some("https://avatars.githubusercontent.com/u/1?v=4")).as_deref(),
+            Some("https://avatars.githubusercontent.com/u/1?v=4")
+        );
+        assert_eq!(with(Some("http://example.com/a.png"), None), None);
+        assert_eq!(with(Some("javascript:alert(1)"), None), None);
+        assert_eq!(with(Some("https://example.com/a b.png"), None), None);
+        assert_eq!(with(None, None), None);
     }
 
     #[test]

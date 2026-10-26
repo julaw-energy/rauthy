@@ -209,6 +209,13 @@ pub async fn get_admin_config_templates_html(
         .await
 }
 
+#[get("/admin/config/static")]
+pub async fn get_admin_config_static_html(req: HttpRequest) -> Result<HttpResponse, ErrorResponse> {
+    HtmlCached::ConfigStatic
+        .handle(req, ThemeCssFull::find_theme_ts_rauthy().await?, true)
+        .await
+}
+
 #[get("/admin/docs")]
 pub async fn get_admin_docs_html(req: HttpRequest) -> Result<HttpResponse, ErrorResponse> {
     HtmlCached::Docs

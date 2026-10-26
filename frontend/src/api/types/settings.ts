@@ -155,3 +155,18 @@ export interface ChannelSettingsRequest {
 export interface SettingsTestResponse {
     message: string;
 }
+
+export interface StaticSettingEntry {
+    key: string;
+    value: string;
+    secret: boolean;
+}
+
+export interface StaticSettingsSection {
+    title: string;
+    entries: StaticSettingEntry[];
+}
+
+export interface StaticSettingsResponse {
+    sections: StaticSettingsSection[];
+}

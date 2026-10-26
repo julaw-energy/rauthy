@@ -223,7 +223,7 @@ more secure) and how many concurrent logins at the exact same time you need to s
 - [x] Optional open user registration
 - [x] Optional user registration domain restriction
 - [x] App version update checker
-- [x] SwaggerUI documentation
+- [x] API reference (Scalar)
 - [x] Configurable E-Mail templates for NewPassword + ResetPassword events
 - [x] Prometheus `/metrics` endpoint on separate port
 - [x] No-Setup migrations between different databases (Yes, even

@@ -23,6 +23,7 @@
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
     import { useSession } from '$state/session.svelte';
     import { page } from '$app/state';
+    import { unread } from '$lib5/admin/events/unread.svelte';
 
     let ta = useI18nAdmin();
     let session = useSession('admin');
@@ -88,7 +89,14 @@
                         {ta.nav.sessions}
                     </NavLink>
                     <NavLink {params} route="/events">
-                        {#snippet icon(width: string)}<IconBell {width} />{/snippet}
+                        {#snippet icon(width: string)}
+                            <span class="relative inline-flex">
+                                <IconBell {width} />
+                                {#if unread.count > 0}
+                                    <span class="bg-destructive absolute -top-0.5 -right-0.5 size-2 rounded-full"></span>
+                                {/if}
+                            </span>
+                        {/snippet}
                         {ta.nav.events}
                     </NavLink>
                     <NavLink {params} route="/blacklist">

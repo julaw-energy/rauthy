@@ -21,7 +21,7 @@
 
     <p>
         {ta.docs.openapi}
-        <A href="/auth/v1/docs/" target="_blank">Swagger UI</A>
+        <A href="/auth/v1/docs/scalar" target="_blank">Scalar API reference</A>
         <br />
         <b>{ta.common.note}:</b>
         {ta.docs.openapiNote}

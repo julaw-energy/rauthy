@@ -253,9 +253,7 @@ export let I18nAdminFr: I18nAdmin = {
         },
         openapi:
             "Si vous souhaitez intégrer une application externe et utiliser l'API de Rauthy, consultez",
-        openapiNote: `Dans la configuration par défaut, l'interface Swagger n'est pas active via le lien ci-dessus. Ça 
-            peut être activé via la configuration « server.swagger_ui_enable » et éventuellement 
-            « server.swagger_ui_public ».`,
+        openapiNote: `The API reference is not active by default. An administrator can enable it with 'server.scalar_enable' and possibly 'server.scalar_public' in the configuration.`,
         source: 'Le code source est disponible ici',
     },
     editor: {

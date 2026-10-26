@@ -3,9 +3,14 @@
 //! The book is built by `book/build-embed.sh` into `static/book/` before `cargo build`. Only the
 //! gzip-compressed files are embedded, which keeps the binary about 2.5 MB bigger. If the folder
 //! is empty the endpoint just answers with a hint, nothing breaks.
+//!
+//! It is only open to a logged-in session, unless `server.book_public` is set. The book describes
+//! the configuration and internals, which is nothing the public needs.
 
+use crate::ReqPrincipal;
 use actix_web::http::header;
 use actix_web::{HttpRequest, HttpResponse, get, web};
+use rauthy_data::rauthy_config::RauthyConfig;
 use rust_embed::Embed;
 
 #[derive(Embed)]
@@ -13,15 +18,34 @@ use rust_embed::Embed;
 #[allow_missing = true]
 struct BookAssets;
 
+/// `None` when the request may see the book
+fn deny(principal: &ReqPrincipal) -> Option<HttpResponse> {
+    if RauthyConfig::get().vars.server.book_public || principal.validate_session_auth().is_ok() {
+        None
+    } else {
+        Some(HttpResponse::Unauthorized().finish())
+    }
+}
+
 #[get("/book")]
-pub async fn get_book_redirect() -> HttpResponse {
+pub async fn get_book_redirect(principal: ReqPrincipal) -> HttpResponse {
+    if let Some(denied) = deny(&principal) {
+        return denied;
+    }
     HttpResponse::MovedPermanently()
         .insert_header((header::LOCATION, "/auth/v1/book/"))
         .finish()
 }
 
 #[get("/book/{tail:.*}")]
-pub async fn get_book(req: HttpRequest, tail: web::Path<String>) -> HttpResponse {
+pub async fn get_book(
+    req: HttpRequest,
+    tail: web::Path<String>,
+    principal: ReqPrincipal,
+) -> HttpResponse {
+    if let Some(denied) = deny(&principal) {
+        return denied;
+    }
     let mut path = tail.into_inner();
     if path.is_empty() || path.ends_with('/') {
         path.push_str("index.html");

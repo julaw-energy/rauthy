@@ -77,7 +77,7 @@ of users, it usually looks like this:
 - Hiqlite HA cluster ~65mb
 - Postgres-based ~35mb
 
-> If you enable the SwaggerUI or the embedded IPGeo DB, they will consume quite a bit more idle
+> If you enable the API reference or the embedded IPGeo DB, they will consume quite a bit more idle
 > memory.
 
 ### Highly Available
@@ -227,7 +227,7 @@ more secure) and how many concurrent logins at the exact same time you need to s
 - [x] Optional open user registration
 - [x] Optional user registration domain restriction
 - [x] App version update checker
-- [x] SwaggerUI documentation
+- [x] API reference (Scalar)
 - [x] Configurable E-Mail templates for NewPassword + ResetPassword events
 - [x] Prometheus `/metrics` endpoint on separate port
 - [x] No-Setup migrations between different databases (Yes, even

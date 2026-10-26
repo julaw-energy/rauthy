@@ -22,6 +22,8 @@
     import type { SettingsResponse } from '$api/types/settings';
     import { initI18nAdmin, useI18nAdmin } from '$state/i18n_admin.svelte';
     import { brandI18n } from '$lib5/appName.svelte';
+    import { unread } from '$lib5/admin/events/unread.svelte';
+    import { onDestroy } from 'svelte';
 
     let { children }: { children: Snippet } = $props();
 
@@ -39,6 +41,26 @@
     let showEvents = $state(false);
     let innerWidth: undefined | number = $state();
     let wide = $derived(!!innerWidth && innerWidth >= 1536);
+
+    // A light stream of the events that matter (notice and up), only used to count what arrived while the
+    // list is not on screen. The list itself opens its own stream, with the level the admin picked.
+    let eventsWatch: undefined | EventSource;
+    let listVisible = $derived(wide || showEvents || page.url.pathname.endsWith('/events'));
+
+    $effect(() => {
+        if (listVisible) unread.count = 0;
+    });
+
+    $effect(() => {
+        if (!isAdmin || !session.isAdmin() || eventsWatch) return;
+        const es = new EventSource('/auth/v1/events/stream?latest=0&level=notice');
+        es.onmessage = ev => {
+            if (ev.data && !listVisible) unread.count += 1;
+        };
+        eventsWatch = es;
+    });
+
+    onDestroy(() => eventsWatch?.close());
 
     $effect(() => {
         let s = session.get();
@@ -135,7 +157,17 @@
                     </Button>
                     {#if !wide}
                         <Button invisible ariaLabel="Events" onclick={() => (showEvents = true)}>
-                            <Bell class="size-5" />
+                            <span class="relative inline-flex">
+                                <Bell class="size-5" />
+                                {#if unread.count > 0}
+                                    <span
+                                        class="bg-destructive text-destructive-foreground absolute -top-2 -right-2 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-semibold"
+                                        aria-label={`${unread.count} new events`}
+                                    >
+                                        {unread.count > 99 ? '99+' : unread.count}
+                                    </span>
+                                {/if}
+                            </span>
                         </Button>
                     {/if}
                 </div>

@@ -41,6 +41,10 @@
     let isUploading = $state(false);
     let files: undefined | FileList = $state();
 
+    // A federated user starts with the picture link of the provider instead of one of our ids. It is
+    // shown from there, and an upload replaces it.
+    let isExternal = $derived(!!pictureId && pictureId.startsWith('https://'));
+
     let color = $derived(calculateColor());
     let width = $derived.by(() => {
         switch (size) {
@@ -196,7 +200,8 @@
         </span>
     {:else}
         <img
-            src={`/auth/v1/users/${userId}/picture/${pictureId}`}
+            src={isExternal ? pictureId : `/auth/v1/users/${userId}/picture/${pictureId}`}
+            referrerpolicy="no-referrer"
             loading="lazy"
             class="absolute inset-0 h-full w-full object-cover"
             aria-label="Avatar"
@@ -249,7 +254,7 @@
             {@render avatar()}
         </form>
 
-        {#if size === 'large' && pictureId}
+        {#if size === 'large' && pictureId && !isExternal}
             <Button bind:ref={refDel} invisible level={-3} onclick={deletePicture}>
                 <span title={t.common.delete}>
                     <IconStop width="1.2rem" />

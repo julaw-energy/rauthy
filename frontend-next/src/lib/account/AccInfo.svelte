@@ -174,7 +174,7 @@
                 {#if isFederated}
                     <div class="grid gap-1">
                         <div>
-                            <Button ariaLabel={t.account.providerUnlink} level={3} onclick={unlinkProvider}>
+                            <Button ariaLabel={t.account.providerUnlink} level={2} onclick={unlinkProvider}>
                                 {t.account.providerUnlink}
                             </Button>
                         </div>

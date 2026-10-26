@@ -5,9 +5,12 @@
 //!
 //! - `smtp`: email through an SMTP server. For the channel `email` that is the server under
 //!   Config -> Email (SMTP); a custom channel has its own server and credentials.
-//! - `webhook`: POSTs the [`ChannelMessage`] contract as JSON to `url`, signed with
-//!   `X-Rauthy-Signature: sha256=<hex hmac of the raw body>` if a signing secret is set. A
-//!   notification agent only has to understand this one format.
+//! - `webhook`: POSTs the [`ChannelMessage`] contract as JSON to `url`. With a signing secret
+//!   set, the request carries `X-Rauthy-Signature: sha256=<hex hmac of the raw body>` and, to
+//!   stop replays, `X-Rauthy-Timestamp: <unix seconds>` with
+//!   `X-Rauthy-Signature-Timestamped: sha256=<hex hmac of "<timestamp>.<raw body>">`. Every
+//!   request also has an `Idempotency-Key` header (the same as in the body) that stays the same
+//!   for a retry. A notification agent only has to understand this one format.
 //! - `http`: an admin describes the call to any provider: method, URL, headers and body
 //!   attributes, each of which can be marked secret. Values can contain `{{to}}`, `{{text}}`, ...
 //!
@@ -31,6 +34,7 @@ use crate::rauthy_config::{RauthyConfig, t_str, t_table};
 use crate::settings::EffectiveSmtp;
 use chrono::Utc;
 use rauthy_api_types::email_jobs::MessageChannel;
+use rauthy_common::utils::get_rand;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
 use serde::Serialize;
 use serde_json::Value;
@@ -282,7 +286,8 @@ impl ChannelMessage {
             subject,
             text,
             html,
-            idempotency_key,
+            // a retry of this message carries the same key, so an agent can drop duplicates
+            idempotency_key: idempotency_key.or_else(|| Some(get_rand(24))),
         }
     }
 }
@@ -379,14 +384,16 @@ pub async fn deliver(
     purpose: MessagePurpose,
     subject: &str,
     text: String,
-) -> Result<(), ErrorResponse> {
+) -> Result<Delivery, ErrorResponse> {
     let cfg = crate::settings::channel(channel);
     if !cfg.is_usable() {
         return Err(not_usable(channel, &cfg));
     }
     if cfg.driver == ChannelDriver::Smtp && channel.is_email() {
         // the default mailer, queued like every other system email
-        return send_email_to(&to, &user.email_recipient_name(), subject, text).await;
+        return send_email_to(&to, &user.email_recipient_name(), subject, text)
+            .await
+            .map(|_| Delivery::default());
     }
 
     let msg = ChannelMessage::new(
@@ -405,12 +412,28 @@ pub async fn deliver(
         None,
         None,
     );
-    send(channel, &msg).await.map(|_| ())
+    let cfg = crate::settings::channel(channel);
+    send_with_report(channel, &cfg, &msg).await
+}
+
+/// What the other side of a channel answered
+#[derive(Debug, Clone, Default)]
+pub struct Delivery {
+    /// HTTP status of the agent / provider, none for SMTP
+    pub status: Option<u16>,
+    /// `job_id` of the answer, if it had one
+    pub id: Option<String>,
+    /// the start of the answer body, for the admin who tests a channel
+    pub answer: String,
 }
 
 /// A system email (password reset, one-time code, ...) through the `email` channel when that
 /// does not use the built-in SMTP mailer. The caller has applied the branding already.
-pub async fn send_system_email(cfg: &ChannelConfig, req: &EMail) -> Result<(), ErrorResponse> {
+pub async fn send_system_email(
+    cfg: &ChannelConfig,
+    req: &EMail,
+    idempotency_key: &str,
+) -> Result<(), ErrorResponse> {
     let channel = MessageChannel::email();
     let msg = ChannelMessage::new(
         &channel,
@@ -423,7 +446,7 @@ pub async fn send_system_email(cfg: &ChannelConfig, req: &EMail) -> Result<(), E
         Some(req.subject.clone()),
         req.text.clone().unwrap_or_default(),
         req.html.clone(),
-        None,
+        Some(idempotency_key.to_string()),
     );
     send_with(&channel, cfg, &msg).await.map(|_| ())
 }
@@ -488,6 +511,14 @@ fn webhook_signature(body: &[u8], secret: &str) -> String {
         "sha256={}",
         hex::encode(hmac_sha256::HMAC::mac(body, secret.as_bytes()))
     )
+}
+
+/// `sha256=<hex>` HMAC of `<unix seconds>.<raw body>`. The receiver rejects a timestamp that is
+/// too old, which stops a captured request from being replayed.
+fn webhook_signature_timestamped(body: &[u8], timestamp: i64, secret: &str) -> String {
+    let mut signed = format!("{timestamp}.").into_bytes();
+    signed.extend_from_slice(body);
+    webhook_signature(&signed, secret)
 }
 
 fn purpose_str(p: MessagePurpose) -> &'static str {
@@ -639,13 +670,31 @@ async fn send_with(
     cfg: &ChannelConfig,
     msg: &ChannelMessage,
 ) -> Result<Option<String>, ErrorResponse> {
+    send_with_report(channel, cfg, msg).await.map(|d| d.id)
+}
+
+async fn send_with_report(
+    channel: &MessageChannel,
+    cfg: &ChannelConfig,
+    msg: &ChannelMessage,
+) -> Result<Delivery, ErrorResponse> {
     let req = match cfg.driver {
         ChannelDriver::Webhook => {
             let url = cfg.url.as_deref().unwrap_or_default();
             let body = serde_json::to_vec(msg).unwrap_or_default();
             let mut r = CLIENT.post(url).header("content-type", "application/json");
+            if let Some(key) = &msg.idempotency_key {
+                r = r.header("idempotency-key", key);
+            }
             if let Some(k) = &cfg.api_key {
-                r = r.header("x-rauthy-signature", webhook_signature(&body, k));
+                let ts = chrono::Utc::now().timestamp();
+                r = r
+                    .header("x-rauthy-signature", webhook_signature(&body, k))
+                    .header("x-rauthy-timestamp", ts)
+                    .header(
+                        "x-rauthy-signature-timestamped",
+                        webhook_signature_timestamped(&body, ts, k),
+                    );
             }
             r.body(body)
         }
@@ -671,7 +720,7 @@ async fn send_with(
                 html: msg.html.clone(),
             };
             mailer::send_with(channel.as_str(), smtp, mail).await?;
-            return Ok(None);
+            return Ok(Delivery::default());
         }
         ChannelDriver::Smtp | ChannelDriver::Disabled => {
             return Err(err_cfg(format!(
@@ -703,7 +752,11 @@ async fn send_with(
     let id = serde_json::from_str::<Value>(&text)
         .ok()
         .and_then(|v| v.get("job_id").and_then(|j| j.as_str().map(String::from)));
-    Ok(id)
+    Ok(Delivery {
+        status: Some(status.as_u16()),
+        id,
+        answer: text.chars().take(300).collect(),
+    })
 }
 
 #[cfg(test)]
@@ -737,6 +790,34 @@ mod tests {
             webhook_signature(b"body", "secret"),
             webhook_signature(b"body2", "secret")
         );
+    }
+
+    #[test]
+    fn timestamped_signature_binds_the_time() {
+        let a = webhook_signature_timestamped(b"body", 1000, "secret");
+        assert_eq!(a, webhook_signature(b"1000.body", "secret"));
+        assert_ne!(a, webhook_signature_timestamped(b"body", 1001, "secret"));
+        assert_ne!(a, webhook_signature(b"body", "secret"));
+    }
+
+    #[test]
+    fn every_message_has_an_idempotency_key() {
+        let m = msg(MessagePurpose::Admin);
+        assert_eq!(m.idempotency_key.as_deref(), Some("verify-u1-1"));
+        let m = ChannelMessage::new(
+            &MessageChannel::sms(),
+            MessagePurpose::Admin,
+            ChannelRecipient {
+                user_id: "u".into(),
+                name: "n".into(),
+                to: "t".into(),
+            },
+            None,
+            "x".into(),
+            None,
+            None,
+        );
+        assert!(m.idempotency_key.is_some_and(|k| k.len() >= 16));
     }
 
     #[test]

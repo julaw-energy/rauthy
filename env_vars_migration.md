@@ -205,8 +205,6 @@
 | METRICS_ENABLE                             | server.metrics_enable                       | bool       |          |
 | METRICS_ADDR                               | server.metrics_addr                         | String     |          |
 | METRICS_PORT                               | server.metrics_port                         | u16        |          |
-| SWAGGER_UI_ENABLE                          | server.swagger_ui_enable                    | bool       |          |
-| SWAGGER_UI_PUBLIC                          | server.swagger_ui_public                    | bool       |          |
 | SSE_KEEP_ALIVE                             | server.see_keep_alive                       | u16        |          |
 | SSP_THRESHOLD                              | server.ssp_threshold                        | u16        |          |
 | SUSPICIOUS_REQUESTS_BLACKLIST              | suspicious_requests.blacklist               | u16        |          |

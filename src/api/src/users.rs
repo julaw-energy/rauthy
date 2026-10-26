@@ -2343,7 +2343,7 @@ pub async fn post_webauthn_reg_finish(
 
 /// Returns a user's webid document, if enabled
 ///
-/// Note: The way the SwaggerUI is set up currently, the path will not be correct for this single
+/// Note: The way the API reference is set up currently, the path will not be correct for this single
 /// endpoint. It is an absolute path: `/auth/webid/{id}/profile`
 #[utoipa::path(
     get,

@@ -320,7 +320,9 @@ impl User {
 
         Session::delete_by_user(&self.id).await?;
 
-        if let Some(picture_id) = &self.picture_id {
+        if let Some(picture_id) = &self.picture_id
+            && !Self::is_external_picture(picture_id)
+        {
             UserPicture::remove(picture_id.clone(), self.id.clone()).await?;
         }
 
@@ -1998,8 +2000,18 @@ impl User {
         Ok(needs_update)
     }
 
+    /// A federated user starts with the picture link of the provider, kept in `picture_id` until
+    /// the user uploads an own picture. Such an id is a full `https` link, not one of our ids.
+    #[inline]
+    pub fn is_external_picture(picture_id: &str) -> bool {
+        picture_id.starts_with("https://")
+    }
+
     pub fn picture_uri(&self) -> Option<String> {
         self.picture_id.as_ref().map(|pic_id| {
+            if Self::is_external_picture(pic_id) {
+                return pic_id.clone();
+            }
             format!(
                 "{}/auth/v1/users/{}/picture/{pic_id}",
                 RauthyConfig::get().pub_url_with_scheme,

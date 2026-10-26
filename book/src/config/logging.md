@@ -256,7 +256,7 @@ process or just forwards the events to where ever you need them.
 Authorization: API-Key events$SUcpBxcPmfwH9z1Kb4ExOUYDSXpxOj9mFLadjuQ1049XaWzdWB328aa97k2nj21E
 ```
 
-You can either periodically fetch via the `/auth/v1/events` endpoint (see Swagger documentation in
+You can either periodically fetch via the `/auth/v1/events` endpoint (see the API reference in
 the Admin UI), or by listening to the `/auth/v1/events/stream`, which will be a Server Sent Events
 stream.
 

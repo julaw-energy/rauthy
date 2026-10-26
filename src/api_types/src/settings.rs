@@ -219,3 +219,27 @@ pub struct ChannelSettingsRequest {
 pub struct SettingsTestResponse {
     pub message: String,
 }
+
+/// One value of the configuration file / environment that cannot be changed while Rauthy runs
+#[derive(Debug, Serialize, ToSchema)]
+#[cfg_attr(debug_assertions, derive(Deserialize))]
+pub struct StaticSettingEntry {
+    /// like `server.pub_url`, the key in the config file
+    pub key: String,
+    /// never contains a secret: those are only shown as `set` / `not set`
+    pub value: String,
+    pub secret: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[cfg_attr(debug_assertions, derive(Deserialize))]
+pub struct StaticSettingsSection {
+    pub title: String,
+    pub entries: Vec<StaticSettingEntry>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[cfg_attr(debug_assertions, derive(Deserialize))]
+pub struct StaticSettingsResponse {
+    pub sections: Vec<StaticSettingsSection>,
+}

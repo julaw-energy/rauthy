@@ -49,7 +49,7 @@ only whether a secret is set; leaving the field empty keeps the stored value.
 
 ## API
 
-All endpoints need an admin session. See the [API reference](../swagger.md) for details.
+All endpoints need an admin session. See the [API reference](../scalar.md) for details.
 
 | Endpoint                                | Purpose                                         |
 |-----------------------------------------|-------------------------------------------------|

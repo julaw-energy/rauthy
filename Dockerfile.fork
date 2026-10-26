@@ -145,3 +145,4 @@ COPY --from=empty --chown=$TARGET_USER /empty ./data
 COPY --from=empty --chown=$TARGET_USER /empty ./tls
 
 ENTRYPOINT ["/app/rauthy"]
+CMD ["serve"]

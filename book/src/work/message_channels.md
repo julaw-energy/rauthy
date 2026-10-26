@@ -92,9 +92,37 @@ exchanged without touching anything else. The `webhook` driver sends it as JSON 
 }
 ```
 
-`purpose` is `admin` (bulk messages), `verification` or `security`. If a signing secret is set, the request carries
-`X-Rauthy-Signature: sha256=<hex>`, an HMAC-SHA256 of the raw body, so the receiver can check that it came from Rauthy.
-Any `2xx` answer counts as delivered; an optional `{"job_id": "..."}` in the answer is logged.
+`purpose` is `admin` (bulk messages), `verification` or `security`. Any `2xx` answer counts as delivered; an optional
+`{"job_id": "..."}` in the answer is logged.
+
+### Authenticity and replay protection
+
+The request is sent over TLS, which keeps it confidential. A signing secret additionally lets the receiver check that it
+came from Rauthy and was not changed. If one is set, the request carries:
+
+| Header | Value |
+|--------|-------|
+| `X-Rauthy-Signature` | `sha256=<hex>`, HMAC-SHA256 of the raw body |
+| `X-Rauthy-Timestamp` | unix time in seconds when the request was made |
+| `X-Rauthy-Signature-Timestamped` | `sha256=<hex>`, HMAC-SHA256 of `<timestamp>.<raw body>` |
+
+Verify the **timestamped** signature and reject a request whose timestamp is older than a few minutes. That stops
+someone who captured a request from sending it again. `X-Rauthy-Signature` stays for receivers that only check the body.
+
+Every request has an `Idempotency-Key` header (the same value as `idempotency_key` in the body). A retry of the same
+message, for example a system email that is handed over a second time, carries the same key, so the agent can drop
+duplicates.
+
+```python
+import hmac, hashlib, time
+
+def verify(body: bytes, headers: dict, secret: str, max_age=300) -> bool:
+    ts = int(headers["X-Rauthy-Timestamp"])
+    if abs(time.time() - ts) > max_age:
+        return False
+    mac = hmac.new(secret.encode(), f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(f"sha256={mac}", headers["X-Rauthy-Signature-Timestamped"])
+```
 
 ## When Delivery Fails
 
@@ -138,7 +166,8 @@ A user without that value is skipped for a bulk message, and a single message to
 looked up from memory-cached user data, so this adds no database round trip.
 
 **Send a test to me** delivers a real message to the logged-in admin, to the value the channel is tied to. If the admin
-has none (no phone number, for example), the test fails.
+has none (no phone number, for example), the test fails. On success it shows what the other side answered (the HTTP
+status and the start of the answer), so you can see that the message really arrived there.
 
 ## Verifying Attributes Through Channels
 

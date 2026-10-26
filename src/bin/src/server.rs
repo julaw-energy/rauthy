@@ -19,12 +19,10 @@ use rauthy_data::events::health_watch::watch_health;
 use rauthy_data::events::listener::EventListener;
 use rauthy_data::events::notifier::EventNotifier;
 use rauthy_data::rauthy_config::RauthyConfig;
-use rauthy_handlers::openapi::ApiDoc;
-use rauthy_handlers::swagger_ui::{OPENAPI_CONFIG, OPENAPI_JSON};
 use rauthy_handlers::{
     api_keys, atproto, auth_providers, backup, blacklist, book, clients, contact_verification,
     cors_preflight, dev_only, email, events, fed_cm, generic, groups, html, kv, message_templates,
-    oidc, pam, roles, scalar, scopes, sessions, settings, swagger_ui, themes, tos, users,
+    oidc, pam, roles, scalar, scopes, sessions, settings, static_settings, themes, tos, users,
 };
 use rauthy_middlewares::csrf_protection::CsrfProtectionMiddleware;
 use rauthy_middlewares::ip_blacklist::RauthyIpBlacklistMiddleware;
@@ -179,14 +177,6 @@ pub async fn run(
         DB::hql().clear_cache(Cache::User).await?;
         DB::hql().clear_cache(Cache::Webauthn).await?;
         DB::hql().clear_cache(Cache::PAM).await?;
-    }
-
-    {
-        let cfg = &RauthyConfig::get().vars.server;
-        if cfg.swagger_ui_enable {
-            OPENAPI_JSON.set(ApiDoc::build().to_json()?)?;
-            let _ = *OPENAPI_CONFIG;
-        }
     }
 
     if RauthyConfig::get().vars.atproto.enable {
@@ -544,6 +534,7 @@ fn api_services() -> actix_web::Scope {
                 .service(book::get_book_redirect)
                 .service(book::get_book)
                 .service(settings::get_settings)
+                .service(static_settings::get_settings_static)
                 .service(settings::get_app_name)
                 .service(settings::put_settings_general)
                 .service(settings::put_settings_user_values)
@@ -588,6 +579,7 @@ fn api_services() -> actix_web::Scope {
                 .service(html::get_admin_config_email_html)
                 .service(html::get_admin_config_channels_html)
                 .service(html::get_admin_config_templates_html)
+                .service(html::get_admin_config_static_html)
                 .service(html::get_admin_docs_html)
                 .service(html::get_admin_events_html)
                 .service(html::get_admin_groups_html)
@@ -795,10 +787,10 @@ fn api_services() -> actix_web::Scope {
                 .service(generic::get_health)
                 .service(generic::get_i18n_config)
                 .service(generic::get_ready)
-                .service(swagger_ui::get_openapi_doc)
+                .service(scalar::get_openapi_doc)
                 .service(scalar::get_scalar)
                 .service(scalar::get_scalar_init)
-                .service(swagger_ui::get_swagger_ui)
+                .service(scalar::get_docs_root)
                 .service(users::get_user_otps)
                 .service(users::post_user_otp)
                 .service(users::put_user_otp)

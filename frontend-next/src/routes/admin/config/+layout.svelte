@@ -37,6 +37,7 @@
         <NavLinkSub href="/auth/v1/admin/config/encryption">{ta.docs.encryption}</NavLinkSub>
         <NavLinkSub href="/auth/v1/admin/config/backups">Backups</NavLinkSub>
         <NavLinkSub href="/auth/v1/admin/config/tos">{ta.tos.tos}</NavLinkSub>
+        <NavLinkSub href="/auth/v1/admin/config/static">Static settings</NavLinkSub>
     </NavSub>
 
     <div class="min-w-0 flex-1">

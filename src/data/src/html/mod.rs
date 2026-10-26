@@ -5,11 +5,11 @@ use crate::html::templates::{
     AccountHtml, AdminApiKeysHtml, AdminAttributesHtml, AdminBlacklistHtml, AdminClientsHtml,
     AdminConfigArgon2Html, AdminConfigBackupsHtml, AdminConfigChannelsHtml, AdminConfigEmailHtml,
     AdminConfigEncryptionHtml, AdminConfigGeneralHtml, AdminConfigJwksHtml,
-    AdminConfigLifetimesHtml, AdminConfigPolicyHtml, AdminConfigStaticHtml, AdminConfigTemplatesHtml,
-    AdminConfigUserFieldsHtml, AdminEventsHtml, AdminGroupsHtml, AdminHtml, AdminKVHtml,
-    AdminPAMHtml, AdminRolesHtml, AdminScopesHtml, AdminSessionsHtml, AdminUsersHtml, DeviceHtml,
-    FedCMHtml, HtmlTemplate, IndexHtml, LogoutHtml, ProviderCallbackHtml, ProvidersHtml,
-    UserPasswordResetHtml, UserRegisterHtml,
+    AdminConfigLifetimesHtml, AdminConfigPolicyHtml, AdminConfigStaticHtml,
+    AdminConfigTemplatesHtml, AdminConfigUserFieldsHtml, AdminEventsHtml, AdminGroupsHtml,
+    AdminHtml, AdminKVHtml, AdminPAMHtml, AdminRolesHtml, AdminScopesHtml, AdminSessionsHtml,
+    AdminUsersHtml, DeviceHtml, FedCMHtml, HtmlTemplate, IndexHtml, LogoutHtml,
+    ProviderCallbackHtml, ProvidersHtml, UserPasswordResetHtml, UserRegisterHtml,
 };
 use crate::language::Language;
 use crate::rauthy_config::RauthyConfig;

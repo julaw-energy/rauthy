@@ -1,11 +1,14 @@
 use crate::ReqPrincipal;
 use actix_web::web::{Json, Query};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post};
+use actix_web::{HttpRequest, HttpResponse, Responder, get, post, put};
 use actix_web_lab::sse;
 use chrono::Utc;
-use rauthy_api_types::events::{EventResponse, EventsListenParams, EventsRequest};
+use rauthy_api_types::events::{
+    EventResponse, EventsListenParams, EventsReadState, EventsRequest,
+};
 use rauthy_common::utils::{get_rand, real_ip_from_req};
 use rauthy_data::entity::api_keys::{AccessGroup, AccessRights};
+use rauthy_data::entity::event_read_state::EventReadState;
 use rauthy_data::events::event::Event;
 use rauthy_data::events::listener::EventRouterMsg;
 use rauthy_data::rauthy_config::RauthyConfig;
@@ -85,6 +88,18 @@ pub async fn sse_events(
     let (tx, rx) = mpsc::channel(10);
 
     let level = params.level.map(|l| l.into()).unwrap_or_default();
+
+    // the read marker of this user goes first, so the client can count right from the start
+    let read_updates = params.read.unwrap_or(false) && user_id.is_some();
+    if read_updates && let Some(uid) = &user_id {
+        let read_until = EventReadState::find(uid).await?;
+        let first = sse::Event::Data(
+            sse::Data::new(format!(r#"{{"read_until":{read_until}}}"#)).event("read"),
+        );
+        // the channel has room for it, nothing is registered yet
+        let _ = tx.try_send(first);
+    }
+
     if let Err(err) = RauthyConfig::get()
         .tx_events_router
         .send_async(EventRouterMsg::ClientReg {
@@ -95,6 +110,7 @@ pub async fn sse_events(
             tx,
             latest: params.latest,
             level,
+            read_updates,
         })
         .await
     {
@@ -107,6 +123,84 @@ pub async fn sse_events(
             .with_keep_alive(RauthyConfig::get().vars.server.see_keep_alive)
             .with_retry_duration(Duration::from_secs(10)))
     }
+}
+
+/// How far the logged-in user has read the events
+///
+/// **Permissions**
+/// - an admin or group admin session
+#[utoipa::path(
+    get,
+    path = "/events/read",
+    tag = "events",
+    responses(
+        (status = 200, description = "Ok", body = EventsReadState),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[get("/events/read")]
+pub async fn get_events_read(principal: ReqPrincipal) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_api_key_or_group_admin(AccessGroup::Events, AccessRights::Read)?;
+    let user_id = session_user_id(&principal)?;
+
+    Ok(HttpResponse::Ok().json(EventsReadState {
+        read_until: EventReadState::find(&user_id).await?,
+    }))
+}
+
+/// Mark the events as read up to a point
+///
+/// The marker only moves forward. Every open event stream of the user that asked for it gets the
+/// new value as the SSE event `read`, so the unread count is the same on all their devices.
+///
+/// **Permissions**
+/// - an admin or group admin session
+#[utoipa::path(
+    put,
+    path = "/events/read",
+    tag = "events",
+    request_body = EventsReadState,
+    responses(
+        (status = 200, description = "Ok, the marker after the update", body = EventsReadState),
+        (status = 400, description = "BadRequest", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[put("/events/read")]
+pub async fn put_events_read(
+    principal: ReqPrincipal,
+    Json(payload): Json<EventsReadState>,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_api_key_or_group_admin(AccessGroup::Events, AccessRights::Read)?;
+    payload.validate()?;
+    let user_id = session_user_id(&principal)?;
+
+    let read_until = EventReadState::advance(&user_id, payload.read_until).await?;
+    let _ = RauthyConfig::get()
+        .tx_events_router
+        .send_async(EventRouterMsg::ReadMarker {
+            user_id,
+            read_until,
+        })
+        .await;
+
+    Ok(HttpResponse::Ok().json(EventsReadState { read_until }))
+}
+
+/// The read marker belongs to a person, so an API key has none
+fn session_user_id(principal: &ReqPrincipal) -> Result<String, ErrorResponse> {
+    principal
+        .session
+        .as_ref()
+        .and_then(|s| s.user_id.clone())
+        .ok_or_else(|| {
+            ErrorResponse::new(
+                ErrorResponseType::Forbidden,
+                "The read state needs a user session",
+            )
+        })
 }
 
 /// Create a TEST Event

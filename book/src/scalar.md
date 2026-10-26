@@ -14,7 +14,7 @@ scalar_enable = true
 ```
 
 Scalar is loaded from a CDN, pinned to one version. Nothing is bundled into Rauthy and it costs no extra memory, the
-OpenAPI document is built per request. The page is at `/auth/v1/docs/` (and `/auth/v1/docs/scalar`), and the `Docs`
+OpenAPI document is built per request. The page is at `/auth/v1/docs/`, and the `Docs`
 page in the Admin UI links to it. Scalar has a built-in client and uses your **current session** for requests, so no
 API key is needed to try endpoints. API keys can still be used from outside with
 `Authorization: API-Key <name>$<secret>`.

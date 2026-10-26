@@ -11,6 +11,7 @@ use crate::entity::contact_verifications::ContactVerification;
 use crate::entity::db_version::DbVersion;
 use crate::entity::devices::DeviceEntity;
 use crate::entity::email_jobs::{EmailContentType, EmailJob, EmailJobFilter, EmailJobStatus};
+use crate::entity::event_read_state::EventReadStateRow;
 use crate::entity::failed_backchannel_logout::FailedBackchannelLogout;
 use crate::entity::failed_scim_tasks::FailedScimTask;
 use crate::entity::groups::Group;
@@ -50,7 +51,6 @@ use crate::fido_mds::metadata::MdsMetadata;
 use crate::migration::inserts;
 use crate::rauthy_config::RauthyConfig;
 use crate::settings::SettingRow;
-use hiqlite::macros::params;
 use itertools::Itertools;
 use rauthy_common::constants::RAUTHY_VERSION;
 use rauthy_common::utils::deserialize;
@@ -90,11 +90,14 @@ pub async fn migrate_from_sqlite(db_from: &str) -> Result<(), ErrorResponse> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
 
-    // before doing anything, make sure that we are on the same feature version
-    let mut res = DB::hql()
-        .query_raw_one("SELECT data FROM config WHERE id = 'db_version'", params!())
-        .await?;
-    let bytes: Vec<u8> = res.get("data");
+    // Before doing anything, make sure that the source is on the same feature version.
+    // The version must come from the SOURCE file: with Postgres as the target, `DB::hql()` only
+    // runs the cache and has no `config` table, so reading it from there always failed.
+    let bytes: Vec<u8> = conn.query_row(
+        "SELECT data FROM config WHERE id = 'db_version'",
+        [],
+        |row| row.get(0),
+    )?;
     let version = deserialize::<DbVersion>(&bytes)?.version;
     check_feature_version_migrate(version);
 
@@ -338,6 +341,11 @@ pub async fn migrate_from_sqlite(db_from: &str) -> Result<(), ErrorResponse> {
     let before =
         query_sqlite::<AttrVerifyChannelsRow>(&conn, "SELECT * FROM attr_verify_channels").await?;
     inserts::attr_verify_channels(before).await?;
+
+    // EVENT READ STATE
+    debug!("Migrating table: event_read_state");
+    let before = query_sqlite::<EventReadStateRow>(&conn, "SELECT * FROM event_read_state").await?;
+    inserts::event_read_state(before).await?;
 
     // CONTACT VERIFICATIONS
     debug!("Migrating table: contact_verifications");
@@ -663,7 +671,25 @@ pub async fn migrate_from_sqlite(db_from: &str) -> Result<(), ErrorResponse> {
 
     // FIDO MDS ENTRIES
     debug!("Migrating table: fido_mds_entries");
-    let before = query_sqlite::<MdsEntrySimple>(&conn, "SELECT * FROM fido_mds_entries").await?;
+    // The masks are plain integers in the database. Going through `serde` failed on them
+    // (`expected tuple struct KeyProtectionMask`), so the columns are mapped by hand.
+    let mut stmt = conn.prepare(
+        "SELECT aaguid, description, key_protection, attachment_hint, attestation_types, \
+        cert_level FROM fido_mds_entries",
+    )?;
+    let before: Vec<MdsEntrySimple> = stmt
+        .query_map([], |row| {
+            Ok(MdsEntrySimple {
+                aaguid: row.get(0)?,
+                description: row.get(1)?,
+                key_protection: row.get::<_, i64>(2)?.into(),
+                attachment_hint: row.get::<_, i64>(3)?.into(),
+                attestation_types: row.get::<_, i64>(4)?.into(),
+                cert_level: row.get::<_, i64>(5)?.into(),
+            })
+        })?
+        .collect::<Result<_, _>>()?;
+    drop(stmt);
     inserts::fido_mds_entries(before).await?;
 
     // FIDO MDS ENTRY CERTS
@@ -891,6 +917,11 @@ pub async fn migrate_from_postgres() -> Result<(), ErrorResponse> {
     debug!("Migrating table: attr_verify_channels");
     let before = DB::pg_query_map_with(&cl, "SELECT * FROM attr_verify_channels", &[], 0).await?;
     inserts::attr_verify_channels(before).await?;
+
+    // EVENT READ STATE
+    debug!("Migrating table: event_read_state");
+    let before = DB::pg_query_map_with(&cl, "SELECT * FROM event_read_state", &[], 0).await?;
+    inserts::event_read_state(before).await?;
 
     // CONTACT VERIFICATIONS
     debug!("Migrating table: contact_verifications");

@@ -10,6 +10,7 @@ use crate::entity::config::ConfigEntity;
 use crate::entity::contact_verifications::ContactVerification;
 use crate::entity::devices::DeviceEntity;
 use crate::entity::email_jobs::EmailJob;
+use crate::entity::event_read_state::EventReadStateRow;
 use crate::entity::failed_backchannel_logout::FailedBackchannelLogout;
 use crate::entity::failed_scim_tasks::FailedScimTask;
 use crate::entity::groups::Group;
@@ -2161,6 +2162,26 @@ pub async fn attr_verify_channels(
         DB::pg_execute(sql_1, &[]).await?;
         for b in data_before {
             DB::pg_execute(sql_2, &[&b.attr_name, &b.channels]).await?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn event_read_state(data_before: Vec<EventReadStateRow>) -> Result<(), ErrorResponse> {
+    let sql_1 = "DELETE FROM event_read_state";
+    let sql_2 = "INSERT INTO event_read_state (user_id, read_until) VALUES ($1, $2)";
+
+    if is_hiqlite() {
+        DB::hql().execute(sql_1, params!()).await?;
+        for b in data_before {
+            DB::hql()
+                .execute(sql_2, params!(b.user_id, b.read_until))
+                .await?;
+        }
+    } else {
+        DB::pg_execute(sql_1, &[]).await?;
+        for b in data_before {
+            DB::pg_execute(sql_2, &[&b.user_id, &b.read_until]).await?;
         }
     }
     Ok(())

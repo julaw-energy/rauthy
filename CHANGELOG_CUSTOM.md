@@ -29,6 +29,7 @@ rollout), not only what changed.
   - `server.swagger_ui_enable` / `SWAGGER_UI_ENABLE` is ignored (a warning is logged if it is `true`). Use
     `server.scalar_enable`.
   - `server.swagger_ui_public` / `SWAGGER_UI_PUBLIC` keeps working as an alias of the new `server.scalar_public`.
+  - The separate page `/auth/v1/docs/scalar` is gone, `/auth/v1/docs/` is the one address.
   - An existing config file does not need to change. Nothing fails to start.
 
 ### Changes
@@ -44,11 +45,25 @@ rollout), not only what changed.
 - **Webhook channels** send an `Idempotency-Key` header for every message (also in the body as `idempotency_key`); a
   retried system email carries the same key.
 - **"Send a test to me"** shows what the endpoint answered (HTTP status and the start of the answer).
-- The events bell shows a badge with the number of new events (notice and above) that arrived while the list is not on
-  screen. The Events entry in the side navigation shows a dot.
+- **The events bell shows unread events, per admin, on every device.** The header bell has a badge with the number of
+  events newer than where you last read, and the Events entry in the side navigation shows a dot. Opening the list marks
+  everything as read. The marker is stored per admin in the database (new table `event_read_state`), so it is the same
+  on every browser and device, and it survives a reload.
+  - `GET /auth/v1/events/read` and `PUT /auth/v1/events/read` read and move the marker (it only moves forward).
+  - The event stream (`GET /auth/v1/events/stream?read=true`, sessions only) sends the marker as the named SSE event
+    `read`, once when it opens and again whenever another tab or device moves it. Clients that do not ask for it, and
+    every existing API consumer of the stream, get exactly what they got before.
+  - In a cluster, the live update only reaches the connections on the node that took the change (the other nodes catch up
+    when the tab regains focus or reconnects).
 
 ### Bugfix
 
+- **Moving from Hiqlite to Postgres (`MIGRATE_DB_FROM=sqlite:...`) failed at the very start** with `no such table: config`, in
+  upstream's code: the version check read the target process instead of the source file. A second bug stopped it later,
+  on the FIDO device table (`expected tuple struct KeyProtectionMask`). Both are fixed. It was rehearsed end to end on a
+  copy of the dev data with Postgres 18: all 60 tables that exist on both sides, including every table and column this fork added, arrived
+  with the same row counts, and users, clients, attributes and read markers have the same content. The tool copies
+  `event_read_state` too. The fork's Postgres migrations (1-9) also ran for the first time on a real Postgres in this test.
 - The workflow `.github/workflows/image.yml` was invalid, so GitHub reported "No jobs were run" on every push. It is a
   manual workflow again (Actions -> Build image -> Run workflow).
 - The button to unlink a federated account in the account dashboard was drawn without border and hardly visible.
@@ -56,7 +71,8 @@ rollout), not only what changed.
 
 ### Rollout
 
-No new database migration. Image and upgrade steps as for custom.1 (stop, back up the data volume, start the new image).
+One new fork migration: `9_event_read_state` (a new table, nothing existing is changed). It applies on the first start. Image
+and upgrade steps as for custom.1 (stop, back up the data volume, start the new image).
 
 ---
 
@@ -102,4 +118,4 @@ The first release of the fork, based on upstream v0.37.2.
 ### Rollout
 
 Snapshot the data, rehearse on a copy, stop the old container, start the new image on the same data volume with the
-same config and secrets. The fork migrations 1-8 apply on the first start.
+same config and secrets. The fork migrations apply on the first start (1-8 for custom.1, 9 is added by custom.2).

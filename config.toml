@@ -2651,10 +2651,10 @@ metrics_enable = true
 #metrics_port = 9090
 
 # Can be set to `true` to enable the API reference (Scalar) at
-# `/docs/` and `/docs/scalar`. It is only a tiny HTML page that
-# loads Scalar from a CDN, pinned to one version. Nothing is
-# bundled and nothing is kept in memory, the OpenAPI document is
-# built per request. The Swagger UI has been removed.
+# `/docs/`. It is only a tiny HTML page that loads Scalar from a
+# CDN, pinned to one version. Nothing is bundled and nothing is
+# kept in memory, the OpenAPI document is built per request. The
+# Swagger UI has been removed.
 #
 # default: false
 # overwritten by: SCALAR_ENABLE

@@ -45,6 +45,17 @@ pub struct EventsListenParams {
     #[validate(range(min = 0, max = 1000))]
     pub latest: Option<u16>,
     pub level: Option<EventLevel>,
+    /// Also send the read marker of the logged-in user as the named SSE event `read` (once when
+    /// the stream opens, and again whenever it moves). Only for sessions, not for API keys.
+    pub read: Option<bool>,
+}
+
+/// How far the logged-in user has read the events
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct EventsReadState {
+    /// Timestamp in milliseconds, like `EventResponse::timestamp`. `0` if nothing was read yet.
+    #[validate(range(min = 0))]
+    pub read_until: i64,
 }
 
 #[derive(Deserialize, Validate, ToSchema)]

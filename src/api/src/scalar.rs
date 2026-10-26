@@ -12,12 +12,6 @@ const SCALAR_SCRIPT: &str =
 
 /// A tiny HTML page that loads Scalar from a CDN and points it at `openapi.json`.
 /// Nothing is bundled into the binary and nothing is kept in memory.
-#[get("/docs/scalar")]
-pub async fn get_scalar(principal: ReqPrincipal) -> Result<HttpResponse, ErrorResponse> {
-    scalar_page(&principal)
-}
-
-/// The `/docs/` root shows the API reference too.
 #[get("/docs/")]
 pub async fn get_docs_root(principal: ReqPrincipal) -> Result<HttpResponse, ErrorResponse> {
     scalar_page(&principal)

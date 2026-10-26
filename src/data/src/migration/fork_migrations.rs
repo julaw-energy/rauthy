@@ -144,7 +144,10 @@ pub async fn apply() -> Result<(), ErrorResponse> {
 
 async fn tracked_hiqlite() -> Result<Vec<Tracked>, ErrorResponse> {
     Ok(DB::hql()
-        .query_map("SELECT id, name, hash FROM _fork_migrations ORDER BY id ASC", params!())
+        .query_map(
+            "SELECT id, name, hash FROM _fork_migrations ORDER BY id ASC",
+            params!(),
+        )
         .await?)
 }
 
@@ -180,8 +183,10 @@ CREATE TABLE IF NOT EXISTS _fork_migrations
     for m in todo {
         info!("Applying fork migration {} {}", m.id, m.name);
         let now = chrono::Utc::now().timestamp();
-        let mut queries: Vec<(String, hiqlite::Params)> =
-            statements(&m.sql).into_iter().map(|s| (s, params!())).collect();
+        let mut queries: Vec<(String, hiqlite::Params)> = statements(&m.sql)
+            .into_iter()
+            .map(|s| (s, params!()))
+            .collect();
         queries.push((
             "INSERT INTO _fork_migrations (id, name, hash, ts) VALUES ($1, $2, $3, $4)".into(),
             params!(m.id, m.name.clone(), m.hash.clone(), now),
@@ -253,7 +258,9 @@ async fn adopt_hiqlite(migs: &[Mig]) -> Result<(), ErrorResponse> {
     }
     let res = db.txn(queries).await?;
     if res.iter().any(|r| r.is_err()) {
-        return Err(mig_err(format!("Adopting the fork migrations failed: {res:?}")));
+        return Err(mig_err(format!(
+            "Adopting the fork migrations failed: {res:?}"
+        )));
     }
     Ok(())
 }
@@ -378,9 +385,11 @@ mod tests {
 
     #[test]
     fn migrations_are_numbered_without_gaps() {
-        // `load` asserts it
-        assert_eq!(load::<ForkHiqlite>().len(), LEGACY.len());
-        assert_eq!(load::<ForkPostgres>().len(), LEGACY.len());
+        // `load` asserts the numbering. Both databases have the same migrations, and the first
+        // ones are the legacy ones, new ones are added behind them.
+        let (hiqlite, postgres) = (load::<ForkHiqlite>(), load::<ForkPostgres>());
+        assert!(hiqlite.len() >= LEGACY.len());
+        assert_eq!(hiqlite.len(), postgres.len());
     }
 
     #[test]
@@ -393,7 +402,9 @@ mod tests {
 
     #[test]
     fn splits_statements_and_drops_comments() {
-        let s = statements("-- a comment; with a semicolon\nCREATE TABLE a (x INT);\n\nALTER TABLE a ADD y INT;\n");
+        let s = statements(
+            "-- a comment; with a semicolon\nCREATE TABLE a (x INT);\n\nALTER TABLE a ADD y INT;\n",
+        );
         assert_eq!(s, ["CREATE TABLE a (x INT)", "ALTER TABLE a ADD y INT"]);
     }
 

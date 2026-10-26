@@ -22,6 +22,18 @@ pub enum EventRouterMsg {
         tx: mpsc::Sender<sse::Event>,
         latest: Option<u16>,
         level: EventLevel,
+        /// the connection wants the named `read` event, see [`EventRouterMsg::ReadMarker`]
+        read_updates: bool,
+    },
+    /// A user moved their read marker. It is forwarded as the SSE event `read` to every open
+    /// connection of that user that asked for it, so all their tabs and devices show the same.
+    ///
+    /// This only reaches the connections on this node: hiqlite's notify channel is typed with
+    /// `Event`, a second payload type on it would break the event listener. Another node's
+    /// connections catch up when they reconnect or ask for the marker again.
+    ReadMarker {
+        user_id: String,
+        read_until: i64,
     },
 }
 
@@ -32,6 +44,7 @@ struct SseClient {
     user_id: Option<String>,
     api_key_name: Option<String>,
     level: i16,
+    read_updates: bool,
     tx: mpsc::Sender<sse::Event>,
 }
 
@@ -211,6 +224,7 @@ impl EventListener {
                     tx,
                     latest,
                     level,
+                    read_updates,
                 } => {
                     info!(
                         ?client_id,
@@ -275,9 +289,38 @@ impl EventListener {
                                 user_id,
                                 api_key_name,
                                 level: client_level_val,
+                                read_updates,
                                 tx,
                             },
                         );
+                    }
+                }
+
+                EventRouterMsg::ReadMarker {
+                    user_id,
+                    read_until,
+                } => {
+                    let payload = sse::Event::Data(
+                        sse::Data::new(format!(r#"{{"read_until":{read_until}}}"#)).event("read"),
+                    );
+                    for (client_id, client) in &clients {
+                        if !client.read_updates || client.user_id.as_deref() != Some(&user_id) {
+                            continue;
+                        }
+                        let sent =
+                            time::timeout(Duration::from_secs(5), client.tx.send(payload.clone()))
+                                .await;
+                        if !matches!(sent, Ok(Ok(()))) {
+                            error!(
+                                ?client_id,
+                                ?client.user_id,
+                                "sending the read marker to a client failed - removing client",
+                            );
+                            ids_to_remove.push(client_id.clone());
+                        }
+                    }
+                    while let Some(id) = ids_to_remove.pop() {
+                        clients.remove(&id);
                     }
                 }
             }

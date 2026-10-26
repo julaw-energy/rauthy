@@ -1372,7 +1372,10 @@ impl AuthProviderIdClaims<'_> {
             // Keep the provider's picture link current, but never replace a picture the user
             // uploaded. After an upload the link is gone, see `UserPicture::upload`.
             if let Some(url) = self.picture_url()
-                && user.picture_id.as_deref().is_none_or(User::is_external_picture)
+                && user
+                    .picture_id
+                    .as_deref()
+                    .is_none_or(User::is_external_picture)
                 && user.picture_id.as_deref() != Some(url.as_str())
             {
                 user.picture_id = Some(url);

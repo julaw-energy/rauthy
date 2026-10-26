@@ -115,6 +115,8 @@ use utoipa::{OpenApi, openapi};
 
         events::post_events,
         events::sse_events,
+        events::get_events_read,
+        events::put_events_read,
         events::post_event_test,
 
         fed_cm::get_fed_cm_accounts,

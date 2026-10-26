@@ -18,7 +18,7 @@
     import IconLogout from '$icons/IconLogout.svelte';
     import { redirectToLogout } from '$utils/helpers';
     import { useSession } from '$state/session.svelte';
-    import { fetchGet } from '$api/fetch';
+    import { fetchGet, fetchPut } from '$api/fetch';
     import type { SettingsResponse } from '$api/types/settings';
     import { initI18nAdmin, useI18nAdmin } from '$state/i18n_admin.svelte';
     import { brandI18n } from '$lib5/appName.svelte';
@@ -42,23 +42,84 @@
     let innerWidth: undefined | number = $state();
     let wide = $derived(!!innerWidth && innerWidth >= 1536);
 
-    // A light stream of the events that matter (notice and up), only used to count what arrived while the
-    // list is not on screen. The list itself opens its own stream, with the level the admin picked.
+    // The bell. A light stream of the events the admin cares about (the level of the list) is used
+    // to count what is newer than the read marker. The marker lives in the database, per admin, and
+    // the stream sends it as the named event `read`, again whenever another tab or device moves it,
+    // so the number is the same everywhere.
     let eventsWatch: undefined | EventSource;
     let listVisible = $derived(wide || showEvents || page.url.pathname.endsWith('/events'));
+    // timestamps (ms) of the events received, newest last; only the number newer than the marker counts
+    let seen: number[] = $state([]);
+    let readUntil = $state(0);
+    // what was last sent to the server, so a marker is not sent twice
+    let sentUntil = 0;
 
     $effect(() => {
-        if (listVisible) unread.count = 0;
+        unread.count = listVisible ? 0 : seen.filter(ts => ts > readUntil).length;
     });
 
+    // opening the list marks everything seen so far as read, and so does every event that arrives
+    // while it is open
     $effect(() => {
-        if (!isAdmin || !session.isAdmin() || eventsWatch) return;
-        const es = new EventSource('/auth/v1/events/stream?latest=0&level=notice');
+        if (listVisible && seen.length > 0) markRead(Math.max(...seen));
+    });
+
+    async function markRead(until: number) {
+        if (until <= readUntil || until <= sentUntil) return;
+        sentUntil = until;
+        let res = await fetchPut<{ read_until: number }>('/auth/v1/events/read', { read_until: until });
+        if (res.body) applyMarker(res.body.read_until);
+    }
+
+    function applyMarker(until: number) {
+        // it only moves forward
+        if (until > readUntil) readUntil = until;
+    }
+
+    async function syncMarker() {
+        let res = await fetchGet<{ read_until: number }>('/auth/v1/events/read');
+        if (res.body) applyMarker(res.body.read_until);
+    }
+
+    $effect(() => {
+        if (!isAdmin || eventsWatch) return;
+        // the level picked in the event list, so the bell counts what the list would show
+        let level = 'info';
+        try {
+            level = localStorage.getItem('eventLevel')?.toLowerCase() || 'info';
+        } catch {
+            // storage is not available, the default is fine
+        }
+        const es = new EventSource(`/auth/v1/events/stream?latest=50&level=${level}&read=true`);
+        es.addEventListener('read', ev => {
+            try {
+                applyMarker(JSON.parse((ev as MessageEvent).data).read_until);
+            } catch {
+                // not a marker we understand
+            }
+        });
         es.onmessage = ev => {
-            if (ev.data && !listVisible) unread.count += 1;
+            if (!ev.data) return;
+            try {
+                const ts = JSON.parse(ev.data).timestamp;
+                if (typeof ts === 'number') seen = [...seen.slice(-499), ts];
+            } catch {
+                // not an event
+            }
+        };
+        // An admin who never read anything starts with a clean bell instead of the replayed backlog.
+        es.onopen = () => {
+            setTimeout(() => {
+                if (readUntil === 0) markRead(seen.length ? Math.max(...seen) : Date.now());
+            }, 1500);
         };
         eventsWatch = es;
     });
+
+    // another node of a cluster does not push the marker, so ask again when the tab is looked at
+    function onVisible() {
+        if (document.visibilityState === 'visible' && isAdmin) syncMarker();
+    }
 
     onDestroy(() => eventsWatch?.close());
 
@@ -111,7 +172,8 @@
     let title = $derived(fixedTitles[section] ?? (ta.nav as Record<string, string>)[titles[section] ?? section] ?? section);
 </script>
 
-<svelte:window bind:innerWidth />
+<svelte:window bind:innerWidth onfocus={onVisible} />
+<svelte:document onvisibilitychange={onVisible} />
 
 <svelte:head>
     <title>Rauthy Admin</title>

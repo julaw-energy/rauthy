@@ -64,6 +64,35 @@ fn plain<T: Debug>(value: &T) -> String {
     s.trim_matches('"').replace("\\\"", "\"")
 }
 
+/// Only what applies to the database in use: nobody running Hiqlite needs to see Postgres settings.
+fn database_section(rc: &RauthyConfig) -> StaticSettingsSection {
+    let c = &rc.vars.database;
+    let mut s = Section::new("Database and cluster").v(
+        "database",
+        &if c.hiqlite {
+            "Hiqlite (embedded, Raft)"
+        } else {
+            "Postgres"
+        },
+    );
+    if c.hiqlite {
+        s = s
+            .v("cluster.is_ha_cluster", &rc.is_ha_cluster)
+            .v("cluster.is_primary_node", &rc.is_primary_node);
+    } else {
+        s = s
+            .v("database.pg_host", &c.pg_host)
+            .v("database.pg_port", &c.pg_port)
+            .v("database.pg_user", &c.pg_user)
+            .v("database.pg_db_name", &c.pg_db_name)
+            .s("database.pg_password", &c.pg_password)
+            .v("database.pg_max_conn", &c.pg_max_conn)
+            .v("database.pg_tls", &c.pg_tls);
+    }
+    s.v("database.health_check_delay", &c.health_check_delay)
+        .done()
+}
+
 /// GET the configuration that cannot be changed while Rauthy runs
 ///
 /// Read only. Secrets are never returned, only whether they are set.
@@ -106,22 +135,11 @@ pub async fn get_settings_static(principal: ReqPrincipal) -> Result<HttpResponse
             .v("server.ssp_threshold", &c.server.ssp_threshold)
             .v("issuer", &rc.issuer)
             .done(),
-        Section::new("Database and cluster")
-            .v("database.hiqlite", &c.database.hiqlite)
-            .v("cluster.is_ha_cluster", &rc.is_ha_cluster)
-            .v("cluster.is_primary_node", &rc.is_primary_node)
-            .v("database.pg_host", &c.database.pg_host)
-            .v("database.pg_port", &c.database.pg_port)
-            .v("database.pg_user", &c.database.pg_user)
-            .v("database.pg_db_name", &c.database.pg_db_name)
-            .s("database.pg_password", &c.database.pg_password)
-            .v("database.pg_max_conn", &c.database.pg_max_conn)
-            .v("database.health_check_delay", &c.database.health_check_delay)
-            .done(),
+        database_section(rc),
         Section::new("Encryption")
             .v("encryption.key_active", &c.encryption.key_active)
             .v(
-                "encryption.keys (ids only)",
+                "encryption.keys: ids of the configured keys (the keys themselves are never shown)",
                 &c.encryption
                     .keys
                     .iter()

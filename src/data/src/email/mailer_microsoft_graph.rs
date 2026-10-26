@@ -1,7 +1,6 @@
 use crate::email::mailer::EMail;
 use crate::email::mailer_callback::EMailCallback;
 use crate::email::smtp_oauth_token::SmtpOauthToken;
-use crate::events::event::Event;
 use crate::rauthy_config::RauthyConfig;
 use lettre::message;
 use rauthy_common::HTTP_CLIENT;
@@ -136,10 +135,7 @@ pub async fn sender_microsoft_graph(mut rx: mpsc::Receiver<(EMail, EMailCallback
                             "Could not send E-Mail to '{}' even after retrying - dropping it",
                             recipient
                         );
-                        if let Err(err) = Event::email_send_err(email_typ, &recipient).send().await
-                        {
-                            error!(?err, "Could not push EmailSendError event");
-                        }
+                        crate::email::mailer::report_send_error(email_typ, &recipient).await;
                     }
                 }
             }

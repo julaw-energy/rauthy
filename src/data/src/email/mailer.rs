@@ -15,6 +15,25 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
+/// `Notification` is the type the event notifier sends its E-Mails with.
+fn raises_send_error_event(typ: EmailType) -> bool {
+    typ != EmailType::Notification
+}
+
+/// Raises the `EmailSendError` event for an E-Mail that could not be sent.
+///
+/// A failed *notification* E-Mail does not raise one. The event itself is notified by E-Mail, so
+/// with an unreachable SMTP server every failure would create the next event, without end.
+pub(crate) async fn report_send_error(typ: EmailType, address: &str) {
+    if !raises_send_error_event(typ) {
+        error!("Could not send the event notification E-Mail to '{address}'");
+        return;
+    }
+    if let Err(err) = Event::email_send_err(typ, address).send().await {
+        error!(?err, "Could not push EmailSendError event");
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EmailType {
     Custom,
@@ -187,11 +206,7 @@ async fn sender_default_smtp(smtp_url: &str, mut rx: mpsc::Receiver<(EMail, EMai
                                 "Could not send E-Mail to '{}' even after retrying - dropping it",
                                 req.address
                             );
-                            if let Err(err) =
-                                Event::email_send_err(req.typ, &req.address).send().await
-                            {
-                                error!(?err, "Could not push EmailSendError event");
-                            }
+                            report_send_error(req.typ, &req.address).await;
                         }
                     }
                 }
@@ -376,6 +391,29 @@ async fn conn_test_smtp_insecure(
                 ErrorResponseType::Internal,
                 "Could not connect to localhost SMTP relay",
             ))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_notification_email_must_not_raise_another_event() {
+        // the event is notified by E-Mail again, which would loop with an unreachable server
+        assert!(!raises_send_error_event(EmailType::Notification));
+        for typ in [
+            EmailType::Custom,
+            EmailType::EmailChangeConfirm,
+            EmailType::EmailChangeInfo,
+            EmailType::EmailRegisteredAlready,
+            EmailType::LoginLocation,
+            EmailType::PasswordReset,
+            EmailType::PasswordResetInfo,
+            EmailType::OtpRequest,
+        ] {
+            assert!(raises_send_error_event(typ), "{typ}");
         }
     }
 }

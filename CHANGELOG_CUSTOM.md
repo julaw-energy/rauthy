@@ -10,6 +10,21 @@ rollout), not only what changed.
 
 ---
 
+## v0.37.2-custom.3
+
+### Bugfix
+
+- **Do not use `0.37.2-custom.2`.** Reading the events read marker (`GET /events/read`, and the event stream with
+  `?read=true`, which the admin UI opens on every page) selected one column too few and panicked with `Cannot convert
+  column index 'user_id'`. Because Rauthy aborts on a panic, the process went down as soon as an admin page was opened.
+  It came from a refactor made after the feature had been tested. custom.3 fixes it and was checked against the real
+  endpoints (marker read, marker moved, stream with the `read` event).
+
+No other change, no new migration. Moving from custom.1 or custom.2 needs nothing special (the data written by custom.2 is
+compatible).
+
+---
+
 ## v0.37.2-custom.2
 
 ### Security

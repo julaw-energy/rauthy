@@ -5,7 +5,8 @@ use rauthy_derive::FromPgRow;
 use rauthy_error::ErrorResponse;
 use serde::Deserialize;
 
-/// Raw `event_read_state` row, used by the DB migration tooling
+/// Raw `event_read_state` row, used by the DB migration tooling.
+/// Every query that maps into it must select both columns, a missing one panics at runtime.
 #[derive(Debug, Deserialize, FromRow, FromPgRow)]
 pub struct EventReadStateRow {
     pub user_id: String,
@@ -29,7 +30,7 @@ impl EventReadState {
 
     /// `0` if the user never read any
     pub async fn find(user_id: &str) -> Result<i64, ErrorResponse> {
-        let sql = "SELECT read_until FROM event_read_state WHERE user_id = $1";
+        let sql = "SELECT user_id, read_until FROM event_read_state WHERE user_id = $1";
         let row: Option<EventReadStateRow> = if is_hiqlite() {
             DB::hql().query_map_optional(sql, params!(user_id)).await?
         } else {

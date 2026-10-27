@@ -129,11 +129,42 @@ async fn test_client_access_rules() -> Result<(), Box<dyn Error>> {
     let body = get_rules().await?;
     assert_eq!(body["rules"], json!([]));
     let fields = body["fields"].as_array().unwrap();
-    for f in ["country", "age", "email", "roles", "groups", "birthdate"] {
-        assert!(fields.contains(&json!(f)), "field {f} is listed");
+    let kind_of = |name: &str| {
+        fields
+            .iter()
+            .find(|f| f["name"] == name)
+            .unwrap_or_else(|| panic!("field {name} is listed"))["kind"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    // the kind tells the UI which input to offer
+    for (name, kind) in [
+        ("country", "country"),
+        ("age", "number"),
+        ("email_verified", "bool"),
+        ("birthdate", "date"),
+        ("gender", "choice"),
+        ("email", "text"),
+        ("roles", "list"),
+        ("groups", "list"),
+    ] {
+        assert_eq!(kind_of(name), kind, "the kind of {name}");
     }
+    let gender = fields.iter().find(|f| f["name"] == "gender").unwrap();
+    assert_eq!(gender["options"], json!(["female", "male", "other"]));
+    let roles = fields.iter().find(|f| f["name"] == "roles").unwrap();
+    assert!(
+        roles["options"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("rauthy_admin")),
+        "roles lists the existing roles"
+    );
     let ops = body["ops"].as_array().unwrap();
-    for o in ["eq", "gte", "in", "not_in", "contains", "is_set", "not_set"] {
+    for o in [
+        "eq", "gte", "between", "in", "not_in", "contains", "is_set", "not_set",
+    ] {
         assert!(ops.contains(&json!(o)), "operator {o} is listed");
     }
 
@@ -146,6 +177,8 @@ async fn test_client_access_rules() -> Result<(), Box<dyn Error>> {
         json!([{"field": "country", "op": "in", "value": []}]),
         json!([{"field": "age", "op": "gte", "value": "old"}]),
         json!([{"field": "age", "op": "gte"}]),
+        json!([{"field": "age", "op": "between", "value": [65, 18]}]),
+        json!([{"field": "age", "op": "between", "value": [18]}]),
         json!([{"field": "country", "op": "is_set", "value": "x"}]),
         json!(
             (0..21)
@@ -176,6 +209,7 @@ async fn test_client_access_rules() -> Result<(), Box<dyn Error>> {
         json!([{"field": "email", "op": "ends_with", "value": "@nowhere.invalid"}]),
         // the test user has no birthdate, so no age: a missing value never meets a rule
         json!([{"field": "age", "op": "gte", "value": 18}]),
+        json!([{"field": "age", "op": "between", "value": [18, 65]}]),
         json!([{"field": "country", "op": "in", "value": ["UG", "KE", "TZ"]}]),
         json!([{"field": "roles", "op": "contains", "value": "no_such_role"}]),
         // all rules must hold: one that is met does not make up for one that is not
@@ -213,6 +247,8 @@ async fn test_client_access_rules() -> Result<(), Box<dyn Error>> {
         json!([{"field": "email", "op": "in", "value": [USERNAME, "someone@else.org"]}]),
         json!([{"field": "email", "op": "contains", "value": "INIT_ADMIN"}]),
         json!([{"field": "email_verified", "op": "is_set"}]),
+        // a true / false field is compared with true or false, not with text
+        json!([{"field": "email_verified", "op": "in", "value": [true, false]}]),
         json!([
             {"field": "email", "op": "ends_with", "value": "@localhost"},
             {"field": "age", "op": "not_set"}

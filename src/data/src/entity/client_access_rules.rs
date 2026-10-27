@@ -14,12 +14,15 @@
 //! deny by default: "country in UG" does not let in a user who has no country.
 
 use crate::database::{Cache, DB};
+use crate::entity::groups::Group;
+use crate::entity::roles::Role;
 use crate::entity::user_attr::{UserAttrConfigEntity, UserAttrValueEntity};
 use crate::entity::users::User;
 use crate::entity::users_values::UserValues;
 use chrono::{Datelike, NaiveDate, Utc};
 use hiqlite::macros::{FromRow, params};
-use rauthy_api_types::clients::ClientAccessRule;
+use rauthy_api_types::clients::{AccessRuleField, ClientAccessRule};
+use rauthy_api_types::users::UserAttrConfigTyp;
 use rauthy_common::constants::CACHE_TTL_APP;
 use rauthy_common::is_hiqlite;
 use rauthy_derive::FromPgRow;
@@ -40,6 +43,7 @@ pub const OPS: &[&str] = &[
     "gte",
     "lt",
     "lte",
+    "between",
     "in",
     "not_in",
     "contains",
@@ -84,6 +88,7 @@ enum Op {
     Gte,
     Lt,
     Lte,
+    Between,
     In,
     NotIn,
     Contains,
@@ -102,6 +107,7 @@ impl Op {
             "gte" => Self::Gte,
             "lt" => Self::Lt,
             "lte" => Self::Lte,
+            "between" => Self::Between,
             "in" => Self::In,
             "not_in" => Self::NotIn,
             "contains" => Self::Contains,
@@ -239,6 +245,18 @@ fn holds(op: Op, actual: &Actual, expected: &Expected) -> bool {
                 _ => a <= e,
             }
         }
+        (Op::Between, Expected::Many(range)) => {
+            let (Actual::Text(a), [lo, hi]) = (actual, range.as_slice()) else {
+                return false;
+            };
+            let (Some(lo), Some(hi)) = (lo.num, hi.num) else {
+                return false;
+            };
+            let Some(a) = a.trim().parse::<f64>().ok().filter(|n| n.is_finite()) else {
+                return false;
+            };
+            lo <= a && a <= hi
+        }
         (Op::Contains, Expected::One(e)) => match actual {
             Actual::Text(t) => t.to_lowercase().contains(&e.text.to_lowercase()),
             Actual::List(l) => l.iter().any(|x| scalar_eq(x, e)),
@@ -266,6 +284,25 @@ fn compile(rule: &ClientAccessRule) -> Result<(Op, Expected), String> {
             return Err(format!("'{}' takes no value", rule.op));
         }
         Expected::Nothing
+    } else if op == Op::Between {
+        let Some(Value::Array(items)) = value else {
+            return Err("'between' needs a list with the lowest and the highest value".to_string());
+        };
+        let [lo, hi] = items.as_slice() else {
+            return Err(
+                "'between' needs exactly two values, the lowest and the highest".to_string(),
+            );
+        };
+        let (Some(lo), Some(hi)) = (Scalar::from_json(lo), Scalar::from_json(hi)) else {
+            return Err("'between' compares numbers".to_string());
+        };
+        let (Some(a), Some(b)) = (lo.num, hi.num) else {
+            return Err("'between' compares numbers, the values are not numbers".to_string());
+        };
+        if a > b {
+            return Err("'between' needs the lowest value first".to_string());
+        }
+        Expected::Many(vec![lo, hi])
     } else if op.takes_list() {
         let Some(Value::Array(items)) = value else {
             return Err(format!("'{}' needs a list of values", rule.op));
@@ -396,16 +433,68 @@ impl ClientAccessRules {
         Ok(Self::parse(&json))
     }
 
-    /// The fields a rule can use: the built-in ones and the custom attributes that exist
-    pub async fn available_fields() -> Result<Vec<String>, ErrorResponse> {
-        let mut fields: Vec<String> = FIELDS.iter().map(|f| f.to_string()).collect();
-        let mut attrs: Vec<String> = UserAttrConfigEntity::find_all_as_set()
+    /// The fields a rule can use, with their type and choices, so the UI can offer the right
+    /// input: the built-in fields and the custom attributes that exist.
+    pub async fn available_fields() -> Result<Vec<AccessRuleField>, ErrorResponse> {
+        let field = |name: &str, kind: &str, options: Vec<String>| AccessRuleField {
+            name: name.to_string(),
+            kind: kind.to_string(),
+            options,
+        };
+
+        let mut roles: Vec<String> = Role::find_all()
             .await?
             .into_iter()
-            .map(|a| format!("attr:{a}"))
+            .map(|r| r.name)
             .collect();
-        attrs.sort();
-        fields.extend(attrs);
+        roles.sort();
+        let mut groups: Vec<String> = Group::find_all()
+            .await?
+            .into_iter()
+            .map(|g| g.name)
+            .collect();
+        groups.sort();
+
+        let mut fields: Vec<AccessRuleField> = FIELDS
+            .iter()
+            .map(|name| match *name {
+                "email_verified" => field(name, "bool", vec![]),
+                "birthdate" => field(name, "date", vec![]),
+                "age" => field(name, "number", vec![]),
+                "country" => field(name, "country", vec![]),
+                "gender" => field(
+                    name,
+                    "choice",
+                    ["female", "male", "other"].map(String::from).to_vec(),
+                ),
+                "roles" => field(name, "list", roles.clone()),
+                "groups" => field(name, "list", groups.clone()),
+                _ => field(name, "text", vec![]),
+            })
+            .collect();
+
+        let mut attrs = UserAttrConfigEntity::find_all().await?;
+        attrs.sort_by(|a, b| a.name.cmp(&b.name));
+        for a in attrs {
+            let name = format!("attr:{}", a.name);
+            fields.push(match a.typ {
+                Some(UserAttrConfigTyp::Boolean) => field(&name, "bool", vec![]),
+                Some(UserAttrConfigTyp::Number | UserAttrConfigTyp::Integer) => {
+                    field(&name, "number", vec![])
+                }
+                Some(UserAttrConfigTyp::Date) => field(&name, "date", vec![]),
+                Some(UserAttrConfigTyp::Country) => field(&name, "country", vec![]),
+                Some(UserAttrConfigTyp::Enum) => {
+                    let options = a
+                        .options
+                        .as_deref()
+                        .and_then(|o| serde_json::from_str::<Vec<String>>(o).ok())
+                        .unwrap_or_default();
+                    field(&name, "choice", options)
+                }
+                _ => field(&name, "text", vec![]),
+            });
+        }
         Ok(fields)
     }
 
@@ -654,6 +743,28 @@ mod tests {
     }
 
     #[test]
+    fn a_range_includes_both_ends() {
+        let r = Some(json!([18, 65]));
+        assert!(run("between", text("18"), r.clone()), "the lower end is in");
+        assert!(run("between", text("65"), r.clone()), "the upper end is in");
+        assert!(run("between", text("40"), r.clone()));
+        assert!(run("between", text("17.99"), Some(json!([17.5, 18]))));
+        assert!(!run("between", text("17"), r.clone()));
+        assert!(!run("between", text("66"), r.clone()));
+        assert!(!run("between", text("abc"), r.clone()));
+        assert!(!run("between", text("NaN"), r.clone()));
+        assert!(
+            !run("between", Actual::Missing, r.clone()),
+            "missing never passes"
+        );
+        assert!(!run("between", Actual::List(vec!["30".into()]), r));
+        // numbers given as text are fine
+        assert!(run("between", text("30"), Some(json!(["18", "65"]))));
+        // a range of one value
+        assert!(run("between", text("18"), Some(json!([18, 18]))));
+    }
+
+    #[test]
     fn text_operators() {
         assert!(run(
             "contains",
@@ -793,6 +904,29 @@ mod tests {
             ok(rule("country", "is_set", Some(json!("x")))).is_err(),
             "is_set takes none"
         );
+        assert!(ok(rule("age", "between", Some(json!([18, 65])))).is_ok());
+        assert!(ok(rule("age", "between", Some(json!(["18", "65"])))).is_ok());
+        assert!(
+            ok(rule("age", "between", Some(json!([65, 18])))).is_err(),
+            "lowest first"
+        );
+        assert!(
+            ok(rule("age", "between", Some(json!([18])))).is_err(),
+            "two values"
+        );
+        assert!(
+            ok(rule("age", "between", Some(json!([18, 30, 65])))).is_err(),
+            "two values"
+        );
+        assert!(
+            ok(rule("age", "between", Some(json!([18, "old"])))).is_err(),
+            "numbers"
+        );
+        assert!(
+            ok(rule("age", "between", Some(json!(18)))).is_err(),
+            "needs a list"
+        );
+        assert!(ok(rule("age", "between", None)).is_err(), "needs a value");
         assert!(
             ok(rule("country", "eq", Some(json!("x".repeat(300))))).is_err(),
             "too long"

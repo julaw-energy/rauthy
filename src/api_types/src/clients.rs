@@ -395,8 +395,9 @@ pub struct ClientAccessRule {
     /// `age` (full years, from `birthdate`), `roles` or `groups` (lists), or `attr:<name>` for a
     /// custom attribute.
     pub field: String,
-    /// `eq`, `ne`, `gt`, `gte`, `lt`, `lte` (numbers), `in`, `not_in` (value is a list),
-    /// `contains`, `starts_with`, `ends_with`, `is_set`, `not_set`.
+    /// `eq`, `ne`, `gt`, `gte`, `lt`, `lte` (numbers), `between` (value is `[min, max]`, both
+    /// included), `in`, `not_in` (value is a list), `contains`, `starts_with`, `ends_with`,
+    /// `is_set`, `not_set`.
     pub op: String,
     /// A number or a string, a list of them for `in` / `not_in`, nothing for `is_set` / `not_set`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -408,11 +409,24 @@ pub struct ClientAccessRulesRequest {
     pub rules: Vec<ClientAccessRule>,
 }
 
+/// A field a rule can use, with what the UI needs to offer the right input for it
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct AccessRuleField {
+    /// `country`, `age`, `attr:<name>`, ...
+    pub name: String,
+    /// `text`, `number`, `bool`, `date`, `country`, `choice` (one of `options`) or `list` (a list
+    /// whose elements are among `options`, like roles)
+    pub kind: String,
+    /// the values to choose from for `choice` and `list`
+    #[serde(default)]
+    pub options: Vec<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ClientAccessRulesResponse {
     pub rules: Vec<ClientAccessRule>,
     /// The fields a rule can use right now, including the existing `attr:<name>` attributes
-    pub fields: Vec<String>,
+    pub fields: Vec<AccessRuleField>,
     /// The operators
     pub ops: Vec<String>,
 }

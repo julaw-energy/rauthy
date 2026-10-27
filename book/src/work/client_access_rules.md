@@ -24,14 +24,30 @@ A rule is a **field**, a **condition** and, for most conditions, a **value**. **
 |-------------------------------------|----------------------------------------------------------------------|----------------------|
 | `eq`, `ne`                          | is / is not                                                          | one value            |
 | `gt`, `gte`, `lt`, `lte`            | greater than, at least, less than, at most. Numbers only             | a number             |
+| `between`                           | in a range, **both ends included**. Numbers only                     | `[lowest, highest]`  |
 | `in`, `not_in`                      | is one of / is none of                                               | a list               |
 | `contains`, `starts_with`, `ends_with` | text (case does not matter), or an element of a list              | one value            |
 | `is_set`, `not_set`                 | has a value / is empty                                               | none                 |
 
+## The Editor
+
+The input of a rule follows the **kind of its field**, so nobody has to type `true` or remember a country code:
+
+| Field is a            | You get                                                                                         |
+|-----------------------|-------------------------------------------------------------------------------------------------|
+| number (`age`, a number attribute) | the conditions as math signs `=  ≠  >  ≥  <  ≤` and **between**, with two inputs for the range |
+| true / false (`email verified`, a boolean attribute) | `is` and a true / false choice                                          |
+| country               | a searchable country picker with flags. Several countries for "is one of" / "is none of"         |
+| fixed choices (`gender`, an enum attribute) | a choice list, several for "is one of"                                    |
+| `roles`, `groups`     | the existing roles / groups to choose from, with "includes", "includes any of", "includes none of" |
+| date (`birthdate`)    | a date input. For comparisons use `age`, which is calculated from it                            |
+| anything else         | a text input. "is one of" takes values typed with Enter or a comma                              |
+
 Examples, as they are shown in the UI:
 
 - `country` is one of `UG, KE, TZ`
-- `age` is at least `18`
+- `age` is at least `18`, or `age` between `18` and `65`
+- `email verified` is `true`
 - `email` ends with `@julawenergy.com`
 - `roles` contains `staff`
 - `attr:membership` has a value
@@ -65,5 +81,5 @@ at most 100 values in a list.
 ## API
 
 `GET /auth/v1/clients/{id}/access_rules` and `PUT` with `{"rules": [{"field": "country", "op": "in", "value": ["UG",
-"KE"]}]}`. `PUT` replaces all rules, an empty list removes them. The `GET` answer lists the fields and conditions that
-can be used. It needs the `Clients` permission of an API key, or an admin session.
+"KE"]}]}`. `PUT` replaces all rules, an empty list removes them. The `GET` answer lists the fields, with their kind (`text`, `number`, `bool`, `date`, `country`, `choice`, `list`) and choices,
+and the conditions that can be used. In JSON a true / false value is `true` or `false`, a range is `[18, 65]`. It needs the `Clients` permission of an API key, or an admin session.

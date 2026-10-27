@@ -476,6 +476,7 @@ use utoipa::{OpenApi, openapi};
             PasswordResetResponse,
             LoginTimeResponse,
             ClientResponse,
+            AccessRuleField,
             ClientAccessRule,
             ClientAccessRulesRequest,
             ClientAccessRulesResponse,

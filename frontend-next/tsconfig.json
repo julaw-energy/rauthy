@@ -10,6 +10,9 @@
 		"strict": true,
 		"module": "ESNext",
 		"moduleResolution": "bundler",
+		// the tests in `tests/` are run by Node directly, which wants the `.ts` in an import
+		"allowImportingTsExtensions": true,
+		"noEmit": true,
 	},
 	"exclude": ["dev"]
 }

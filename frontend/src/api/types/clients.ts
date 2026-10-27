@@ -124,8 +124,17 @@ export interface ClientAccessRule {
     value?: string | number | boolean | (string | number)[] | null;
 }
 
+/** `list` is a list whose elements are among `options` (roles, groups) */
+export type AccessRuleFieldKind = 'text' | 'number' | 'bool' | 'date' | 'country' | 'choice' | 'list';
+
+export interface AccessRuleField {
+    name: string;
+    kind: AccessRuleFieldKind;
+    options: string[];
+}
+
 export interface ClientAccessRulesResponse {
     rules: ClientAccessRule[];
-    fields: string[];
+    fields: AccessRuleField[];
     ops: string[];
 }

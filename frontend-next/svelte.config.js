@@ -42,7 +42,9 @@ const config = {
 				'connect-src': ['self'],
 				'script-src': ['self', 'wasm-unsafe-eval'],
 				'style-src': ['self', 'unsafe-inline'],
-				'img-src': ['self', 'data:'],
+				// `https:` so the profile picture link of a federation provider (Google, Github, ...) can be
+				// shown. Rauthy never fetches it, the browser does. Only `https`, scripts stay locked to hashes.
+				'img-src': ['self', 'data:', 'https:'],
 				'font-src': ['self']
 			}
 		},

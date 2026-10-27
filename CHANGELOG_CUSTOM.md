@@ -10,6 +10,21 @@ rollout), not only what changed.
 
 ---
 
+## v0.37.2-custom.4 (not released yet)
+
+### Bugfix
+
+- **The profile picture of a federated user (Google, Github, ...) was never shown.** The link was stored and sent to the page,
+  but every page carried a Content-Security-Policy with `img-src 'self' data:`, so the browser refused to load an image from
+  another host. The policy now also allows `https:` images (`frontend-next/svelte.config.js`). Plain `http` images stay blocked,
+  scripts are still locked to hashes. The browser loads the image from the provider, Rauthy never fetches it.
+  - The custom.2 / custom.3 notes said the picture was shown in the UI. It only reached the ID token and userinfo.
+  - Trade-off: with `https:` an injected `<img>` could send data to any https host. Script injection is not made easier. If that is
+    not acceptable, the alternative is a small avatar proxy in Rauthy (more code, Rauthy then fetches the provider's URL).
+  - A user gets the picture at their next login through the provider.
+
+---
+
 ## v0.37.2-custom.3
 
 ### Bugfix

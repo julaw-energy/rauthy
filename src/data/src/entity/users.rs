@@ -294,6 +294,8 @@ impl User {
             ..Default::default()
         };
         new_user.language = lang;
+        // the roles and groups an admin set for every new user
+        crate::settings::apply_new_user_defaults(&mut new_user).await?;
         let new_user = User::create(
             new_user,
             req_data.redirect_uri,

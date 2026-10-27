@@ -623,6 +623,7 @@ admin_config_page!(AdminConfigEmailHtml, "html/admin/config/email.html");
 admin_config_page!(AdminConfigChannelsHtml, "html/admin/config/channels.html");
 admin_config_page!(AdminConfigTemplatesHtml, "html/admin/config/templates.html");
 admin_config_page!(AdminConfigStaticHtml, "html/admin/config/static.html");
+admin_config_page!(AdminConfigNewUsersHtml, "html/admin/config/new_users.html");
 
 #[derive(Default, Template)]
 #[template(path = "html/admin/docs.html")]

@@ -243,3 +243,43 @@ pub struct StaticSettingsSection {
 pub struct StaticSettingsResponse {
     pub sections: Vec<StaticSettingsSection>,
 }
+
+/// Roles and groups every new user gets, set by an admin. New users are the ones who register
+/// themselves and the ones created by their first login through an auth provider.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct NewUsersSettings {
+    pub roles: Vec<String>,
+    pub groups: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[cfg_attr(debug_assertions, derive(Deserialize))]
+pub struct NewUsersSettingsResponse {
+    pub values: NewUsersSettings,
+    /// every role and group that exists, to choose from
+    pub available_roles: Vec<String>,
+    pub available_groups: Vec<String>,
+}
+
+/// The reminder for users who have not logged in for a long time
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ReminderSettings {
+    /// nothing is sent while this is off
+    pub enabled: bool,
+    /// a user who did not log in for this many days gets a reminder. 1 to 3650, default 30.
+    pub after_days: u32,
+    /// how many reminders in a row a user gets, one every `after_days`. 1 to 10, default 3.
+    pub max_reminders: u8,
+    /// `{{name}}`, `{{days}}` and `{{app_name}}` are replaced
+    pub subject: String,
+    /// `{{name}}`, `{{days}}`, `{{link}}` and `{{app_name}}` are replaced
+    pub body: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[cfg_attr(debug_assertions, derive(Deserialize))]
+pub struct ReminderSettingsResponse {
+    pub values: ReminderSettings,
+    /// how many users would get a reminder at the next run with these values
+    pub due_now: u32,
+}

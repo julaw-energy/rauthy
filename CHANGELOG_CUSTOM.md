@@ -12,6 +12,33 @@ rollout), not only what changed.
 
 ## v0.37.2-custom.4 (not released yet)
 
+### Changes
+
+- **Access rules per client.** A client can say who may log in by the user's values and attributes: `country is one of
+  UG, KE, TZ`, `age is at least 18`, `email ends with @example.com`, `roles contains staff`, `attr:<name> has a value`.
+  All rules of a client must hold; a missing value never meets a rule (except "is empty"). The conditions are `is`,
+  `is not`, `>`, `>=`, `<`, `<=`, `is one of`, `is none of`, `contains`, `starts with`, `ends with`, `has a value`,
+  `is empty`. Checked at every login, token refresh, password grant and forward auth request, never for the `rauthy` client.
+  New section in the client editor, `GET` / `PUT /auth/v1/clients/{id}/access_rules`. A client without rules costs one cache
+  lookup. See [Access Rules per Client](book/src/work/client_access_rules.md).
+- **Default roles and groups for new users** (Config -> New users). Users who register themselves and users created by
+  their first provider login get them. `rauthy_admin` and the delegated admin roles cannot be chosen. Users an admin
+  creates are not changed. `GET` / `PUT /auth/v1/settings/new_users`.
+- **Reminders for users who have not logged in** (Config -> New users). Off by default; 30 days and 3 reminders in a
+  row by default, wording and numbers set by the admin, "Save and send a test to me". At most 100 users per hour, sent
+  by the leader node, tracked per user so nobody gets the same reminder twice. `GET` / `PUT /auth/v1/settings/reminders`.
+  See [New Users](book/src/work/new_users.md).
+- Two new fork migrations: `10_access_rules_and_reminders` (two tables) and `11_reminder_indexes` (two indexes). Both tables
+  are copied by the Hiqlite / Postgres migration tool.
+
+### Operators
+
+- Reminders do nothing until you switch them on. When you do, everybody who has been away longer than the time is due at
+  once; the page tells you how many, and they are mailed over the next hours.
+- The hourly reminder run is cheap at a large scale: on 1,000,000 users it takes about 75 ms when nobody is due (an earlier
+  version of the query needed 2.1 s), thanks to an index on the last activity and one on the reminder state. Once a day,
+  and after a start, it looks at every user (about 1.6 s at that size).
+
 ### Bugfix
 
 - **The profile picture of a federated user (Google, Github, ...) was never shown.** The link was stored and sent to the page,

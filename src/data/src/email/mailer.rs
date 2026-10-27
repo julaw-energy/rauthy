@@ -320,11 +320,12 @@ async fn send_via_agent(cfg: &ChannelConfig, mut req: EMail, callback: EMailCall
 }
 
 /// Transports of custom `smtp` channels, one per channel, reconnected when the settings change
-static CHANNEL_TRANSPORTS: std::sync::LazyLock<
-    tokio::sync::Mutex<
-        std::collections::HashMap<String, (u64, AsyncSmtpTransport<Tokio1Executor>)>,
-    >,
-> = std::sync::LazyLock::new(Default::default);
+type ChannelTransports = tokio::sync::Mutex<
+    std::collections::HashMap<String, (u64, AsyncSmtpTransport<Tokio1Executor>)>,
+>;
+
+static CHANNEL_TRANSPORTS: std::sync::LazyLock<ChannelTransports> =
+    std::sync::LazyLock::new(Default::default);
 
 /// Sends an E-Mail through the own SMTP server of a custom channel
 pub async fn send_with(

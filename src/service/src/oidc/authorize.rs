@@ -11,6 +11,7 @@ use rauthy_data::api_cookie::ApiCookie;
 use rauthy_data::entity::auth_codes::{AuthCode, AuthCodeToSAwait};
 use rauthy_data::entity::auth_providers::ProviderMfaLogin;
 use rauthy_data::entity::browser_id::BrowserId;
+use rauthy_data::entity::client_access_rules::ClientAccessRules;
 use rauthy_data::entity::clients::Client;
 use rauthy_data::entity::cred_stuff_detect::CredStuffDetect;
 use rauthy_data::entity::forward_auth::ForwardAuthCallbackState;
@@ -324,6 +325,8 @@ pub(crate) async fn finish_authorize(
             }
         })?;
     client.validate_user_groups(&user)?;
+    // rules on the user's values and attributes, like the country or the age
+    ClientAccessRules::validate_user(&user, &client.id).await?;
     client.validate_redirect_uri(&data.redirect_uri)?;
     client.validate_code_challenge(&data.code_challenge, &data.code_challenge_method)?;
 

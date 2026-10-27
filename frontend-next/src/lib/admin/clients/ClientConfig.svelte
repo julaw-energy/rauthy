@@ -37,6 +37,7 @@
     import { parseJsonValue, stringifyJsonValue } from '$utils/jsonValue';
     import { untrack } from 'svelte';
     import RequiredFields from './RequiredFields.svelte';
+    import AccessRules from './AccessRules.svelte';
     import {
         invalidPostLogoutRedirectUrisMsg,
         invalidRedirectUrisMsg,
@@ -208,6 +209,7 @@
 
     let requiredFields: string[] = $state([]);
     let requiredRef: ReturnType<typeof RequiredFields> | undefined = $state();
+    let accessRef: ReturnType<typeof AccessRules> | undefined = $state();
     let enabledScopes = $derived([
         ...new Set([
             ...scopes.filter(s => s.selected).map(s => s.name),
@@ -331,6 +333,14 @@
             });
             if (!res.error) {
                 requiredFields = keep;
+            }
+        }
+        if (!res.error) {
+            // the access rules, a message here means the client itself was saved already
+            let rulesErr = await accessRef?.save();
+            if (rulesErr) {
+                err = rulesErr;
+                return;
             }
         }
         if (res.error) {
@@ -512,6 +522,8 @@
             scopes={enabledScopes}
             bind:required={requiredFields}
         />
+
+        <AccessRules bind:this={accessRef} clientId={client.id} />
 
         <FormSection title="Tokens">
             <p class="text-muted-foreground text-sm">{ta.clients.tokenLifetime.p1}</p>

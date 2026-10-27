@@ -4,7 +4,8 @@ use actix_web::{HttpResponse, delete, get, post, put};
 use rauthy_api_types::email_jobs::MessageChannel;
 use rauthy_api_types::settings::{
     AppNameResponse, ChannelSettingsRequest, GeneralSettingsRequest, GeneralSettingsResponse,
-    LifetimesSettings, SettingsResponse, SettingsTestResponse, SmtpSettingsRequest,
+    LifetimesSettings, NewUsersSettings, NewUsersSettingsResponse, ReminderSettings,
+    ReminderSettingsResponse, SettingsResponse, SettingsTestResponse, SmtpSettingsRequest,
     UserValuesSettings,
 };
 use rauthy_data::channels;
@@ -375,4 +376,141 @@ pub async fn post_settings_import(
     }
     settings::import_from_file(&group).await?;
     Ok(HttpResponse::Ok().finish())
+}
+
+/// The roles and groups every new user gets
+///
+/// New users are the ones who register themselves and the ones created by their first login
+/// through an auth provider. The response also lists the roles and groups to choose from.
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    get,
+    path = "/settings/new_users",
+    tag = "settings",
+    responses(
+        (status = 200, description = "Ok", body = NewUsersSettingsResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[get("/settings/new_users")]
+pub async fn get_settings_new_users(
+    principal: ReqPrincipal,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_admin_session()?;
+    Ok(HttpResponse::Ok().json(settings::new_users_view().await?))
+}
+
+/// Sets the roles and groups every new user gets
+///
+/// `rauthy_admin` and the delegated admin roles cannot be set, they would make every new user an
+/// admin. A role or group that is deleted later is skipped when a user is created.
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    put,
+    path = "/settings/new_users",
+    tag = "settings",
+    request_body = NewUsersSettings,
+    responses(
+        (status = 200, description = "Ok", body = NewUsersSettingsResponse),
+        (status = 400, description = "BadRequest", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[put("/settings/new_users")]
+pub async fn put_settings_new_users(
+    principal: ReqPrincipal,
+    Json(payload): Json<NewUsersSettings>,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_admin_session()?;
+    settings::save_new_users(payload).await?;
+    Ok(HttpResponse::Ok().json(settings::new_users_view().await?))
+}
+
+/// The reminder for users who have not logged in for a long time
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    get,
+    path = "/settings/reminders",
+    tag = "settings",
+    responses(
+        (status = 200, description = "Ok", body = ReminderSettingsResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[get("/settings/reminders")]
+pub async fn get_settings_reminders(
+    principal: ReqPrincipal,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_admin_session()?;
+    Ok(HttpResponse::Ok().json(settings::reminders_view().await?))
+}
+
+/// Sets the reminder for users who have not logged in for a long time
+///
+/// While `enabled` is off, nothing is sent. Once it is on, users who have been away for
+/// `after_days` get a reminder, then another one every `after_days`, at most `max_reminders` in a
+/// row, until they log in again. The response says how many users are due right now.
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    put,
+    path = "/settings/reminders",
+    tag = "settings",
+    request_body = ReminderSettings,
+    responses(
+        (status = 200, description = "Ok", body = ReminderSettingsResponse),
+        (status = 400, description = "BadRequest", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[put("/settings/reminders")]
+pub async fn put_settings_reminders(
+    principal: ReqPrincipal,
+    Json(payload): Json<ReminderSettings>,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_admin_session()?;
+    settings::save_reminders(payload).await?;
+    Ok(HttpResponse::Ok().json(settings::reminders_view().await?))
+}
+
+/// Sends the reminder, with the wording that is set now, to the logged-in admin
+///
+/// Nothing is sent to anyone else and nothing is recorded.
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    post,
+    path = "/settings/reminders/test",
+    tag = "settings",
+    responses(
+        (status = 200, description = "Ok", body = SettingsTestResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[post("/settings/reminders/test")]
+pub async fn post_settings_reminders_test(
+    principal: ReqPrincipal,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_admin_session()?;
+
+    let user = User::find(principal.user_id()?.to_string()).await?;
+    let s = settings::reminders();
+    rauthy_data::email::inactivity::send_inactivity_reminder(&user, s.after_days as i64, &s)
+        .await?;
+    Ok(HttpResponse::Ok().json(SettingsTestResponse {
+        message: format!("The reminder was sent to {}", user.email),
+    }))
 }

@@ -2,6 +2,7 @@ use crate::database::DB;
 use crate::entity::api_keys::ApiKeyEntity;
 use crate::entity::attr_verify_channels::AttrVerifyChannelsRow;
 use crate::entity::auth_providers::AuthProvider;
+use crate::entity::client_access_rules::ClientAccessRulesRow;
 use crate::entity::client_required_fields::ClientRequiredFieldsRow;
 use crate::entity::clients::Client;
 use crate::entity::clients_dyn::ClientDyn;
@@ -14,6 +15,7 @@ use crate::entity::event_read_state::EventReadStateRow;
 use crate::entity::failed_backchannel_logout::FailedBackchannelLogout;
 use crate::entity::failed_scim_tasks::FailedScimTask;
 use crate::entity::groups::Group;
+use crate::entity::inactivity_reminders::InactivityReminderRow;
 use crate::entity::issued_tokens::IssuedToken;
 use crate::entity::jwk::Jwk;
 use crate::entity::kv::{KVAccess, KVNamespace, KVValue};
@@ -2182,6 +2184,51 @@ pub async fn event_read_state(data_before: Vec<EventReadStateRow>) -> Result<(),
         DB::pg_execute(sql_1, &[]).await?;
         for b in data_before {
             DB::pg_execute(sql_2, &[&b.user_id, &b.read_until]).await?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn client_access_rules(
+    data_before: Vec<ClientAccessRulesRow>,
+) -> Result<(), ErrorResponse> {
+    let sql_1 = "DELETE FROM client_access_rules";
+    let sql_2 = "INSERT INTO client_access_rules (client_id, rules) VALUES ($1, $2)";
+
+    if is_hiqlite() {
+        DB::hql().execute(sql_1, params!()).await?;
+        for b in data_before {
+            DB::hql()
+                .execute(sql_2, params!(b.client_id, b.rules))
+                .await?;
+        }
+    } else {
+        DB::pg_execute(sql_1, &[]).await?;
+        for b in data_before {
+            DB::pg_execute(sql_2, &[&b.client_id, &b.rules]).await?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn inactivity_reminders(
+    data_before: Vec<InactivityReminderRow>,
+) -> Result<(), ErrorResponse> {
+    let sql_1 = "DELETE FROM inactivity_reminders";
+    let sql_2 =
+        "INSERT INTO inactivity_reminders (user_id, last_sent, sent_count) VALUES ($1, $2, $3)";
+
+    if is_hiqlite() {
+        DB::hql().execute(sql_1, params!()).await?;
+        for b in data_before {
+            DB::hql()
+                .execute(sql_2, params!(b.user_id, b.last_sent, b.sent_count))
+                .await?;
+        }
+    } else {
+        DB::pg_execute(sql_1, &[]).await?;
+        for b in data_before {
+            DB::pg_execute(sql_2, &[&b.user_id, &b.last_sent, &b.sent_count]).await?;
         }
     }
     Ok(())

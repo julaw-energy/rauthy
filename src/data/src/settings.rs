@@ -8,6 +8,9 @@
 //! Groups so far: `smtp` (the built-in mailer) and `channel.<email|sms|whatsapp>` (see
 //! [`crate::channels`]). Secrets are stored encrypted and never leave the backend.
 
+mod lifecycle;
+pub use lifecycle::*;
+
 use crate::channels::{BodyFormat, ChannelConfig, ChannelDriver, HttpKv, HttpRuntime};
 use crate::database::DB;
 use crate::entity::user_attr::UserAttrConfigEntity;
@@ -19,7 +22,7 @@ use rauthy_api_types::email_jobs::MessageChannel;
 use rauthy_api_types::settings::{
     ChannelSettingsRequest, ChannelSettingsResponse, HttpKvRequest, HttpKvResponse,
     HttpSettingsRequest, HttpSettingsResponse, LifetimesSettings, LifetimesSettingsResponse,
-    SmtpSettingsRequest, SmtpSettingsResponse,
+    NewUsersSettings, ReminderSettings, SmtpSettingsRequest, SmtpSettingsResponse,
 };
 use rauthy_common::is_hiqlite;
 use rauthy_common::utils::{base64_decode, base64_encode};
@@ -390,6 +393,8 @@ struct Live {
     lifetimes: Option<Lifetimes>,
     user_values: Option<UserValuesEffective>,
     general: Option<GeneralStored>,
+    new_users: Option<NewUsersSettings>,
+    reminders: Option<ReminderSettings>,
     smtp: Option<(SmtpStored, Option<String>)>,
     /// ready to use: secrets decrypted once here, not per message
     channels: HashMap<String, ChannelConfig>,
@@ -780,6 +785,16 @@ pub async fn reload() -> Result<(), ErrorResponse> {
                 }) {
                 Ok(e) => new.user_values = Some(e),
                 Err(err) => error!(%err, "Invalid `user_values` settings in the DB"),
+            }
+        } else if row.key == KEY_NEW_USERS {
+            match serde_json::from_str::<NewUsersSettings>(&row.value) {
+                Ok(n) => new.new_users = Some(n),
+                Err(err) => error!(?err, "Invalid `new_users` settings in the DB"),
+            }
+        } else if row.key == KEY_REMINDERS {
+            match serde_json::from_str::<ReminderSettings>(&row.value) {
+                Ok(r) => new.reminders = Some(r),
+                Err(err) => error!(?err, "Invalid `reminders` settings in the DB"),
             }
         } else if row.key == KEY_GENERAL {
             match serde_json::from_str::<GeneralStored>(&row.value) {

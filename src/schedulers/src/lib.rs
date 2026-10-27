@@ -11,6 +11,7 @@ mod dyn_clients;
 mod email_jobs;
 mod events;
 mod fido_mds;
+mod inactivity_reminders;
 mod ip_geo_db;
 mod issued_tokens;
 mod jwks;
@@ -44,6 +45,7 @@ pub fn spawn() {
     tokio::spawn(passwords::password_expiry_checker());
     tokio::spawn(issued_tokens::cleanup_issued_tokens());
     tokio::spawn(users::user_expiry_checker());
+    tokio::spawn(inactivity_reminders::inactivity_reminders());
     tokio::spawn(app_version::app_version_check());
     tokio::spawn(fido_mds::fido_mds_updater());
     tokio::spawn(sponsor::run_sponsor_reminder());

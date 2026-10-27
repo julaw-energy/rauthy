@@ -216,6 +216,15 @@ pub async fn get_admin_config_static_html(req: HttpRequest) -> Result<HttpRespon
         .await
 }
 
+#[get("/admin/config/new_users")]
+pub async fn get_admin_config_new_users_html(
+    req: HttpRequest,
+) -> Result<HttpResponse, ErrorResponse> {
+    HtmlCached::ConfigNewUsers
+        .handle(req, ThemeCssFull::find_theme_ts_rauthy().await?, true)
+        .await
+}
+
 #[get("/admin/docs")]
 pub async fn get_admin_docs_html(req: HttpRequest) -> Result<HttpResponse, ErrorResponse> {
     HtmlCached::Docs

@@ -405,9 +405,8 @@ pub async fn deliver(
             to,
         },
         // plain text channels like SMS have no subject
-        Some(subject.to_string()).filter(|_| {
-            channel.is_email() || matches!(cfg.driver, ChannelDriver::Smtp | ChannelDriver::Http)
-        }),
+        (channel.is_email() || matches!(cfg.driver, ChannelDriver::Smtp | ChannelDriver::Http))
+            .then(|| subject.to_string()),
         text,
         None,
         None,

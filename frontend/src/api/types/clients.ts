@@ -117,3 +117,15 @@ export interface ClientSecretResponse {
     confidential: boolean;
     secret?: string;
 }
+
+export interface ClientAccessRule {
+    field: string;
+    op: string;
+    value?: string | number | boolean | (string | number)[] | null;
+}
+
+export interface ClientAccessRulesResponse {
+    rules: ClientAccessRule[];
+    fields: string[];
+    ops: string[];
+}

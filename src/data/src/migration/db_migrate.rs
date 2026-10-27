@@ -2,6 +2,7 @@ use crate::database::DB;
 use crate::entity::api_keys::ApiKeyEntity;
 use crate::entity::attr_verify_channels::AttrVerifyChannelsRow;
 use crate::entity::auth_providers::AuthProvider;
+use crate::entity::client_access_rules::ClientAccessRulesRow;
 use crate::entity::client_required_fields::ClientRequiredFieldsRow;
 use crate::entity::clients::Client;
 use crate::entity::clients_dyn::ClientDyn;
@@ -15,6 +16,7 @@ use crate::entity::event_read_state::EventReadStateRow;
 use crate::entity::failed_backchannel_logout::FailedBackchannelLogout;
 use crate::entity::failed_scim_tasks::FailedScimTask;
 use crate::entity::groups::Group;
+use crate::entity::inactivity_reminders::InactivityReminderRow;
 use crate::entity::issued_tokens::IssuedToken;
 use crate::entity::jwk::Jwk;
 use crate::entity::kv::{KVAccess, KVNamespace, KVValue};
@@ -346,6 +348,18 @@ pub async fn migrate_from_sqlite(db_from: &str) -> Result<(), ErrorResponse> {
     debug!("Migrating table: event_read_state");
     let before = query_sqlite::<EventReadStateRow>(&conn, "SELECT * FROM event_read_state").await?;
     inserts::event_read_state(before).await?;
+
+    // CLIENT ACCESS RULES
+    debug!("Migrating table: client_access_rules");
+    let before =
+        query_sqlite::<ClientAccessRulesRow>(&conn, "SELECT * FROM client_access_rules").await?;
+    inserts::client_access_rules(before).await?;
+
+    // INACTIVITY REMINDERS
+    debug!("Migrating table: inactivity_reminders");
+    let before =
+        query_sqlite::<InactivityReminderRow>(&conn, "SELECT * FROM inactivity_reminders").await?;
+    inserts::inactivity_reminders(before).await?;
 
     // CONTACT VERIFICATIONS
     debug!("Migrating table: contact_verifications");
@@ -922,6 +936,16 @@ pub async fn migrate_from_postgres() -> Result<(), ErrorResponse> {
     debug!("Migrating table: event_read_state");
     let before = DB::pg_query_map_with(&cl, "SELECT * FROM event_read_state", &[], 0).await?;
     inserts::event_read_state(before).await?;
+
+    // CLIENT ACCESS RULES
+    debug!("Migrating table: client_access_rules");
+    let before = DB::pg_query_map_with(&cl, "SELECT * FROM client_access_rules", &[], 0).await?;
+    inserts::client_access_rules(before).await?;
+
+    // INACTIVITY REMINDERS
+    debug!("Migrating table: inactivity_reminders");
+    let before = DB::pg_query_map_with(&cl, "SELECT * FROM inactivity_reminders", &[], 0).await?;
+    inserts::inactivity_reminders(before).await?;
 
     // CONTACT VERIFICATIONS
     debug!("Migrating table: contact_verifications");

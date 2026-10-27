@@ -3,9 +3,7 @@ use actix_web::web::{Json, Query};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, post, put};
 use actix_web_lab::sse;
 use chrono::Utc;
-use rauthy_api_types::events::{
-    EventResponse, EventsListenParams, EventsReadState, EventsRequest,
-};
+use rauthy_api_types::events::{EventResponse, EventsListenParams, EventsReadState, EventsRequest};
 use rauthy_common::utils::{get_rand, real_ip_from_req};
 use rauthy_data::entity::api_keys::{AccessGroup, AccessRights};
 use rauthy_data::entity::event_read_state::EventReadState;

@@ -4,7 +4,9 @@
 
 use crate::ReqPrincipal;
 use actix_web::{HttpResponse, get};
-use rauthy_api_types::settings::{StaticSettingEntry, StaticSettingsResponse, StaticSettingsSection};
+use rauthy_api_types::settings::{
+    StaticSettingEntry, StaticSettingsResponse, StaticSettingsSection,
+};
 use rauthy_data::rauthy_config::RauthyConfig;
 use rauthy_error::ErrorResponse;
 use std::fmt::Debug;
@@ -116,7 +118,8 @@ pub async fn get_settings_static(principal: ReqPrincipal) -> Result<HttpResponse
     let rc = RauthyConfig::get();
     let c = &rc.vars;
 
-    let sections = vec![
+    let sections =
+        vec![
         Section::new("Server")
             .v("server.pub_url", &c.server.pub_url)
             .v("server.scheme", &c.server.scheme)

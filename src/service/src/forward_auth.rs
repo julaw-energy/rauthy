@@ -7,6 +7,7 @@ use rauthy_common::constants::TRUSTED_PROXIES;
 use rauthy_common::sha256;
 use rauthy_common::utils::real_ip_from_req;
 use rauthy_data::entity::auth_codes::AuthCode;
+use rauthy_data::entity::client_access_rules::ClientAccessRules;
 use rauthy_data::entity::clients::Client;
 use rauthy_data::entity::forward_auth::{ForwardAuthCallbackState, ForwardAuthSession};
 use rauthy_data::entity::sessions::{Session, SessionState};
@@ -152,6 +153,7 @@ pub async fn get_forward_auth_client(
     user.check_enabled()?;
     user.check_expired()?;
     client.validate_user_groups(&user)?;
+    ClientAccessRules::validate_user(&user, &client.id).await?;
     client.validate_mfa(&user, None).await?;
 
     let headers = &RauthyConfig::get().vars.auth_headers;
@@ -283,6 +285,7 @@ pub async fn get_forward_auth_client_callback(
     user.check_enabled()?;
     user.check_expired()?;
     client.validate_user_groups(&user)?;
+    ClientAccessRules::validate_user(&user, &client.id).await?;
     client.validate_mfa(&user, None).await?;
 
     let mut session = Session::find(sid).await?;

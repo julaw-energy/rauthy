@@ -170,3 +170,27 @@ export interface StaticSettingsSection {
 export interface StaticSettingsResponse {
     sections: StaticSettingsSection[];
 }
+
+export interface NewUsersSettings {
+    roles: string[];
+    groups: string[];
+}
+
+export interface NewUsersSettingsResponse {
+    values: NewUsersSettings;
+    available_roles: string[];
+    available_groups: string[];
+}
+
+export interface ReminderSettings {
+    enabled: boolean;
+    after_days: number;
+    max_reminders: number;
+    subject: string;
+    body: string;
+}
+
+export interface ReminderSettingsResponse {
+    values: ReminderSettings;
+    due_now: number;
+}

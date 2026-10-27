@@ -36,6 +36,8 @@
   - [API Keys](work/api_keys.md)
   - [Custom Scopes and Attributes](work/custom_scopes_attributes.md)
   - [Required User Data per Client](work/required_client_data.md)
+  - [Access Rules per Client](work/client_access_rules.md)
+  - [New Users: Default Roles and Reminders](work/new_users.md)
   - [User Profile Fields](work/user_profile.md)
   - [The New Admin UI](work/admin_ui.md)
   - [Delegated Group Admins](work/group_admins.md)

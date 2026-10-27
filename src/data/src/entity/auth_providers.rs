@@ -1416,7 +1416,7 @@ impl AuthProviderIdClaims<'_> {
             user
         } else {
             // Create a new federated user
-            let new_user = User {
+            let mut new_user = User {
                 email: email.clone(),
                 given_name: self.given_name().to_string(),
                 family_name: self.family_name().map(String::from),
@@ -1442,6 +1442,8 @@ impl AuthProviderIdClaims<'_> {
                 picture_id: self.picture_url(),
                 ..Default::default()
             };
+            // the roles and groups an admin set for every new user
+            crate::settings::apply_new_user_defaults(&mut new_user).await?;
             User::create_federated(new_user).await?
         };
 

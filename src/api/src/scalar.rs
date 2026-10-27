@@ -1,8 +1,8 @@
 use crate::ReqPrincipal;
 use actix_web::http::header::{CONTENT_SECURITY_POLICY, HeaderValue};
 use actix_web::{HttpResponse, get};
-use rauthy_data::rauthy_config::RauthyConfig;
 use rauthy_common::constants::APPLICATION_JSON;
+use rauthy_data::rauthy_config::RauthyConfig;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
 use tracing::warn;
 

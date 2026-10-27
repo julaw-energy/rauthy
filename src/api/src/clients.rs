@@ -8,14 +8,16 @@ use actix_web::web::{Json, Query};
 use actix_web::{HttpRequest, HttpResponse, delete, get, post, put, web};
 use actix_web_lab::__reexports::futures_util::StreamExt;
 use rauthy_api_types::clients::{
-    ClientRequiredFieldsRequest, ClientRequiredFieldsResponse, ClientResponse, ClientSecretRequest,
-    ClientSecretResponse, ClientValidateRedirectUriRequest, DynamicClientRequest,
-    DynamicClientResponse, NewClientRequest, UpdateClientRequest,
+    ClientAccessRulesRequest, ClientAccessRulesResponse, ClientRequiredFieldsRequest,
+    ClientRequiredFieldsResponse, ClientResponse, ClientSecretRequest, ClientSecretResponse,
+    ClientValidateRedirectUriRequest, DynamicClientRequest, DynamicClientResponse,
+    NewClientRequest, UpdateClientRequest,
 };
 use rauthy_api_types::forward_auth::{ForwardAuthCallbackParams, ForwardAuthParams};
 use rauthy_api_types::generic::LogoParams;
 use rauthy_common::utils::real_ip_from_req;
 use rauthy_data::entity::api_keys::{AccessGroup, AccessRights};
+use rauthy_data::entity::client_access_rules::{ClientAccessRules, OPS};
 use rauthy_data::entity::client_required_fields::ClientRequiredFields;
 use rauthy_data::entity::clients::{Client, validate_dyn_client_redirect_uri};
 use rauthy_data::entity::clients_dyn::ClientDyn;
@@ -801,4 +803,76 @@ pub async fn put_client_required_fields(
     let client = Client::find(path.into_inner()).await?;
     let fields = ClientRequiredFields::save(&client.id, payload.fields).await?;
     Ok(HttpResponse::Ok().json(ClientRequiredFieldsResponse { fields }))
+}
+
+/// The access rules of a client
+///
+/// A client can say who may log in by what the user's values and attributes are, for example
+/// `country in UG, KE, TZ` or `age >= 18`. All rules must hold. A user who does not meet them is
+/// refused at login. The response also lists the fields and operators a rule can use.
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    get,
+    path = "/clients/{id}/access_rules",
+    tag = "clients",
+    responses(
+        (status = 200, description = "Ok", body = ClientAccessRulesResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+)]
+#[get("/clients/{id}/access_rules")]
+pub async fn get_client_access_rules(
+    path: web::Path<String>,
+    principal: ReqPrincipal,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_api_key_or_admin_session(AccessGroup::Clients, AccessRights::Read)?;
+
+    let client = Client::find(path.into_inner()).await?;
+    Ok(HttpResponse::Ok()
+        .json(access_rules_response(ClientAccessRules::find(&client.id).await?).await?))
+}
+
+/// Sets the access rules of a client
+///
+/// Replaces all rules, an empty list removes them. The rules are checked at every login and every
+/// token refresh. An access token that was issued already stays valid until it expires.
+///
+/// **Permissions**
+/// - rauthy_admin
+#[utoipa::path(
+    put,
+    path = "/clients/{id}/access_rules",
+    tag = "clients",
+    request_body = ClientAccessRulesRequest,
+    responses(
+        (status = 200, description = "Ok", body = ClientAccessRulesResponse),
+        (status = 400, description = "BadRequest"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+)]
+#[put("/clients/{id}/access_rules")]
+pub async fn put_client_access_rules(
+    path: web::Path<String>,
+    principal: ReqPrincipal,
+    Json(payload): Json<ClientAccessRulesRequest>,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_api_key_or_admin_session(AccessGroup::Clients, AccessRights::Update)?;
+
+    let client = Client::find(path.into_inner()).await?;
+    let rules = ClientAccessRules::save(&client.id, payload.rules).await?;
+    Ok(HttpResponse::Ok().json(access_rules_response(rules).await?))
+}
+
+async fn access_rules_response(
+    rules: Vec<rauthy_api_types::clients::ClientAccessRule>,
+) -> Result<ClientAccessRulesResponse, ErrorResponse> {
+    Ok(ClientAccessRulesResponse {
+        rules,
+        fields: ClientAccessRules::available_fields().await?,
+        ops: OPS.iter().map(|o| o.to_string()).collect(),
+    })
 }

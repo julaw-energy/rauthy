@@ -25,6 +25,7 @@
     <NavSub>
         <NavLinkSub bind:ref={refA} href="/auth/v1/admin/config/general">General</NavLinkSub>
         <NavLinkSub href="/auth/v1/admin/config/user_fields">User fields</NavLinkSub>
+        <NavLinkSub href="/auth/v1/admin/config/new_users">New users</NavLinkSub>
         <NavLinkSub href="/auth/v1/admin/config/lifetimes">Sessions &amp; tokens</NavLinkSub>
         <NavLinkSub href="/auth/v1/admin/config/policy">
             {t.passwordPolicy.passwordPolicy}

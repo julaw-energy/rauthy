@@ -9,6 +9,7 @@ use rauthy_common::constants::HEADER_DPOP_NONCE;
 use rauthy_common::password_hasher::HashPassword;
 use rauthy_common::utils::real_ip_from_req;
 use rauthy_data::entity::browser_id::BrowserId;
+use rauthy_data::entity::client_access_rules::ClientAccessRules;
 use rauthy_data::entity::clients::Client;
 use rauthy_data::entity::clients_dyn::ClientDyn;
 use rauthy_data::entity::cred_stuff_detect::CredStuffDetect;
@@ -105,6 +106,7 @@ pub async fn grant_type_password(
             user.check_expired()?;
 
             client.validate_user_groups(&user)?;
+            ClientAccessRules::validate_user(&user, &client.id).await?;
 
             user.last_login = Some(Utc::now().timestamp());
             user.last_failed_login = None;

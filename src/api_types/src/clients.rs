@@ -384,3 +384,35 @@ pub struct ClientRequiredFieldsRequest {
 pub struct ClientRequiredFieldsResponse {
     pub fields: Vec<String>,
 }
+
+/// One condition a user must meet to log in to a client. All rules of a client must hold.
+///
+/// Examples: `{"field":"country","op":"in","value":["UG","KE","TZ"]}`,
+/// `{"field":"age","op":"gte","value":18}`, `{"field":"attr:member","op":"is_set"}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ClientAccessRule {
+    /// A user value like `country`, `birthdate`, `gender`, `email`, `email_verified`, the derived
+    /// `age` (full years, from `birthdate`), `roles` or `groups` (lists), or `attr:<name>` for a
+    /// custom attribute.
+    pub field: String,
+    /// `eq`, `ne`, `gt`, `gte`, `lt`, `lte` (numbers), `in`, `not_in` (value is a list),
+    /// `contains`, `starts_with`, `ends_with`, `is_set`, `not_set`.
+    pub op: String,
+    /// A number or a string, a list of them for `in` / `not_in`, nothing for `is_set` / `not_set`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ClientAccessRulesRequest {
+    pub rules: Vec<ClientAccessRule>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ClientAccessRulesResponse {
+    pub rules: Vec<ClientAccessRule>,
+    /// The fields a rule can use right now, including the existing `attr:<name>` attributes
+    pub fields: Vec<String>,
+    /// The operators
+    pub ops: Vec<String>,
+}

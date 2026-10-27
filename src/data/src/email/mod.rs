@@ -9,6 +9,7 @@ pub mod email_change_confirm;
 pub mod email_change_info;
 pub mod email_registered_already;
 pub mod i18n;
+pub mod inactivity;
 pub mod login_location;
 pub mod mailer;
 pub mod mailer_callback;

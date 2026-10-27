@@ -6,6 +6,7 @@ use actix_web::http::header::{HeaderName, HeaderValue};
 use chrono::Utc;
 use rauthy_api_types::oidc::GrantType;
 use rauthy_common::constants::REFRESH_TOKEN_VALIDATION_LEN;
+use rauthy_data::entity::client_access_rules::ClientAccessRules;
 use rauthy_data::entity::clients::Client;
 use rauthy_data::entity::dpop_proof::DPoPProof;
 use rauthy_data::entity::refresh_tokens::RefreshToken;
@@ -137,6 +138,7 @@ pub async fn validate_and_refresh_token(
     user.check_enabled()?;
     user.check_expired()?;
     client.validate_user_groups(&user)?;
+    ClientAccessRules::validate_user(&user, &client.id).await?;
 
     let now_plus_skew = Utc::now().add(clock_skew_secs).timestamp();
     let (rt_scope, session_id, pending_refresh) = if let Some(device_id) = &claims.common.did {

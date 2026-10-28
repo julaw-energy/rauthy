@@ -56,6 +56,11 @@ There is no page with the whole log: it is read per thing, in the tab above. By 
 `target_id` (only the entries about that user, client, ...), `limit` (1 to 200, default 50) and `before` (a Unix timestamp
 in milliseconds, to page back; use the `at` of the last entry you got).
 
+## Database Migration Tool
+
+The Hiqlite <-> Postgres migration tool copies `audit_log` and `audit_users` together with the other tables, so the history
+survives a change of database.
+
 ## Cost
 
 One small row per change, indexed by time and by target, written in the background so the request does not wait for it.

@@ -10,6 +10,48 @@ rollout), not only what changed.
 
 ---
 
+## v0.37.2-custom.5 (2026-10-28)
+
+Bug fixes for `custom.4`. No migration, no config change. Safe to roll over `custom.4` directly.
+
+### Bugfix
+
+- **The theme script was blocked by the Content-Security-Policy in the built UI.**
+  - *Symptom:* on every page of the deployed image the browser console showed
+    `Loading the script 'data:text/javascript;base64,...' violates the following Content Security Policy directive`.
+    The saved light / dark theme was applied late (a flash of the wrong theme). Nothing else broke.
+  - *Cause:* the theme script is a small file imported with `?url`. Vite turns every file under 4 KB into a `data:` URI,
+    and every page carries `script-src 'self'`, which refuses `data:` scripts. It never showed in development, because
+    the dev server serves the file as a file; only the production build inlines it.
+  - *Fix:* scripts are never inlined (`assetsInlineLimit` in `frontend-next/vite.config.ts`).
+- **A user's language was only kept in a cookie.** The language selector on the account page set the `locale` cookie and
+  reloaded, but never saved the language on the account, so a new browser, a cleared cookie or another device showed the
+  old language again. The selector on the account page now also saves it (`POST /auth/v1/update_language`, which was
+  there already and which upstream's UI never calls from the account page).
+  (`frontend-next/src/lib/account/AccMain.svelte`)
+
+### Not errors
+
+These three lines in the browser console are expected and are not bugs: `GET /users/{id}/webid/data` answers 405 when
+WebID is not enabled, `GET /users/{id}/self/delete` answers 406 when self-delete is not enabled
+(`enable_self_delete`), and `GET /pam/users/self` answers 404 for a user who has no PAM account. The account page asks
+to find out what to show.
+
+### Open
+
+- Reported: a user's **timezone** is lost in the deployed image. Not reproduced, no cause found in the code (the profile
+  save sends it, the server stores it; the UI deliberately stores `UTC` as "none"). Needs the exact steps.
+
+### Catching this earlier
+
+- **The build now checks the pages it produced** (`frontend-next/tools/check-build.mjs`, run by `postbuild` and
+  `postbuild:dropin`, so `pnpm build`, `pnpm build:dropin` and therefore the image build stop with an error). For every page
+  it checks that the Content-Security-Policy exists and does not allow `unsafe-inline`, `unsafe-eval`, `data:` or `https:`
+  scripts, that every inline script has its hash in the policy, and that every `<script src>` is a local file that exists in
+  the build (no `data:`, no other origin). Run against the `custom.4` configuration it reports all 46 pages, which is how
+  this bug would have been found before the image. Unit tests: `frontend-next/tests/checkBuild.test.ts`.
+- See [Building and Releasing This Fork](book/src/config/building_the_image.md) for the release checklist.
+
 ## v0.37.2-custom.4 (2026-10-28)
 
 ### Changes

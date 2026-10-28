@@ -32,3 +32,23 @@ Every admin page that exists as its own route also needs a page handler in the b
 in production. The new `Config` pages (General, User fields, Sessions & tokens, Email, Channels) work when you
 navigate to them inside the UI, but reloading them directly is not wired up yet.
 ```
+
+## Static Settings
+
+**Config -> Static settings** is a read-only view of the values from the config file and the environment that can only
+change with a restart: server, database, encryption key ids, WebAuthn, lifetimes, events, pictures, TLS, logging, and so
+on. Secrets only show `set` or `not set`, never the value. By API: `GET /auth/v1/settings/static` (admin session).
+
+## Unread Events
+
+The bell in the header shows how many events are newer than the point where you last read, and the Events entry in the
+side navigation shows a dot. Opening the list marks everything as read.
+
+- The marker is stored per admin in the database (table `event_read_state`), so it is the same on every browser and
+  device and survives a reload.
+- `GET /auth/v1/events/read` returns the marker, `PUT /auth/v1/events/read` moves it. It only ever moves forward.
+- The event stream, `GET /auth/v1/events/stream?read=true` (sessions only), sends the marker as the named SSE event
+  `read`, once when it opens and again whenever another tab or device moves it. Clients that do not ask for it, and every
+  existing consumer of the stream, get exactly what they got before.
+- In a cluster, the live update only reaches the connections on the node that took the change. The other nodes catch up
+  when the tab regains focus or reconnects.

@@ -7,7 +7,12 @@ export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), '');
 	return {
 		plugins: [tailwindcss(), wasm(), sveltekit()],
-		build: { target: 'esnext' },
+		build: {
+			target: 'esnext',
+			// Never inline a script as a `data:` URI (the default for files under 4 KB): the CSP only allows
+			// `script-src 'self'`, so the browser would refuse the theme script loaded from <head>.
+			assetsInlineLimit: (file) => (file.endsWith('.js') ? false : undefined)
+		},
 		worker: { format: 'es', plugins: () => [wasm()] },
 		// logic modules are shared with ../frontend: make sure there is exactly ONE copy of these
 		resolve: { dedupe: ['svelte', 'base64-arraybuffer'] },

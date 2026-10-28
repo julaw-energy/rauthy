@@ -5,7 +5,7 @@ database, required client data, ...). An existing Rauthy v0.37 database moves to
 migrations of its own and applies them at the first start. They only **add** tables and columns, nothing is dropped
 or rewritten, and your users, clients, passkeys, roles and groups are not touched.
 
-Our migrations are kept **apart from upstream's**: they live in `migrations_fork/`, are numbered 1 to 8 and are tracked
+Our migrations are kept **apart from upstream's**: they live in `migrations_fork/`, are numbered 1 to 14 (see [Building and Releasing This Fork](building_the_image.md#fork-migrations)) and are tracked
 in their own table `_fork_migrations`. Hiqlite refuses to start when its applied migrations are not exactly a prefix of
 the built-in ones, so sharing upstream's numbering would make every migration that upstream adds collide with ours.
 Upstream's table `_migrations` stays exactly as upstream has it, so upstream releases can be merged without touching

@@ -31,3 +31,21 @@ To require more only for a single application, see [Required User Data per Clien
 Every time a client gets tokens for a user, Rauthy remembers the client, the scope, the first and last access and the
 number of logins. Users see this on their account page under **Connected apps**, and admins see it on the user.
 It answers "which applications can see my data". The list can be read with `GET /users/{id}/clients`.
+
+## Profile Pictures of Federated Users
+
+When a user logs in through an auth provider (Google, Github, ...), the `picture` claim of the provider (`avatar_url` for
+Github) is stored and kept current on every login. It is shown in the account and admin UI, and it is the `picture`
+claim of the ID token and of userinfo for client applications (scope `profile`).
+
+- Only `https` links are taken. Rauthy never fetches the image, the browser loads it from the provider.
+- A picture the user uploads replaces the link, Rauthy then serves its own URL.
+- There is no migration: the link is kept in the existing `picture_id` column.
+- A user gets the picture at their next login through the provider.
+
+```admonish warning title="Content-Security-Policy"
+Every page carries a CSP. Its `img-src` is `'self' data: https:` so the browser may load the provider's image. Plain
+`http` images stay blocked and scripts are still locked to `'self'` and hashes. The trade-off: an injected `<img>` could
+send data to any `https` host. If that is not acceptable, the alternative is a small avatar proxy in Rauthy (more code,
+and Rauthy would then fetch the provider's URL).
+```

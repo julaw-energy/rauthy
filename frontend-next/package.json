@@ -7,6 +7,8 @@
     "dev": "vite dev",
     "build": "vite build",
     "build:dropin": "DROPIN=1 vite build",
+    "postbuild": "node tools/check-build.mjs build/html build/static",
+    "postbuild:dropin": "node tools/check-build.mjs ../templates/html ../static/v1",
     "preview": "vite preview",
     "prepare": "svelte-kit sync || echo ''",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",

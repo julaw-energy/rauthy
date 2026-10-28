@@ -24,6 +24,7 @@
   - [Bootstrapping](config/bootstrap.md)
   - [Database Migrations](config/db_migration.md)
   - [Upgrading a Hiqlite Instance](config/upgrading_hiqlite.md)
+  - [Building and Releasing This Fork](config/building_the_image.md)
   - [UNIX Domain Sockets](config/unix_socket.md)
   - [Tuning](config/tuning.md)
   - [Settings in the Database](config/settings_db.md)

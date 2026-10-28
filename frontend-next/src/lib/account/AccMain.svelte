@@ -204,7 +204,7 @@
         <div class="flex flex-wrap items-center gap-1">
             <DateFormatSelect />
             <ThemeSwitch />
-            <div class="w-28"><LangSelector openTop borderless={false} /></div>
+            <div class="w-28"><LangSelector openTop borderless={false} updateBackend /></div>
             {#if showAdminLink}
                 <A href="/auth/v1/admin/users" hideUnderline>
                     <span title={t.account.navBackToAdmin} class="flex items-center gap-1 text-sm">

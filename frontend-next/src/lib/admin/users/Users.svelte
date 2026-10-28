@@ -16,11 +16,12 @@
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
     import { fetchSearchServer, type SearchParamsIdxUser } from '$utils/search';
     import { Input } from '$lib/components/ui/input';
-    import { Mail, Search } from '@lucide/svelte';
+    import { Mail, Search, UserX } from '@lucide/svelte';
     import Button from '$lib/components/ui/button/button.svelte';
     import IconEnvelope from '$icons/IconEnvelope.svelte';
     import DataTable from '$lib/components/data-table/data-table.svelte';
     import { isSystemUserId } from '$lib5/admin/audit/system';
+    import DeletedUsers from '$lib5/admin/audit/DeletedUsers.svelte';
     import { componentCol, dateCol, textCol } from '$lib/components/data-table/columns';
     import type { FeaturedColumnDef } from '$lib/components/data-table/data-table-features';
     import ButtonAddModal from '$lib5/button/ButtonAddModal.svelte';
@@ -98,6 +99,8 @@
     });
 
     let session = useSession('admin');
+    // the list of deleted users, with what is kept of them and a way to wipe it
+    let showDeleted = $state(false);
     // deleting users stays full-admin only (like in the details); nobody deletes their own account here
     const remove: RowDeletion<UserResponseSimple> = {
         label: x => x.email,
@@ -325,6 +328,11 @@
                         <IconEnvelope width="1.3rem" />
                     </Button>
                     <EmailJobs />
+                    {#if session.isAdmin()}
+                        <Button variant="outline" size="sm" onclick={() => (showDeleted = true)}>
+                            <UserX class="size-4" />Deleted users
+                        </Button>
+                    {/if}
                     <ButtonAddModal bind:ref={refAddNew} level={roles.length === 0 ? 1 : 2} bind:closeModal alignRight>
                         {#key addNonce}
                             <UserAddNew config={userValuesConfig} onSave={onAddNew} {roles} {groups} />
@@ -335,6 +343,12 @@
         </DataTable>
     </div>
 </ContentAdmin>
+
+<DetailsSheet open={showDeleted} title="Deleted users" onClose={() => (showDeleted = false)} wide>
+    {#if showDeleted}
+        <DeletedUsers />
+    {/if}
+</DetailsSheet>
 
 <DetailsSheet open={!!(userId && userValuesConfig)} title={users.find((u) => u.id === userId)?.email ?? ta.nav.users} onClose={() => uid.set(undefined)} wide>
     {#if userId && userValuesConfig}

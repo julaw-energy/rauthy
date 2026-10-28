@@ -20,7 +20,7 @@ rollout), not only what changed.
   also need 4 characters) or an email in `system.invalid`. Every successful change through the API (users, clients, roles,
   groups, scopes, providers, settings, API keys, ...) is recorded with the id of the user or API key that made it, the time
   and the target; reads, logins and test buttons are not. Nothing references users by foreign key. When a user is deleted, a
-  small copy (id, email, names, username, phone) is kept so old entries still name them; **Config -> Deleted users** lists
+  small copy (id, email, names, username, phone) is kept so old entries still name them; **Users -> Deleted users** lists
   them and wipes the personal data on request. Users, clients, providers and API keys get a **Status Change history** tab
   (created by / when, last modified by / when, every change). `GET /auth/v1/events/audit`, `/events/audit/summary`,
   `/events/audit/users`, `DELETE /events/audit/users/{id}`, and each entry is also written to the log (target `audit`) for

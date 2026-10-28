@@ -46,7 +46,7 @@ the list.
 
 When a user is deleted, their id, email, names, username and phone are copied to a small table (`audit_users`) first. Old
 entries keep naming them. Nothing refers to that table either. To remove the personal data on request (for example under
-a deletion request), open **Config -> Deleted users**. It lists the deleted users with what is kept of them and a button
+a deletion request), open **Users -> Deleted users**. It lists the deleted users with what is kept of them and a button
 to wipe it; the same by API with `GET /auth/v1/events/audit/users` and `DELETE /auth/v1/events/audit/users/{id}`. Only the
 id stays, and the entries about that user are shown by id.
 

@@ -1,5 +1,6 @@
 use chrono::Utc;
 use rauthy_data::database::DB;
+use rauthy_data::entity::audit_log::{AuditLog, SYSTEM_USER_ID};
 use rauthy_data::entity::clients_scim::ClientScim;
 use rauthy_data::entity::pam::authorized_keys::AuthorizedKey;
 use rauthy_data::entity::pam::users::PamUser;
@@ -65,6 +66,14 @@ async fn execute(cleanup_after_secs: Option<u64>) -> Result<(), ErrorResponse> {
 
         user.enabled = false;
         user.save(None).await?;
+        AuditLog::record_or_log(
+            SYSTEM_USER_ID,
+            "user_expired_disabled",
+            "user",
+            Some(&user.id),
+            Some(format!("the account expired at {exp_ts}")),
+        )
+        .await;
 
         Session::invalidate_for_user(&user.id).await?;
         RefreshToken::invalidate_for_user(&user.id).await?;

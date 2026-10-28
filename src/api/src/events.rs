@@ -3,9 +3,13 @@ use actix_web::web::{Json, Query};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, post, put};
 use actix_web_lab::sse;
 use chrono::Utc;
-use rauthy_api_types::events::{EventResponse, EventsListenParams, EventsReadState, EventsRequest};
+use rauthy_api_types::events::{
+    AuditEntryResponse, AuditListParams, EventResponse, EventsListenParams, EventsReadState,
+    EventsRequest,
+};
 use rauthy_common::utils::{get_rand, real_ip_from_req};
 use rauthy_data::entity::api_keys::{AccessGroup, AccessRights};
+use rauthy_data::entity::audit_log::AuditLog;
 use rauthy_data::entity::event_read_state::EventReadState;
 use rauthy_data::events::event::Event;
 use rauthy_data::events::listener::EventRouterMsg;
@@ -121,6 +125,52 @@ pub async fn sse_events(
             .with_keep_alive(RauthyConfig::get().vars.server.see_keep_alive)
             .with_retry_duration(Duration::from_secs(10)))
     }
+}
+
+/// Who did what, newest first
+///
+/// The actor is the id of a user, or `system` for what the background tasks do on their own.
+/// Page back with `before`, the `at` of the last entry you got.
+///
+/// **Permissions**
+/// - an admin session or an API key with `Events` read
+#[utoipa::path(
+    get,
+    path = "/events/audit",
+    tag = "events",
+    params(AuditListParams),
+    responses(
+        (status = 200, description = "Ok", body = [AuditEntryResponse]),
+        (status = 400, description = "BadRequest", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[get("/events/audit")]
+pub async fn get_audit_log(
+    principal: ReqPrincipal,
+    params: Query<AuditListParams>,
+) -> Result<HttpResponse, ErrorResponse> {
+    // the actors are named by id, so this is for admins and not for group admins
+    principal.validate_api_key_or_admin_session(AccessGroup::Events, AccessRights::Read)?;
+    params.validate()?;
+
+    let before = params.before.unwrap_or(i64::MAX);
+    let limit = params.limit.unwrap_or(50) as i64;
+    let entries = AuditLog::find(params.target_id.as_deref(), before, limit).await?;
+    let entries: Vec<AuditEntryResponse> = entries
+        .into_iter()
+        .map(|e| AuditEntryResponse {
+            id: e.id,
+            at: e.at,
+            actor: e.actor,
+            action: e.action,
+            target_type: e.target_type,
+            target_id: e.target_id,
+            details: e.details,
+        })
+        .collect();
+    Ok(HttpResponse::Ok().json(entries))
 }
 
 /// How far the logged-in user has read the events

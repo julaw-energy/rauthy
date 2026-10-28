@@ -123,6 +123,7 @@ use utoipa::{OpenApi, openapi};
         events::post_events,
         events::sse_events,
         events::get_events_read,
+        events::get_audit_log,
         events::put_events_read,
         events::post_event_test,
 

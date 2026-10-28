@@ -1,6 +1,7 @@
 use crate::database::DB;
 use crate::entity::api_keys::ApiKeyEntity;
 use crate::entity::attr_verify_channels::AttrVerifyChannelsRow;
+use crate::entity::audit_log::AuditEntry;
 use crate::entity::auth_providers::AuthProvider;
 use crate::entity::client_access_rules::ClientAccessRulesRow;
 use crate::entity::client_required_fields::ClientRequiredFieldsRow;
@@ -2184,6 +2185,51 @@ pub async fn event_read_state(data_before: Vec<EventReadStateRow>) -> Result<(),
         DB::pg_execute(sql_1, &[]).await?;
         for b in data_before {
             DB::pg_execute(sql_2, &[&b.user_id, &b.read_until]).await?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn audit_log(data_before: Vec<AuditEntry>) -> Result<(), ErrorResponse> {
+    let sql_1 = "DELETE FROM audit_log";
+    let sql_2 = r#"
+INSERT INTO audit_log (id, at, actor, action, target_type, target_id, details)
+VALUES ($1, $2, $3, $4, $5, $6, $7)"#;
+
+    if is_hiqlite() {
+        DB::hql().execute(sql_1, params!()).await?;
+        for b in data_before {
+            DB::hql()
+                .execute(
+                    sql_2,
+                    params!(
+                        b.id,
+                        b.at,
+                        b.actor,
+                        b.action,
+                        b.target_type,
+                        b.target_id,
+                        b.details
+                    ),
+                )
+                .await?;
+        }
+    } else {
+        DB::pg_execute(sql_1, &[]).await?;
+        for b in data_before {
+            DB::pg_execute(
+                sql_2,
+                &[
+                    &b.id,
+                    &b.at,
+                    &b.actor,
+                    &b.action,
+                    &b.target_type,
+                    &b.target_id,
+                    &b.details,
+                ],
+            )
+            .await?;
         }
     }
     Ok(())

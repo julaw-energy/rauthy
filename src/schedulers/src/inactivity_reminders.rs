@@ -1,5 +1,6 @@
 use rauthy_data::database::DB;
 use rauthy_data::email::inactivity::send_inactivity_reminder;
+use rauthy_data::entity::audit_log::{AuditLog, SYSTEM_USER_ID};
 use rauthy_data::entity::inactivity_reminders::InactivityReminders;
 use rauthy_data::entity::users::User;
 use rauthy_data::settings;
@@ -86,6 +87,19 @@ async fn execute() -> Result<(), ErrorResponse> {
             continue;
         }
         InactivityReminders::record_sent(&user.id, due.next_count()).await?;
+        AuditLog::record_or_log(
+            SYSTEM_USER_ID,
+            "inactivity_reminder_sent",
+            "user",
+            Some(&user.id),
+            Some(format!(
+                "reminder {} of {}, {} days since the last activity",
+                due.next_count(),
+                s.max_reminders,
+                due.days_inactive(now)
+            )),
+        )
+        .await;
         sent += 1;
 
         // be gentle with the mail server

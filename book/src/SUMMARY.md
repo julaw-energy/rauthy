@@ -38,6 +38,7 @@
   - [Required User Data per Client](work/required_client_data.md)
   - [Access Rules per Client](work/client_access_rules.md)
   - [New Users: Default Roles and Reminders](work/new_users.md)
+  - [The System User and the Audit Log](work/audit_log.md)
   - [User Profile Fields](work/user_profile.md)
   - [The New Admin UI](work/admin_ui.md)
   - [Delegated Group Admins](work/group_admins.md)

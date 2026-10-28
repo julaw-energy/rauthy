@@ -313,7 +313,19 @@ impl User {
         Ok(new_user)
     }
 
+    /// The system user owns what the background tasks do. It is never changed or removed.
+    fn refuse_system_user(&self) -> Result<(), ErrorResponse> {
+        if self.id == crate::entity::audit_log::SYSTEM_USER_ID {
+            return Err(ErrorResponse::new(
+                ErrorResponseType::Forbidden,
+                "The system user cannot be changed or deleted",
+            ));
+        }
+        Ok(())
+    }
+
     pub async fn delete(&self) -> Result<(), ErrorResponse> {
+        self.refuse_system_user()?;
         // We are cleaning up PAM data manually instead of using FKs because
         // of a chicken-and-egg problem in some cases.
         if let Ok(user) = PamUser::find_by_user_id(self.id.clone()).await {
@@ -921,6 +933,7 @@ LIMIT $2"#;
     }
 
     pub async fn save(&self, old_email: Option<String>) -> Result<(), ErrorResponse> {
+        self.refuse_system_user()?;
         if old_email.is_some() {
             User::is_email_free(self.email.clone()).await?;
         }

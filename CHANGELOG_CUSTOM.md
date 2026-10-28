@@ -14,6 +14,10 @@ rollout), not only what changed.
 
 ### Changes
 
+- **A system user and an audit log.** The built-in user `system` (disabled, no password, cannot be changed or deleted) owns
+  what the background tasks do on their own, and every entry of the new audit log says who did what: reminders sent
+  (`system`), accounts disabled by the expiry scheduler (`system`), and settings saved by an admin (that admin).
+  `GET /auth/v1/events/audit`. See [The System User and the Audit Log](book/src/work/audit_log.md).
 - Saving a client no longer scrolls the panel back to the top, and shows a "Client saved" toast (errors as a toast too), plus "Saved" next to the tick.
 - **Access rules per client.** A client can say who may log in by the user's values and attributes: `country is one of
   UG, KE, TZ`, `age is at least 18`, `email ends with @example.com`, `roles contains staff`, `attr:<name> has a value`.
@@ -32,8 +36,9 @@ rollout), not only what changed.
   row by default, wording and numbers set by the admin, "Save and send a test to me". At most 100 users per hour, sent
   by the leader node, tracked per user so nobody gets the same reminder twice. `GET` / `PUT /auth/v1/settings/reminders`.
   See [New Users](book/src/work/new_users.md).
-- Two new fork migrations: `10_access_rules_and_reminders` (two tables) and `11_reminder_indexes` (two indexes). Both tables
-  are copied by the Hiqlite / Postgres migration tool.
+- Three new fork migrations: `10_access_rules_and_reminders` (two tables), `11_reminder_indexes` (two indexes) and
+  `12_system_user_and_audit` (the `system` user and the `audit_log` table). The tables are copied by the Hiqlite / Postgres
+  migration tool.
 
 ### Operators
 

@@ -50,6 +50,33 @@ pub struct EventsListenParams {
     pub read: Option<bool>,
 }
 
+#[derive(Deserialize, Validate, ToSchema, IntoParams)]
+pub struct AuditListParams {
+    /// Only the entries about this user, client, ...
+    #[validate(length(max = 256))]
+    pub target_id: Option<String>,
+    /// Only entries older than this Unix timestamp in seconds, to page back. Default: now.
+    #[validate(range(min = 0))]
+    pub before: Option<i64>,
+    /// Validation: `1 <= limit <= 200`, default 50
+    #[validate(range(min = 1, max = 200))]
+    pub limit: Option<u16>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AuditEntryResponse {
+    pub id: String,
+    /// Unix timestamp in seconds
+    pub at: i64,
+    /// The id of the user who did it, `system` for the background tasks
+    pub actor: String,
+    /// What was done, like `inactivity_reminder_sent` or `settings_changed`
+    pub action: String,
+    pub target_type: String,
+    pub target_id: Option<String>,
+    pub details: Option<String>,
+}
+
 /// How far the logged-in user has read the events
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct EventsReadState {

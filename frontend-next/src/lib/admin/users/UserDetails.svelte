@@ -19,7 +19,8 @@
     import { useTrigger } from '$state/callback.svelte';
     import type { UserValuesConfig } from '$api/templates/UserValuesConfig';
     import { useSession } from '$state/session.svelte';
-    import AuditSummary from '$lib5/admin/audit/AuditSummary.svelte';
+    import AuditHistory from '$lib5/admin/audit/AuditHistory.svelte';
+    import { HISTORY_TAB, isSystemUserId } from '$lib5/admin/audit/system';
 
     let {
         userValuesConfig,
@@ -58,10 +59,24 @@
     const TAB_LOGOUT = t.account.navLogout;
     const TAB_DELETE = t.common.delete;
 
+    // system users (101, 102, ...) are read only: their data and the history, nothing to change
+    let isSystem = $derived(isSystemUserId(userId));
     let tabs = $derived(
-        isGroupAdmin
-            ? [TAB_INFO, TAB_PASSWORD, TAB_MFA, TAB_LOGOUT]
-            : [TAB_INFO, TAB_ATTR, TAB_PASSWORD, TAB_MFA, TAB_DEVICES, TAB_APPS, TAB_LOGOUT, TAB_DELETE],
+        isSystem
+            ? [TAB_INFO, HISTORY_TAB]
+            : isGroupAdmin
+              ? [TAB_INFO, TAB_PASSWORD, TAB_MFA, TAB_LOGOUT]
+              : [
+                    TAB_INFO,
+                    TAB_ATTR,
+                    TAB_PASSWORD,
+                    TAB_MFA,
+                    TAB_DEVICES,
+                    TAB_APPS,
+                    HISTORY_TAB,
+                    TAB_LOGOUT,
+                    TAB_DELETE,
+                ],
     );
     let selected = $state(TAB_INFO);
 
@@ -117,12 +132,29 @@
     <UserAddToGroups {userId} {groups} onAdded={onSaveLocal} />
 {:else}
     <Tabs {tabs} bind:selected bind:focusFirst />
-    <AuditSummary targetId={userId} refreshKey={user} />
 {/if}
 
 {#if user && !err}
     <div class="mt-4">
-        {#if selected === TAB_INFO}
+        {#if selected === TAB_INFO && isSystem}
+            <div class="grid gap-3 rounded-xl border p-4 text-sm">
+                <p class="font-medium">System user, read only</p>
+                <p class="text-muted-foreground">
+                    It owns what the system does on its own, like the reminders. It cannot log in and nobody can
+                    change or delete it.
+                </p>
+                <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                    <dt class="text-muted-foreground">Id</dt>
+                    <dd>{user.id}</dd>
+                    <dt class="text-muted-foreground">Email</dt>
+                    <dd>{user.email}</dd>
+                    <dt class="text-muted-foreground">Name</dt>
+                    <dd>{[user.given_name, user.family_name].filter(Boolean).join(' ')}</dd>
+                </dl>
+            </div>
+        {:else if selected === HISTORY_TAB}
+            <AuditHistory targetId={userId} />
+        {:else if selected === TAB_INFO}
             <UserInfo
                 bind:user
                 config={userValuesConfig}

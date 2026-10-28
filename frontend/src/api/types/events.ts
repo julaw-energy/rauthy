@@ -66,3 +66,16 @@ export interface AuditSummary {
     modified_by_label?: string | null;
     modified_at?: number | null;
 }
+
+/** A deleted user, kept so the history can still name them */
+export interface AuditUserResponse {
+    id: string;
+    email?: string | null;
+    given_name?: string | null;
+    family_name?: string | null;
+    preferred_username?: string | null;
+    phone?: string | null;
+    /** seconds */
+    deleted_at: number;
+    anonymized: boolean;
+}

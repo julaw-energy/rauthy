@@ -13,13 +13,48 @@ use hiqlite::macros::{FromRow, params};
 use rauthy_common::is_hiqlite;
 use rauthy_common::utils::new_store_id;
 use rauthy_derive::FromPgRow;
-use rauthy_error::ErrorResponse;
+use rauthy_error::{ErrorResponse, ErrorResponseType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{error, info};
 
-/// The user that owns what the system does on its own
-pub const SYSTEM_USER_ID: &str = "system";
+/// The user that owns what the system does on its own. System users have numbers as ids (101, 102,
+/// ...) and `<number>@system.invalid` as email: no other user can have a name that starts with a
+/// number, or an email in the reserved domain (see `check_not_system_email`).
+pub const SYSTEM_USER_ID: &str = "101";
+
+/// The email domain of the system users. `.invalid` can never be registered, so no mailbox exists.
+pub const SYSTEM_EMAIL_DOMAIN: &str = "system.invalid";
+
+/// Ids of system users are short numbers. The ids of other users are 24 random characters.
+pub fn is_system_user_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 8 && id.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// System users are read only: they cannot be changed or deleted by anyone
+pub fn refuse_system_user_id(id: &str) -> Result<(), ErrorResponse> {
+    if is_system_user_id(id) {
+        return Err(ErrorResponse::new(
+            ErrorResponseType::Forbidden,
+            "System users cannot be changed or deleted",
+        ));
+    }
+    Ok(())
+}
+
+/// Refuses an email in the domain reserved for system users (and its subdomains)
+pub fn check_not_system_email(email: &str) -> Result<(), ErrorResponse> {
+    let domain = email.rsplit('@').next().unwrap_or_default().to_lowercase();
+    let reserved =
+        domain == SYSTEM_EMAIL_DOMAIN || domain.ends_with(&format!(".{SYSTEM_EMAIL_DOMAIN}"));
+    if reserved && email.contains('@') {
+        return Err(ErrorResponse::new(
+            ErrorResponseType::BadRequest,
+            format!("The domain @{SYSTEM_EMAIL_DOMAIN} is reserved for system users"),
+        ));
+    }
+    Ok(())
+}
 
 /// Only the longest `details` we keep, so an entry stays small
 const MAX_DETAILS: usize = 500;
@@ -158,8 +193,12 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)"#;
             if out.contains_key(id) {
                 continue;
             }
-            let label = if id == SYSTEM_USER_ID {
-                Some("System".to_string())
+            let label = if is_system_user_id(id) {
+                // named by what it does, not by its `<number>@system.invalid` email
+                match User::find(id.to_string()).await {
+                    Ok(u) => Some(format!("System: {}", u.family_name.unwrap_or(u.given_name))),
+                    Err(_) => Some(format!("System user {id}")),
+                }
             } else if let Some(name) = id.strip_prefix("api_key:") {
                 Some(format!("API key {name}"))
             } else if let Ok(user) = User::find(id.to_string()).await {
@@ -184,5 +223,50 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)"#;
         } else {
             DB::pg_query(sql, &[], 0).await?
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn system_ids_are_short_numbers() {
+        for yes in ["101", "102", "1", "99999999"] {
+            assert!(is_system_user_id(yes), "{yes}");
+        }
+        for no in [
+            "",
+            "system",
+            "10a",
+            "123456789",
+            "a1b2c3d4e5f6g7h8i9j0k1l2",
+            " 101",
+            "-1",
+        ] {
+            assert!(!is_system_user_id(no), "{no}");
+        }
+        assert!(is_system_user_id(SYSTEM_USER_ID));
+    }
+
+    #[test]
+    fn the_system_email_domain_is_reserved() {
+        for bad in [
+            "101@system.invalid",
+            "anything@system.invalid",
+            "Someone@SYSTEM.INVALID",
+            "a@mail.system.invalid",
+        ] {
+            assert!(check_not_system_email(bad).is_err(), "{bad}");
+        }
+        for ok in [
+            "a@example.com",
+            "a@system.com",
+            "a@notsystem.invalid",
+            "system.invalid@example.com",
+            "a@other.invalid",
+        ] {
+            assert!(check_not_system_email(ok).is_ok(), "{ok}");
+        }
     }
 }

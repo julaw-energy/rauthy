@@ -569,6 +569,7 @@ fn api_services() -> actix_web::Scope {
                 .service(events::get_events_read)
                 .service(events::get_audit_log)
                 .service(events::get_audit_summary)
+                .service(events::get_audit_users)
                 .service(events::delete_audit_user)
                 .service(events::put_events_read)
                 .service(events::post_event_test)

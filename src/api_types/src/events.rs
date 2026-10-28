@@ -90,6 +90,21 @@ pub struct AuditSummaryParams {
     pub target_id: String,
 }
 
+/// A user who was deleted, kept so the audit log can still name them
+#[derive(Serialize, ToSchema)]
+pub struct AuditUserResponse {
+    pub id: String,
+    /// Empty after the personal data was wiped
+    pub email: Option<String>,
+    pub given_name: Option<String>,
+    pub family_name: Option<String>,
+    pub preferred_username: Option<String>,
+    pub phone: Option<String>,
+    /// Unix timestamp in seconds
+    pub deleted_at: i64,
+    pub anonymized: bool,
+}
+
 /// Who created something, and who changed it last
 #[derive(Serialize, ToSchema)]
 pub struct AuditSummaryResponse {

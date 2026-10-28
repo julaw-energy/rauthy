@@ -246,6 +246,7 @@ impl User {
         // pre-uniqueness check for better UX and error handling; the DB unique index on
         // `users_values.preferred_username` is the authoritative guard (see UserValues::insert).
         if let Some(preferred_username) = &new_user_req.preferred_username {
+            UserValues::check_preferred_username(preferred_username)?;
             UserValues::validate_preferred_username_free(preferred_username.clone()).await?;
         }
 
@@ -284,6 +285,7 @@ impl User {
         // pre-uniqueness checks for better UX and error handling
         User::validate_email_free(req_data.email.clone()).await?;
         if let Some(preferred_username) = &req_data.preferred_username {
+            UserValues::check_preferred_username(preferred_username)?;
             UserValues::validate_preferred_username_free(preferred_username.clone()).await?;
         }
 
@@ -315,13 +317,7 @@ impl User {
 
     /// The system user owns what the background tasks do. It is never changed or removed.
     fn refuse_system_user(&self) -> Result<(), ErrorResponse> {
-        if self.id == crate::entity::audit_log::SYSTEM_USER_ID {
-            return Err(ErrorResponse::new(
-                ErrorResponseType::Forbidden,
-                "The system user cannot be changed or deleted",
-            ));
-        }
-        Ok(())
+        crate::entity::audit_log::refuse_system_user_id(&self.id)
     }
 
     pub async fn delete(&self) -> Result<(), ErrorResponse> {
@@ -654,6 +650,7 @@ OFFSET $2"#;
     }
 
     pub async fn insert(new_user: User) -> Result<Self, ErrorResponse> {
+        crate::entity::audit_log::check_not_system_email(&new_user.email)?;
         let lang = new_user.language.as_str();
         let sql = r#"
 INSERT INTO users
@@ -1495,6 +1492,7 @@ LIMIT $2"#;
     }
 
     pub async fn validate_email_free(email: String) -> Result<(), ErrorResponse> {
+        crate::entity::audit_log::check_not_system_email(&email)?;
         let sql = "SELECT 1 FROM users WHERE email = $1";
 
         // emails are stored lowercased (see from_new_user_req / create_from_reg), so the
@@ -1975,6 +1973,7 @@ impl User {
     }
 
     async fn is_email_free(email: String) -> Result<(), ErrorResponse> {
+        crate::entity::audit_log::check_not_system_email(&email)?;
         match User::find_by_email(email).await {
             Ok(_) => Err(ErrorResponse::new(
                 ErrorResponseType::BadRequest,

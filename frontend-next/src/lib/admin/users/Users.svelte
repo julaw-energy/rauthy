@@ -20,6 +20,7 @@
     import Button from '$lib/components/ui/button/button.svelte';
     import IconEnvelope from '$icons/IconEnvelope.svelte';
     import DataTable from '$lib/components/data-table/data-table.svelte';
+    import { isSystemUserId } from '$lib5/admin/audit/system';
     import { componentCol, dateCol, textCol } from '$lib/components/data-table/columns';
     import type { FeaturedColumnDef } from '$lib/components/data-table/data-table-features';
     import ButtonAddModal from '$lib5/button/ButtonAddModal.svelte';
@@ -100,7 +101,7 @@
     // deleting users stays full-admin only (like in the details); nobody deletes their own account here
     const remove: RowDeletion<UserResponseSimple> = {
         label: x => x.email,
-        canRemove: x => session.isAdmin() && x.id !== session.get()?.user_id,
+        canRemove: x => session.isAdmin() && x.id !== session.get()?.user_id && !isSystemUserId(x.id),
         run: async x => {
             let res = await fetchDelete(`/auth/v1/users/${x.id}`);
             if (res.error) throw new Error(res.error.message);
@@ -297,9 +298,12 @@
             initialSorting={[{ id: 'created_at', desc: true }]}
         >
             {#snippet rowActions(u)}
-                <Button variant="ghost" size="icon-sm" aria-label="Send email" title="Send email" onclick={() => emailTo([u])}>
-                    <Mail class="size-4" />
-                </Button>
+                <!-- a system user has no mailbox -->
+                {#if !isSystemUserId(u.id)}
+                    <Button variant="ghost" size="icon-sm" aria-label="Send email" title="Send email" onclick={() => emailTo([u])}>
+                        <Mail class="size-4" />
+                    </Button>
+                {/if}
             {/snippet}
             {#snippet selectionActions(rows)}
                 <Button size="sm" variant="outline" onclick={() => emailTo(rows)}>

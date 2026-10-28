@@ -5,6 +5,8 @@
     import type { ApiKeyResponse } from '$api/types/api_keys.ts';
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
     import ApiKeyDelete from '$lib5/admin/api_keys/ApiKeyDelete.svelte';
+    import AuditHistory from '$lib5/admin/audit/AuditHistory.svelte';
+    import { HISTORY_TAB } from '$lib5/admin/audit/system';
 
     let {
         key = $bindable(),
@@ -16,7 +18,7 @@
 
     let ta = useI18nAdmin();
 
-    const tabs = [ta.tabs.config, 'Secret', ta.tabs.delete];
+    const tabs = [ta.tabs.config, 'Secret', HISTORY_TAB, ta.tabs.delete];
     let selected = $state(tabs[0]);
     let focusFirst: undefined | (() => void) = $state();
 
@@ -34,6 +36,8 @@
         <ApiKeyConfig bind:key {onSave} />
     {:else if selected === 'Secret'}
         <ApiKeySecret {key} />
+    {:else if selected === HISTORY_TAB}
+        <AuditHistory targetId={key.name} />
     {:else if selected === ta.tabs.delete}
         <ApiKeyDelete {key} {onSave} />
     {/if}

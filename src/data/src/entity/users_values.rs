@@ -7,6 +7,9 @@ use rauthy_derive::FromPgRow;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
 use serde::{Deserialize, Serialize};
 
+/// The shortest username there is
+pub const PREFERRED_USERNAME_MIN: usize = 4;
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, FromRow, FromPgRow)]
 pub struct UserValues {
     pub id: String,
@@ -27,12 +30,34 @@ impl UserValues {
         format!("{IDX_USERS_VALUES}_{user_id}")
     }
 
+    /// A username has at least 4 characters and does not start with a number: names like `101` are
+    /// for system users. The configured pattern (`user_values.preferred_username`) is checked in
+    /// addition, this is what no configuration can allow.
+    pub fn check_preferred_username(name: &str) -> Result<(), ErrorResponse> {
+        if name.chars().count() < PREFERRED_USERNAME_MIN {
+            return Err(ErrorResponse::new(
+                ErrorResponseType::BadRequest,
+                format!("The username needs at least {PREFERRED_USERNAME_MIN} characters"),
+            ));
+        }
+        if name.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            return Err(ErrorResponse::new(
+                ErrorResponseType::BadRequest,
+                "The username must not start with a number, those are reserved for system users",
+            ));
+        }
+        Ok(())
+    }
+
     /// CAUTION: Does also set the `preferred_username`. This should only be used with open registration.
     pub async fn insert(
         user_id: String,
         values: UserValuesRequest,
         preferred_username: Option<String>,
     ) -> Result<(), ErrorResponse> {
+        if let Some(name) = &preferred_username {
+            Self::check_preferred_username(name)?;
+        }
         let sql = r#"
 INSERT INTO
 users_values (id, birthdate, gender, phone, street, zip, city, country, preferred_username, tz)
@@ -155,6 +180,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#;
         user_id: String,
         values: UserValuesRequest,
     ) -> Result<Option<Self>, ErrorResponse> {
+        crate::entity::audit_log::refuse_system_user_id(&user_id)?;
         let idx = Self::cache_idx(&user_id);
         let sql = r#"
 INSERT INTO
@@ -211,6 +237,11 @@ RETURNING *"#;
         user_id: String,
         preferred_username: String,
     ) -> Result<Option<Self>, ErrorResponse> {
+        crate::entity::audit_log::refuse_system_user_id(&user_id)?;
+        // a name that was accepted before may be saved again, only a new one is held to the rule
+        if Self::find_preferred_username(&user_id).await?.as_deref() != Some(&preferred_username) {
+            Self::check_preferred_username(&preferred_username)?;
+        }
         let idx = Self::cache_idx(&user_id);
         let sql = r#"
 INSERT INTO
@@ -274,6 +305,7 @@ RETURNING *"#;
     }
 
     pub async fn delete_preferred_username(user_id: String) -> Result<(), ErrorResponse> {
+        crate::entity::audit_log::refuse_system_user_id(&user_id)?;
         let idx = Self::cache_idx(&user_id);
         let sql = r#"
 UPDATE users_values
@@ -335,6 +367,21 @@ impl From<UserValues> for UserValuesResponse {
             country: value.country,
             preferred_username: value.preferred_username,
             tz: value.tz,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn usernames_have_four_characters_and_no_leading_number() {
+        for ok in ["abcd", "batman", "a123", "a_b-c", "jörg"] {
+            assert!(UserValues::check_preferred_username(ok).is_ok(), "{ok}");
+        }
+        for bad in ["", "abc", "ab", "101", "1abc", "9lives", "0000"] {
+            assert!(UserValues::check_preferred_username(bad).is_err(), "{bad}");
         }
     }
 }

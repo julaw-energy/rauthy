@@ -5,8 +5,8 @@ use actix_web::{HttpRequest, HttpResponse, Responder, delete, get, post, put};
 use actix_web_lab::sse;
 use chrono::Utc;
 use rauthy_api_types::events::{
-    AuditEntryResponse, AuditListParams, AuditSummaryParams, AuditSummaryResponse, EventResponse,
-    EventsListenParams, EventsReadState, EventsRequest,
+    AuditEntryResponse, AuditListParams, AuditSummaryParams, AuditSummaryResponse,
+    AuditUserResponse, EventResponse, EventsListenParams, EventsReadState, EventsRequest,
 };
 use rauthy_common::utils::{get_rand, real_ip_from_req};
 use rauthy_data::entity::api_keys::{AccessGroup, AccessRights};
@@ -233,6 +233,41 @@ pub async fn get_audit_summary(
         modified_by: s.modified.as_ref().map(|e| e.actor.clone()),
         modified_at: s.modified.as_ref().map(|e| e.at),
     }))
+}
+
+/// The users who were deleted, newest first, with what is kept of them
+///
+/// **Permissions**
+/// - rauthy_admin session
+#[utoipa::path(
+    get,
+    path = "/events/audit/users",
+    tag = "events",
+    responses(
+        (status = 200, description = "Ok", body = [AuditUserResponse]),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[get("/events/audit/users")]
+pub async fn get_audit_users(principal: ReqPrincipal) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_admin_session()?;
+
+    let users: Vec<AuditUserResponse> = AuditUser::find_recent(200)
+        .await?
+        .into_iter()
+        .map(|u| AuditUserResponse {
+            id: u.id,
+            email: u.email,
+            given_name: u.given_name,
+            family_name: u.family_name,
+            preferred_username: u.preferred_username,
+            phone: u.phone,
+            deleted_at: u.deleted_at,
+            anonymized: u.anonymized,
+        })
+        .collect();
+    Ok(HttpResponse::Ok().json(users))
 }
 
 /// Wipes the personal data kept for a deleted user

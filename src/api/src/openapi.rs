@@ -125,6 +125,7 @@ use utoipa::{OpenApi, openapi};
         events::get_events_read,
         events::get_audit_log,
         events::get_audit_summary,
+        events::get_audit_users,
         events::delete_audit_user,
         events::put_events_read,
         events::post_event_test,

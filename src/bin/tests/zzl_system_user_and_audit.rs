@@ -36,10 +36,10 @@ async fn test_system_user_and_audit_log() -> Result<(), Box<dyn Error>> {
     let users = users.as_array().unwrap();
     let system = users
         .iter()
-        .find(|u| u["id"] == "system")
+        .find(|u| u["id"] == "101")
         .expect("the system user exists");
-    assert_eq!(system["email"], "system@rauthy.invalid");
-    let res = send(Method::GET, "/users/system", api.clone(), None).await?;
+    assert_eq!(system["email"], "101@system.invalid");
+    let res = send(Method::GET, "/users/101", api.clone(), None).await?;
     let detail: Value = check_status(res, 200).await?.json().await?;
     assert_eq!(detail["enabled"], false, "it cannot log in");
     let admin_id = users.iter().find(|u| u["email"] == USERNAME).unwrap()["id"]
@@ -48,8 +48,35 @@ async fn test_system_user_and_audit_log() -> Result<(), Box<dyn Error>> {
         .to_string();
 
     // nobody can remove or change it
-    let res = send(Method::DELETE, "/users/system", api.clone(), None).await?;
-    assert_eq!(res.status(), 403, "the system user cannot be deleted");
+    let res = send(Method::DELETE, "/users/101", api.clone(), None).await?;
+    assert_eq!(res.status(), 403, "system users cannot be deleted");
+
+    // nobody else gets a number as a name, or the reserved email domain
+    assert_eq!(
+        register("x@system.invalid", None).await,
+        400,
+        "reserved domain"
+    );
+    assert_eq!(
+        register("x@Mail.System.Invalid", None).await,
+        400,
+        "also a subdomain"
+    );
+    assert_eq!(
+        register("ok.one@example.com", Some("101")).await,
+        400,
+        "a number as name"
+    );
+    assert_eq!(
+        register("ok.two@example.com", Some("1abcd")).await,
+        400,
+        "starts with a number"
+    );
+    assert_eq!(
+        register("ok.three@example.com", Some("abc")).await,
+        400,
+        "too short"
+    );
 
     // an admin who changes a setting is the actor of that entry
     let res = send(
@@ -211,6 +238,20 @@ async fn test_system_user_and_audit_log() -> Result<(), Box<dyn Error>> {
         "named from the kept copy"
     );
 
+    // the admin finds the deleted user in the list, without knowing the id
+    let res = send(Method::GET, "/events/audit/users", admin.clone(), None).await?;
+    let deleted: Value = check_status(res, 200).await?.json().await?;
+    let row = deleted
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["id"] == gone_id.as_str())
+        .expect("the deleted user is listed");
+    assert_eq!(row["email"], email);
+    assert_eq!(row["anonymized"], false);
+    let res = send(Method::GET, "/events/audit/users", HeaderMap::new(), None).await?;
+    assert_eq!(res.status(), 401);
+
     let res = send(
         Method::DELETE,
         &format!("/events/audit/users/{gone_id}"),
@@ -259,4 +300,27 @@ async fn audit_for(admin: &HeaderMap, target: &str) -> Result<Vec<Value>, Box<dy
     .await?;
     let v: Value = check_status(res, 200).await?.json().await?;
     Ok(v.as_array().unwrap().clone())
+}
+
+/// Registers a user the way the browser does, returns the status
+async fn register(email: &str, name: Option<&str>) -> u16 {
+    let reg = NewUserRegistrationRequest {
+        email: email.to_string(),
+        preferred_username: name.map(String::from),
+        family_name: Some("Person".to_string()),
+        given_name: Some("Test".to_string()),
+        user_values: None,
+        pow: get_solved_pow().await,
+        redirect_uri: None,
+    };
+    send(
+        Method::POST,
+        "/users/register",
+        HeaderMap::new(),
+        Some(serde_json::to_value(&reg).unwrap()),
+    )
+    .await
+    .unwrap()
+    .status()
+    .as_u16()
 }

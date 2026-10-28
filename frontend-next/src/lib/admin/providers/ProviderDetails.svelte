@@ -4,6 +4,8 @@
     import ProviderDelete from './ProviderDelete.svelte';
     import Tabs from '$lib5/tabs/Tabs.svelte';
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
+    import AuditHistory from '$lib5/admin/audit/AuditHistory.svelte';
+    import { HISTORY_TAB } from '$lib5/admin/audit/system';
 
     let {
         provider = $bindable(),
@@ -15,7 +17,7 @@
 
     let ta = useI18nAdmin();
 
-    const tabs = [ta.tabs.config, ta.tabs.delete];
+    const tabs = [ta.tabs.config, HISTORY_TAB, ta.tabs.delete];
     let selected = $state(tabs[0]);
 </script>
 
@@ -24,6 +26,8 @@
 
     {#if selected === ta.tabs.config}
         <ProviderConfig bind:provider bind:onSave />
+    {:else if selected === HISTORY_TAB}
+        <AuditHistory targetId={provider.id} />
     {:else if selected === ta.tabs.delete}
         <ProviderDelete {provider} bind:onSave />
     {/if}

@@ -104,6 +104,16 @@ WHERE id = $2"#;
         Ok(true)
     }
 
+    /// The deleted users, the most recently deleted first
+    pub async fn find_recent(limit: i64) -> Result<Vec<Self>, ErrorResponse> {
+        let sql = format!("SELECT {COLS} FROM audit_users ORDER BY deleted_at DESC, id LIMIT $1");
+        Ok(if is_hiqlite() {
+            DB::hql().query_map(sql, params!(limit)).await?
+        } else {
+            DB::pg_query(&sql, &[&limit], 0).await?
+        })
+    }
+
     pub async fn find_all() -> Result<Vec<Self>, ErrorResponse> {
         let sql = format!("SELECT {COLS} FROM audit_users");
         Ok(if is_hiqlite() {

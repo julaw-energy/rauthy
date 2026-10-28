@@ -10,6 +10,30 @@ rollout), not only what changed.
 
 ---
 
+## v0.37.2-custom.6 (2026-10-29)
+
+Bug fix for `custom.5`. No migration, no config change.
+
+### Bugfix
+
+- **A user's time zone (and other hidden profile fields) was cleared whenever they saved their profile.**
+  - *Symptom:* with a profile field set to `hidden` (found with `tz = hidden` in production), the stored value of that
+    field was lost as soon as the user saved their account page.
+  - *Cause:* a hidden field is not on the page, but the save still sent the form. The page treats an empty time zone as
+    `UTC` and sends `UTC` as "none", and the server replaced all profile values with what the request carried, so the
+    stored time zone became empty. Upstream's old UI has the same logic.
+  - *Fix, two parts:* the page no longer sends hidden fields (`AccEdit.svelte`), and the server keeps the stored value of
+    every hidden field on a self-update, whatever the request says (`UserValues::keep_hidden`). Hiding a field never
+    deletes values. An admin can still edit them. Test: `zzm_hidden_profile_fields`, unit test in `users_values.rs`.
+    Users who already lost a value do not get it back.
+
+### Changes
+
+- **Hidden fields are marked in the client editor.** Under *Required user data*, a profile field that is hidden for all
+  users shows **(hidden)** next to its name. Hovering it explains that users cannot fill it in, so requiring it would lock
+  them out, and says how to show it (Config -> User fields). See
+  [User Profile Fields](book/src/work/user_profile.md#what-hidden-means).
+
 ## v0.37.2-custom.5 (2026-10-28)
 
 Bug fixes for `custom.4`. No migration, no config change. Safe to roll over `custom.4` directly.

@@ -94,6 +94,13 @@
         if (userValues.tz === 'Etc/UTC' || userValues.tz === 'UTC') {
             userValues.tz = undefined;
         }
+        // a field the admin hid is not on this page: sending it empty would clear what is stored
+        // (the server keeps hidden fields as well)
+        for (const key of Object.keys(userValues) as (keyof typeof userValues)[]) {
+            if (config[key as keyof typeof config] === 'hidden') {
+                delete userValues[key];
+            }
+        }
 
         let payload: UpdateUserSelfRequest = {
             email,

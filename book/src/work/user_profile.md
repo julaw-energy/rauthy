@@ -24,6 +24,16 @@ These settings live in the database and apply immediately. On the first start th
 `[user_values]` section of the config file, see [Settings in the Database](../config/settings_db.md).
 The username rules (`preferred_username`, with its blacklist and regex) stay in the config file.
 
+### What `hidden` Means
+
+A hidden field is not shown to the user, neither at registration nor on the account page, so the user cannot fill it in
+or change it. **What is already stored stays:** hiding a field does not delete values, and a user saving their profile
+cannot clear or change a hidden field (the server keeps the stored value, whatever the request says). An admin can still
+edit it on the user. Show the field again and users can change it.
+
+A field that is hidden cannot be required by a client: the user would have no way to provide it. In the client editor such
+fields are marked **(hidden)**, with a hint that says how to show them.
+
 To require more only for a single application, see [Required User Data per Client](required_client_data.md).
 
 ## Connected Apps

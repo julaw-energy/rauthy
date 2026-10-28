@@ -49,6 +49,24 @@ impl UserValues {
         Ok(())
     }
 
+    /// A field the admin hid is not shown to the user, so the page cannot send it. A self-update must
+    /// keep what is stored for it instead of clearing it, whatever the request says.
+    pub fn keep_hidden(
+        req: &mut UserValuesRequest,
+        current: Option<&UserValues>,
+        cfg: &crate::settings::UserValuesEffective,
+    ) {
+        use crate::rauthy_config::UserValueConfigValue::Hidden;
+        macro_rules! keep {
+            ($($f:ident),*) => {$(
+                if cfg.$f == Hidden {
+                    req.$f = current.and_then(|c| c.$f.clone());
+                }
+            )*};
+        }
+        keep!(birthdate, gender, phone, street, zip, city, country, tz);
+    }
+
     /// CAUTION: Does also set the `preferred_username`. This should only be used with open registration.
     pub async fn insert(
         user_id: String,
@@ -374,6 +392,56 @@ impl From<UserValues> for UserValuesResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hidden_fields_keep_what_is_stored() {
+        use crate::rauthy_config::UserValueConfigValue::{Hidden, Optional};
+        let cfg = crate::settings::UserValuesEffective {
+            given_name: Optional,
+            family_name: Optional,
+            birthdate: Optional,
+            gender: Optional,
+            street: Optional,
+            zip: Optional,
+            city: Optional,
+            country: Optional,
+            phone: Optional,
+            tz: Hidden,
+            revalidate_during_login: false,
+            name_order_reverse: false,
+        };
+        let current = UserValues {
+            tz: Some("Africa/Kampala".into()),
+            city: Some("Old".into()),
+            ..Default::default()
+        };
+        // the page sends no tz (hidden) and a new city (visible)
+        let mut req = UserValuesRequest {
+            city: Some("New".into()),
+            ..Default::default()
+        };
+        UserValues::keep_hidden(&mut req, Some(&current), &cfg);
+        assert_eq!(req.tz.as_deref(), Some("Africa/Kampala"), "hidden: kept");
+        assert_eq!(
+            req.city.as_deref(),
+            Some("New"),
+            "visible: the request wins"
+        );
+        // a request that tries to set a hidden field does not get through either
+        let mut req = UserValuesRequest {
+            tz: Some("UTC".into()),
+            ..Default::default()
+        };
+        UserValues::keep_hidden(&mut req, Some(&current), &cfg);
+        assert_eq!(req.tz.as_deref(), Some("Africa/Kampala"));
+        // nothing stored, nothing to keep
+        let mut req = UserValuesRequest {
+            tz: Some("UTC".into()),
+            ..Default::default()
+        };
+        UserValues::keep_hidden(&mut req, None, &cfg);
+        assert_eq!(req.tz, None);
+    }
 
     #[test]
     fn usernames_have_four_characters_and_no_leading_number() {

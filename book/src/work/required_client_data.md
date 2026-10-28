@@ -59,4 +59,8 @@ than the rest, so your other applications are not forced to collect data they do
 
 Built-in fields use their plain name (`given_name`, `family_name`, `preferred_username`, `email_verified`,
 `birthdate`, `gender`, `tz`, `phone`, `street`, `zip`, `city`, `country`). Custom attributes are `attr:<name>`.
+
+A profile field that is set to `hidden` under `Config` → `User fields` is marked **(hidden)** in the list. Hover it for the
+hint: users cannot see or fill in a hidden field, so a client that requires it would lock them out. Set the field to
+`optional` or `required` to unhide it. See [User Profile Fields](user_profile.md#what-hidden-means).
 Unknown names are rejected.

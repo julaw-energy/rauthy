@@ -2,7 +2,9 @@
     import FormSection from '$lib5/FormSection.svelte';
     import { Checkbox } from '$lib/components/ui/checkbox';
     import { Label } from '$lib/components/ui/label';
+    import Tooltip from '$lib5/Tooltip.svelte';
     import { fetchGet } from '$api/fetch';
+    import type { SettingsResponse } from '$api/types/settings';
     import type { ScopeResponse } from '$api/types/scopes';
     import { onMount } from 'svelte';
 
@@ -37,11 +39,21 @@
     };
 
     let custom: ScopeResponse[] = $state([]);
+    /** profile fields the admin hid for all users: they cannot fill these in themselves */
+    let hidden: Set<string> = $state(new Set());
 
     onMount(async () => {
         let res = await fetchGet<ScopeResponse[]>('/auth/v1/scopes');
         if (res.body) {
             custom = res.body;
+        }
+        let settings = await fetchGet<SettingsResponse>('/auth/v1/settings');
+        if (settings.body) {
+            hidden = new Set(
+                Object.entries(settings.body.user_values)
+                    .filter(([, v]) => v === 'hidden')
+                    .map(([k]) => k),
+            );
         }
     });
 
@@ -96,6 +108,13 @@
                             aria-label={label}
                         />
                         <span>{label}</span>
+                        {#if hidden.has(key)}
+                            <Tooltip
+                                text={`Users cannot see or fill in this field, so a client that requires it would lock them out. To show it, open Config -> User fields and set "${label}" to Optional or Required.`}
+                            >
+                                <span class="text-muted-foreground cursor-help">(hidden)</span>
+                            </Tooltip>
+                        {/if}
                     </Label>
                 {/each}
             </div>

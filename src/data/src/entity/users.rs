@@ -1428,6 +1428,13 @@ LIMIT $2"#;
             false
         };
 
+        // fields the admin hid cannot be sent by the page: keep what is stored for them
+        let mut user_values = upd_user.user_values;
+        if let Some(values) = user_values.as_mut() {
+            let current = UserValues::find(&user.id).await?;
+            UserValues::keep_hidden(values, current.as_ref(), &crate::settings::user_values());
+        }
+
         let groups = if user.groups.is_some() {
             Some(user.get_groups())
         } else {
@@ -1445,7 +1452,7 @@ LIMIT $2"#;
             enabled: user.enabled,
             email_verified: user.email_verified,
             user_expires: user.user_expires,
-            user_values: upd_user.user_values,
+            user_values,
         };
 
         let preferred_username = UserValues::find_preferred_username(&id).await?;

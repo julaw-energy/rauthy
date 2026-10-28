@@ -326,6 +326,8 @@ impl User {
 
     pub async fn delete(&self) -> Result<(), ErrorResponse> {
         self.refuse_system_user()?;
+        // audit entries keep naming this user after it is gone
+        crate::entity::audit_users::AuditUser::remember(self).await?;
         // We are cleaning up PAM data manually instead of using FKs because
         // of a chicken-and-egg problem in some cases.
         if let Ok(user) = PamUser::find_by_user_id(self.id.clone()).await {

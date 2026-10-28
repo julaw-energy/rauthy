@@ -10,7 +10,6 @@ use rauthy_api_types::settings::{
 };
 use rauthy_data::channels;
 use rauthy_data::email::mailer;
-use rauthy_data::entity::audit_log::AuditLog;
 use rauthy_data::entity::users::User;
 use rauthy_data::settings::{self, KEY_GENERAL, KEY_SMTP};
 use rauthy_error::{ErrorResponse, ErrorResponseType};
@@ -429,20 +428,7 @@ pub async fn put_settings_new_users(
     Json(payload): Json<NewUsersSettings>,
 ) -> Result<HttpResponse, ErrorResponse> {
     principal.validate_admin_session()?;
-    let details = format!(
-        "roles: [{}], groups: [{}]",
-        payload.roles.join(", "),
-        payload.groups.join(", ")
-    );
     settings::save_new_users(payload).await?;
-    AuditLog::record_or_log(
-        principal.user_id()?,
-        "settings_changed",
-        "settings",
-        Some(settings::KEY_NEW_USERS),
-        Some(details),
-    )
-    .await;
     Ok(HttpResponse::Ok().json(settings::new_users_view().await?))
 }
 
@@ -494,19 +480,7 @@ pub async fn put_settings_reminders(
     Json(payload): Json<ReminderSettings>,
 ) -> Result<HttpResponse, ErrorResponse> {
     principal.validate_admin_session()?;
-    let details = format!(
-        "enabled: {}, after {} days, at most {} reminders",
-        payload.enabled, payload.after_days, payload.max_reminders
-    );
     settings::save_reminders(payload).await?;
-    AuditLog::record_or_log(
-        principal.user_id()?,
-        "settings_changed",
-        "settings",
-        Some(settings::KEY_REMINDERS),
-        Some(details),
-    )
-    .await;
     Ok(HttpResponse::Ok().json(settings::reminders_view().await?))
 }
 

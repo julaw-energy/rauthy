@@ -7,6 +7,7 @@ pub mod app_version;
 pub mod atproto;
 pub mod attr_verify_channels;
 pub mod audit_log;
+pub mod audit_users;
 pub mod auth_codes;
 pub mod auth_provider_cust_impls;
 pub mod auth_providers;

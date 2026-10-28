@@ -8,6 +8,7 @@
     import ClientDelete from '$lib5/admin/clients/ClientDelete.svelte';
     import ClientBranding from '$lib5/admin/clients/branding/ClientBranding.svelte';
     import { useTrigger } from '$state/callback.svelte';
+    import AuditSummary from '$lib5/admin/audit/AuditSummary.svelte';
 
     let {
         client,
@@ -42,6 +43,7 @@
 </script>
 
 <Tabs {tabs} bind:selected bind:focusFirst />
+<AuditSummary targetId={client.id} refreshKey={client} />
 
 <div class="mt-4">
     {#if selected === ta.nav.config}

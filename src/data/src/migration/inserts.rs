@@ -2,6 +2,7 @@ use crate::database::DB;
 use crate::entity::api_keys::ApiKeyEntity;
 use crate::entity::attr_verify_channels::AttrVerifyChannelsRow;
 use crate::entity::audit_log::AuditEntry;
+use crate::entity::audit_users::AuditUser;
 use crate::entity::auth_providers::AuthProvider;
 use crate::entity::client_access_rules::ClientAccessRulesRow;
 use crate::entity::client_required_fields::ClientRequiredFieldsRow;
@@ -2227,6 +2228,53 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)"#;
                     &b.target_type,
                     &b.target_id,
                     &b.details,
+                ],
+            )
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn audit_users(data_before: Vec<AuditUser>) -> Result<(), ErrorResponse> {
+    let sql_1 = "DELETE FROM audit_users";
+    let sql_2 = r#"
+INSERT INTO audit_users (id, email, given_name, family_name, preferred_username, phone, deleted_at, anonymized)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#;
+
+    if is_hiqlite() {
+        DB::hql().execute(sql_1, params!()).await?;
+        for b in data_before {
+            DB::hql()
+                .execute(
+                    sql_2,
+                    params!(
+                        b.id,
+                        b.email,
+                        b.given_name,
+                        b.family_name,
+                        b.preferred_username,
+                        b.phone,
+                        b.deleted_at,
+                        b.anonymized
+                    ),
+                )
+                .await?;
+        }
+    } else {
+        DB::pg_execute(sql_1, &[]).await?;
+        for b in data_before {
+            DB::pg_execute(
+                sql_2,
+                &[
+                    &b.id,
+                    &b.email,
+                    &b.given_name,
+                    &b.family_name,
+                    &b.preferred_username,
+                    &b.phone,
+                    &b.deleted_at,
+                    &b.anonymized,
                 ],
             )
             .await?;

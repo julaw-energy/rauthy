@@ -15,5 +15,6 @@ chrono = { workspace = true }
 futures = { workspace = true }
 openssl = { workspace = true }
 openssl-sys = { workspace = true }
+serde_json = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }

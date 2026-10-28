@@ -24,6 +24,7 @@ use rauthy_handlers::{
     cors_preflight, dev_only, email, events, fed_cm, generic, groups, html, kv, message_templates,
     oidc, pam, roles, scalar, scopes, sessions, settings, static_settings, themes, tos, users,
 };
+use rauthy_middlewares::audit::RauthyAuditMiddleware;
 use rauthy_middlewares::csrf_protection::CsrfProtectionMiddleware;
 use rauthy_middlewares::ip_blacklist::RauthyIpBlacklistMiddleware;
 use rauthy_middlewares::logging::RauthyLoggingMiddleware;
@@ -256,6 +257,7 @@ async fn server_with_metrics() -> std::io::Result<()> {
     let server = HttpServer::new(move || {
         let mut app = App::new()
             .wrap(RauthyLoggingMiddleware)
+            .wrap(RauthyAuditMiddleware)
             .wrap(RauthyPrincipalMiddleware)
             .wrap(CsrfProtectionMiddleware)
             .wrap(default_headers())
@@ -365,6 +367,7 @@ async fn server_without_metrics() -> std::io::Result<()> {
     let server = HttpServer::new(move || {
         let mut app = App::new()
             .wrap(RauthyLoggingMiddleware)
+            .wrap(RauthyAuditMiddleware)
             .wrap(RauthyPrincipalMiddleware)
             .wrap(CsrfProtectionMiddleware)
             .wrap(default_headers())
@@ -565,6 +568,8 @@ fn api_services() -> actix_web::Scope {
                 .service(events::sse_events)
                 .service(events::get_events_read)
                 .service(events::get_audit_log)
+                .service(events::get_audit_summary)
+                .service(events::delete_audit_user)
                 .service(events::put_events_read)
                 .service(events::post_event_test)
                 .service(dev_only::get_template)

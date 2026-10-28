@@ -6,6 +6,8 @@
 //! nobody can log in as it.
 
 use crate::database::DB;
+use crate::entity::audit_users::AuditUser;
+use crate::entity::users::User;
 use chrono::Utc;
 use hiqlite::macros::{FromRow, params};
 use rauthy_common::is_hiqlite;
@@ -13,7 +15,8 @@ use rauthy_common::utils::new_store_id;
 use rauthy_derive::FromPgRow;
 use rauthy_error::ErrorResponse;
 use serde::{Deserialize, Serialize};
-use tracing::error;
+use std::collections::HashMap;
+use tracing::{error, info};
 
 /// The user that owns what the system does on its own
 pub const SYSTEM_USER_ID: &str = "system";
@@ -24,7 +27,7 @@ const MAX_DETAILS: usize = 500;
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, FromPgRow)]
 pub struct AuditEntry {
     pub id: String,
-    /// Unix timestamp in seconds
+    /// Unix timestamp in milliseconds, so entries of the same second keep their order
     pub at: i64,
     pub actor: String,
     pub action: String,
@@ -39,6 +42,12 @@ const LIST: &str = "SELECT id, at, actor, action, target_type, target_id, detail
 const LIST_TARGET: &str = "SELECT id, at, actor, action, target_type, target_id, details \
     FROM audit_log WHERE target_id = $1 AND at < $2 ORDER BY at DESC, id DESC LIMIT $3";
 
+#[derive(Debug, Clone)]
+pub struct AuditSummary {
+    pub created: Option<AuditEntry>,
+    pub modified: Option<AuditEntry>,
+}
+
 pub struct AuditLog;
 
 impl AuditLog {
@@ -50,8 +59,18 @@ impl AuditLog {
         target_id: Option<&str>,
         details: Option<String>,
     ) -> Result<(), ErrorResponse> {
+        // the same line goes to the log, so a log collector has the audit trail too
+        info!(
+            target: "audit",
+            actor,
+            action,
+            target_type,
+            target_id = target_id.unwrap_or_default(),
+            details = details.as_deref().unwrap_or_default(),
+            "audit"
+        );
         let id = new_store_id();
-        let at = Utc::now().timestamp();
+        let at = Utc::now().timestamp_millis();
         let details = details.map(|d| d.chars().take(MAX_DETAILS).collect::<String>());
         let sql = r#"
 INSERT INTO audit_log (id, at, actor, action, target_type, target_id, details)
@@ -95,7 +114,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)"#;
         }
     }
 
-    /// The newest entries first, older than `before` (a timestamp in seconds). With `target_id`,
+    /// The newest entries first, older than `before` (a timestamp in milliseconds). With `target_id`,
     /// only those about that user, client, ...
     pub async fn find(
         target_id: Option<&str>,
@@ -112,6 +131,50 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)"#;
             (None, true) => DB::hql().query_map(LIST, params!(before, limit)).await?,
             (None, false) => DB::pg_query(LIST, &[&before, &limit], 0).await?,
         })
+    }
+
+    /// Who created the thing, and who changed it last. An entry with the action `create` is
+    /// needed for the first one: what existed before the audit log has no creator on record.
+    pub async fn summary(target_id: &str) -> Result<AuditSummary, ErrorResponse> {
+        let sql = "SELECT id, at, actor, action, target_type, target_id, details FROM audit_log \
+            WHERE target_id = $1 AND action = 'create' ORDER BY at ASC LIMIT 1";
+        let created: Option<AuditEntry> = if is_hiqlite() {
+            DB::hql()
+                .query_map_optional(sql, params!(target_id))
+                .await?
+        } else {
+            DB::pg_query_opt(sql, &[&target_id]).await?
+        };
+        let modified = Self::find(Some(target_id), i64::MAX, 1).await?.pop();
+        Ok(AuditSummary { created, modified })
+    }
+
+    /// A readable name for each id: the email of the user, "System", or the name of an API key.
+    /// A user who was deleted is named from the copy kept for the audit log, and one whose
+    /// personal data was wiped has none. Ids without a name are left out, show the id then.
+    pub async fn labels<'a>(ids: impl Iterator<Item = &'a str>) -> HashMap<String, String> {
+        let mut out = HashMap::new();
+        for id in ids {
+            if out.contains_key(id) {
+                continue;
+            }
+            let label = if id == SYSTEM_USER_ID {
+                Some("System".to_string())
+            } else if let Some(name) = id.strip_prefix("api_key:") {
+                Some(format!("API key {name}"))
+            } else if let Ok(user) = User::find(id.to_string()).await {
+                Some(user.email)
+            } else {
+                match AuditUser::find(id).await {
+                    Ok(Some(u)) if !u.anonymized => u.email,
+                    _ => None,
+                }
+            };
+            if let Some(label) = label {
+                out.insert(id.to_string(), label);
+            }
+        }
+        out
     }
 
     pub async fn find_all() -> Result<Vec<AuditEntry>, ErrorResponse> {

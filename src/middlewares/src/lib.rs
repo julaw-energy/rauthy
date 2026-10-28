@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod csrf_protection;
 pub mod ip_blacklist;
 pub mod logging;

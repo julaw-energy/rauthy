@@ -19,6 +19,7 @@
     import { useTrigger } from '$state/callback.svelte';
     import type { UserValuesConfig } from '$api/templates/UserValuesConfig';
     import { useSession } from '$state/session.svelte';
+    import AuditSummary from '$lib5/admin/audit/AuditSummary.svelte';
 
     let {
         userValuesConfig,
@@ -116,6 +117,7 @@
     <UserAddToGroups {userId} {groups} onAdded={onSaveLocal} />
 {:else}
     <Tabs {tabs} bind:selected bind:focusFirst />
+    <AuditSummary targetId={userId} refreshKey={user} />
 {/if}
 
 {#if user && !err}

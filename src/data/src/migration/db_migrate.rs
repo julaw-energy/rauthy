@@ -2,6 +2,7 @@ use crate::database::DB;
 use crate::entity::api_keys::ApiKeyEntity;
 use crate::entity::attr_verify_channels::AttrVerifyChannelsRow;
 use crate::entity::audit_log::AuditEntry;
+use crate::entity::audit_users::AuditUser;
 use crate::entity::auth_providers::AuthProvider;
 use crate::entity::client_access_rules::ClientAccessRulesRow;
 use crate::entity::client_required_fields::ClientRequiredFieldsRow;
@@ -354,6 +355,11 @@ pub async fn migrate_from_sqlite(db_from: &str) -> Result<(), ErrorResponse> {
     debug!("Migrating table: audit_log");
     let before = query_sqlite::<AuditEntry>(&conn, "SELECT * FROM audit_log").await?;
     inserts::audit_log(before).await?;
+
+    // AUDIT USERS
+    debug!("Migrating table: audit_users");
+    let before = query_sqlite::<AuditUser>(&conn, "SELECT * FROM audit_users").await?;
+    inserts::audit_users(before).await?;
 
     // CLIENT ACCESS RULES
     debug!("Migrating table: client_access_rules");
@@ -947,6 +953,11 @@ pub async fn migrate_from_postgres() -> Result<(), ErrorResponse> {
     debug!("Migrating table: audit_log");
     let before = DB::pg_query_map_with(&cl, "SELECT * FROM audit_log", &[], 0).await?;
     inserts::audit_log(before).await?;
+
+    // AUDIT USERS
+    debug!("Migrating table: audit_users");
+    let before = DB::pg_query_map_with(&cl, "SELECT * FROM audit_users", &[], 0).await?;
+    inserts::audit_users(before).await?;
 
     // CLIENT ACCESS RULES
     debug!("Migrating table: client_access_rules");

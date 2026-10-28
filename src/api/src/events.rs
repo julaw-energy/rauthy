@@ -1,15 +1,17 @@
 use crate::ReqPrincipal;
+use actix_web::web::Path;
 use actix_web::web::{Json, Query};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, put};
+use actix_web::{HttpRequest, HttpResponse, Responder, delete, get, post, put};
 use actix_web_lab::sse;
 use chrono::Utc;
 use rauthy_api_types::events::{
-    AuditEntryResponse, AuditListParams, EventResponse, EventsListenParams, EventsReadState,
-    EventsRequest,
+    AuditEntryResponse, AuditListParams, AuditSummaryParams, AuditSummaryResponse, EventResponse,
+    EventsListenParams, EventsReadState, EventsRequest,
 };
 use rauthy_common::utils::{get_rand, real_ip_from_req};
 use rauthy_data::entity::api_keys::{AccessGroup, AccessRights};
 use rauthy_data::entity::audit_log::AuditLog;
+use rauthy_data::entity::audit_users::AuditUser;
 use rauthy_data::entity::event_read_state::EventReadState;
 use rauthy_data::events::event::Event;
 use rauthy_data::events::listener::EventRouterMsg;
@@ -130,7 +132,7 @@ pub async fn sse_events(
 /// Who did what, newest first
 ///
 /// The actor is the id of a user, or `system` for what the background tasks do on their own.
-/// Page back with `before`, the `at` of the last entry you got.
+/// Page back with `before`, the `at` (milliseconds) of the last entry you got.
 ///
 /// **Permissions**
 /// - an admin session or an API key with `Events` read
@@ -158,9 +160,22 @@ pub async fn get_audit_log(
     let before = params.before.unwrap_or(i64::MAX);
     let limit = params.limit.unwrap_or(50) as i64;
     let entries = AuditLog::find(params.target_id.as_deref(), before, limit).await?;
+    let labels = AuditLog::labels(
+        entries.iter().map(|e| e.actor.as_str()).chain(
+            entries
+                .iter()
+                .filter(|e| e.target_type == "users")
+                .filter_map(|e| e.target_id.as_deref()),
+        ),
+    )
+    .await;
     let entries: Vec<AuditEntryResponse> = entries
         .into_iter()
         .map(|e| AuditEntryResponse {
+            actor_label: labels.get(&e.actor).cloned(),
+            target_label: (e.target_type == "users")
+                .then(|| e.target_id.as_ref().and_then(|t| labels.get(t)).cloned())
+                .flatten(),
             id: e.id,
             at: e.at,
             actor: e.actor,
@@ -171,6 +186,87 @@ pub async fn get_audit_log(
         })
         .collect();
     Ok(HttpResponse::Ok().json(entries))
+}
+
+/// Who created something, and who changed it last
+///
+/// Read from the audit log: what was created before the audit log existed has no creator.
+///
+/// **Permissions**
+/// - an admin session or an API key with `Events` read
+#[utoipa::path(
+    get,
+    path = "/events/audit/summary",
+    tag = "events",
+    params(AuditSummaryParams),
+    responses(
+        (status = 200, description = "Ok", body = AuditSummaryResponse),
+        (status = 400, description = "BadRequest", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+    ),
+)]
+#[get("/events/audit/summary")]
+pub async fn get_audit_summary(
+    principal: ReqPrincipal,
+    params: Query<AuditSummaryParams>,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_api_key_or_admin_session(AccessGroup::Events, AccessRights::Read)?;
+    params.validate()?;
+
+    let s = AuditLog::summary(&params.target_id).await?;
+    let labels = AuditLog::labels(
+        s.created
+            .iter()
+            .chain(s.modified.iter())
+            .map(|e| e.actor.as_str()),
+    )
+    .await;
+    let label = |e: &Option<rauthy_data::entity::audit_log::AuditEntry>| {
+        e.as_ref().and_then(|e| labels.get(&e.actor)).cloned()
+    };
+    Ok(HttpResponse::Ok().json(AuditSummaryResponse {
+        created_by_label: label(&s.created),
+        modified_by_label: label(&s.modified),
+        created_by: s.created.as_ref().map(|e| e.actor.clone()),
+        created_at: s.created.as_ref().map(|e| e.at),
+        modified_by: s.modified.as_ref().map(|e| e.actor.clone()),
+        modified_at: s.modified.as_ref().map(|e| e.at),
+    }))
+}
+
+/// Wipes the personal data kept for a deleted user
+///
+/// When a user is deleted, their email, names, username and phone are kept so that the audit log
+/// can still name them. This removes them, only the id stays. It does nothing to users who exist.
+///
+/// **Permissions**
+/// - rauthy_admin session
+#[utoipa::path(
+    delete,
+    path = "/events/audit/users/{id}",
+    tag = "events",
+    responses(
+        (status = 204, description = "Ok"),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+        (status = 404, description = "NotFound", body = ErrorResponse),
+    ),
+)]
+#[delete("/events/audit/users/{id}")]
+pub async fn delete_audit_user(
+    principal: ReqPrincipal,
+    id: Path<String>,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_admin_session()?;
+    if AuditUser::anonymize(&id).await? {
+        Ok(HttpResponse::NoContent().finish())
+    } else {
+        Err(ErrorResponse::new(
+            ErrorResponseType::NotFound,
+            "No deleted user with this id is kept",
+        ))
+    }
 }
 
 /// How far the logged-in user has read the events

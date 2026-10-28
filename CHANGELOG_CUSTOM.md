@@ -14,10 +14,14 @@ rollout), not only what changed.
 
 ### Changes
 
-- **A system user and an audit log.** The built-in user `system` (disabled, no password, cannot be changed or deleted) owns
-  what the background tasks do on their own, and every entry of the new audit log says who did what: reminders sent
-  (`system`), accounts disabled by the expiry scheduler (`system`), and settings saved by an admin (that admin).
-  `GET /auth/v1/events/audit`. See [The System User and the Audit Log](book/src/work/audit_log.md).
+- **A system user and an audit log of who did what.** The built-in user `system` (disabled, no password, cannot be changed
+  or deleted) owns what the background tasks do. Every successful change through the API (users, clients, roles, groups,
+  scopes, providers, settings, API keys, ...) is recorded with the id of the user or API key that made it, the time and
+  the target; reads, logins and test buttons are not. Nothing references users by foreign key. When a user is deleted, a
+  small copy (id, email, names, username, phone) is kept so old entries still name them, and an admin can wipe it on
+  request. New: **Config -> Audit log**, "Created by / Last change by" under the tabs of a user and a client,
+  `GET /auth/v1/events/audit`, `/events/audit/summary`, `DELETE /events/audit/users/{id}`, and each entry is also written to
+  the log (target `audit`) for a collector like Loki. See [The System User and the Audit Log](book/src/work/audit_log.md).
 - Saving a client no longer scrolls the panel back to the top, and shows a "Client saved" toast (errors as a toast too), plus "Saved" next to the tick.
 - **Access rules per client.** A client can say who may log in by the user's values and attributes: `country is one of
   UG, KE, TZ`, `age is at least 18`, `email ends with @example.com`, `roles contains staff`, `attr:<name> has a value`.
@@ -36,9 +40,9 @@ rollout), not only what changed.
   row by default, wording and numbers set by the admin, "Save and send a test to me". At most 100 users per hour, sent
   by the leader node, tracked per user so nobody gets the same reminder twice. `GET` / `PUT /auth/v1/settings/reminders`.
   See [New Users](book/src/work/new_users.md).
-- Three new fork migrations: `10_access_rules_and_reminders` (two tables), `11_reminder_indexes` (two indexes) and
-  `12_system_user_and_audit` (the `system` user and the `audit_log` table). The tables are copied by the Hiqlite / Postgres
-  migration tool.
+- Four new fork migrations: `10_access_rules_and_reminders` (two tables), `11_reminder_indexes` (two indexes),
+  `12_system_user_and_audit` (the `system` user and the `audit_log` table) and `13_audit_users` (the copy of deleted users).
+  The tables are copied by the Hiqlite / Postgres migration tool.
 
 ### Operators
 

@@ -41,3 +41,28 @@ export interface EventResponse {
     data?: number;
     text?: string;
 }
+
+/** An entry of the audit log: who did what to what. `at` is in milliseconds. */
+export interface AuditEntry {
+    id: string;
+    at: number;
+    /** a user id, `system` or `api_key:<name>` */
+    actor: string;
+    /** the email of the actor, if known: show the id without it */
+    actor_label?: string | null;
+    /** `create`, `update`, `delete`, `action`, or a name like `inactivity_reminder_sent` */
+    action: string;
+    target_type: string;
+    target_id?: string | null;
+    target_label?: string | null;
+    details?: string | null;
+}
+
+export interface AuditSummary {
+    created_by?: string | null;
+    created_by_label?: string | null;
+    created_at?: number | null;
+    modified_by?: string | null;
+    modified_by_label?: string | null;
+    modified_at?: number | null;
+}

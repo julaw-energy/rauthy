@@ -55,7 +55,7 @@ pub struct AuditListParams {
     /// Only the entries about this user, client, ...
     #[validate(length(max = 256))]
     pub target_id: Option<String>,
-    /// Only entries older than this Unix timestamp in seconds, to page back. Default: now.
+    /// Only entries older than this Unix timestamp in milliseconds, to page back. Default: now.
     #[validate(range(min = 0))]
     pub before: Option<i64>,
     /// Validation: `1 <= limit <= 200`, default 50
@@ -66,15 +66,41 @@ pub struct AuditListParams {
 #[derive(Serialize, ToSchema)]
 pub struct AuditEntryResponse {
     pub id: String,
-    /// Unix timestamp in seconds
+    /// Unix timestamp in milliseconds
     pub at: i64,
-    /// The id of the user who did it, `system` for the background tasks
+    /// The id of the user who did it, `system` for the background tasks, `api_key:<name>` for an
+    /// API key
     pub actor: String,
-    /// What was done, like `inactivity_reminder_sent` or `settings_changed`
+    /// The email of the user, if known. Without one, show the id.
+    pub actor_label: Option<String>,
+    /// `create`, `update`, `delete`, `action` (a change that is none of these), or a name like
+    /// `inactivity_reminder_sent` for what the background tasks do
     pub action: String,
     pub target_type: String,
     pub target_id: Option<String>,
+    /// The email of the target, if it is a user and its email is known
+    pub target_label: Option<String>,
+    /// For changes through the API: the method and the route, like `PUT /users/{id}`
     pub details: Option<String>,
+}
+
+#[derive(Deserialize, Validate, ToSchema, IntoParams)]
+pub struct AuditSummaryParams {
+    #[validate(length(min = 1, max = 256))]
+    pub target_id: String,
+}
+
+/// Who created something, and who changed it last
+#[derive(Serialize, ToSchema)]
+pub struct AuditSummaryResponse {
+    pub created_by: Option<String>,
+    pub created_by_label: Option<String>,
+    /// Unix timestamp in milliseconds
+    pub created_at: Option<i64>,
+    pub modified_by: Option<String>,
+    pub modified_by_label: Option<String>,
+    /// Unix timestamp in milliseconds
+    pub modified_at: Option<i64>,
 }
 
 /// How far the logged-in user has read the events

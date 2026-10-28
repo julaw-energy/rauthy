@@ -5174,6 +5174,7 @@ dependencies = [
  "rauthy-common",
  "rauthy-data",
  "rauthy-error",
+ "serde_json",
  "tokio",
  "tracing",
 ]

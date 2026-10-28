@@ -402,6 +402,11 @@ pub struct ClientAccessRule {
     /// A number or a string, a list of them for `in` / `not_in`, nothing for `is_set` / `not_set`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<serde_json::Value>,
+    /// What the user is told when this rule is the one that refuses the login. Optional, at most
+    /// 200 characters on one line. Without it the user hears a general message that does not say
+    /// which rule it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

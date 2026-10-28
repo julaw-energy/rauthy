@@ -22,7 +22,8 @@ rollout), not only what changed.
   The editor offers the right input for each field: math signs and a **between** range for numbers (both ends included), a
   true / false choice for boolean fields, a searchable country picker, choice lists for fixed values, roles and groups.
   New section in the client editor, `GET` / `PUT /auth/v1/clients/{id}/access_rules`. A client without rules costs one cache
-  lookup. See [Access Rules per Client](book/src/work/client_access_rules.md).
+  lookup. Each rule can have its own message for the user; the first failing rule's message is shown, otherwise "Your
+  account does not meet the requirements to access this application". See [Access Rules per Client](book/src/work/client_access_rules.md).
 - **Default roles and groups for new users** (Config -> New users). Users who register themselves and users created by
   their first provider login get them. `rauthy_admin` and the delegated admin roles cannot be chosen. Users an admin
   creates are not changed. `GET` / `PUT /auth/v1/settings/new_users`.

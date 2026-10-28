@@ -35,6 +35,11 @@ use tracing::warn;
 pub const MAX_RULES: usize = 20;
 const MAX_LIST: usize = 100;
 const MAX_TEXT: usize = 256;
+const MAX_MESSAGE: usize = 200;
+
+/// What a user hears when a rule without its own message refuses the login
+pub const DEFAULT_MESSAGE: &str =
+    "Your account does not meet the requirements to access this application";
 
 pub const OPS: &[&str] = &[
     "eq",
@@ -618,11 +623,21 @@ ON CONFLICT (client_id) DO UPDATE SET rules = $2"#;
                 );
                 Err(ErrorResponse::new(
                     ErrorResponseType::Forbidden,
-                    "Your account does not meet the requirements to access this application",
+                    message_for(rule),
                 ))
             }
         }
     }
+}
+
+/// The text for the user when `rule` refuses the login: the one the admin wrote, or the general one
+fn message_for(rule: &ClientAccessRule) -> String {
+    rule.message
+        .as_deref()
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .unwrap_or(DEFAULT_MESSAGE)
+        .to_string()
 }
 
 /// Checks a list of rules before it is saved
@@ -639,6 +654,14 @@ pub fn validate(rules: &[ClientAccessRule], attrs: &HashSet<String>) -> Result<(
             return Err(format!("unknown field '{}'", r.field));
         }
         compile(r).map_err(|e| format!("{}: {e}", r.field))?;
+        if let Some(m) = &r.message
+            && (m.chars().count() > MAX_MESSAGE || m.chars().any(char::is_control))
+        {
+            return Err(format!(
+                "{}: the message must be a single line of at most {MAX_MESSAGE} characters",
+                r.field
+            ));
+        }
     }
     Ok(())
 }
@@ -653,6 +676,7 @@ mod tests {
             field: field.into(),
             op: op.into(),
             value,
+            message: None,
         }
     }
 
@@ -740,6 +764,60 @@ mod tests {
             !run("is_set", Actual::List(vec![]), None),
             "an empty list is not set"
         );
+    }
+
+    fn with_message(mut r: ClientAccessRule, m: Option<&str>) -> ClientAccessRule {
+        r.message = m.map(String::from);
+        r
+    }
+
+    #[test]
+    fn the_failing_rule_decides_the_message() {
+        let attrs = HashSet::new();
+        let a = with_message(
+            rule("country", "in", Some(json!(["UG"]))),
+            Some("  Only for Uganda  "),
+        );
+        let b = with_message(rule("age", "gte", Some(json!(18))), Some("   "));
+        let c = rule("email", "is_set", None);
+        assert!(validate(&[a.clone(), b.clone(), c.clone()], &attrs).is_ok());
+        assert_eq!(message_for(&a), "Only for Uganda");
+        // blank or missing: the general message
+        assert_eq!(message_for(&b), DEFAULT_MESSAGE);
+        assert_eq!(message_for(&c), DEFAULT_MESSAGE);
+
+        // rules are tried in order: the first one that fails speaks
+        let get = |f: &str| match f {
+            "country" => Actual::Text("DE".into()),
+            "age" => Actual::Text("12".into()),
+            _ => Actual::Missing,
+        };
+        let rules = [b.clone(), a.clone()];
+        assert_eq!(
+            message_for(first_failing(&rules, &get).unwrap()),
+            DEFAULT_MESSAGE
+        );
+        let rules = [a, b];
+        assert_eq!(
+            message_for(first_failing(&rules, &get).unwrap()),
+            "Only for Uganda"
+        );
+    }
+
+    #[test]
+    fn a_message_must_be_one_short_line() {
+        let attrs = HashSet::new();
+        let ok = |m: String| {
+            validate(
+                &[with_message(rule("email", "is_set", None), Some(&m))],
+                &attrs,
+            )
+            .is_ok()
+        };
+        assert!(ok("x".repeat(MAX_MESSAGE)));
+        assert!(ok("Nur für Nutzer aus Österreich".into()));
+        assert!(!ok("x".repeat(MAX_MESSAGE + 1)));
+        assert!(!ok("two\nlines".into()));
     }
 
     #[test]

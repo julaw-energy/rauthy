@@ -65,8 +65,11 @@ turned away for a field they never saw.
 ## When It Is Checked
 
 At every login (password, passkey, provider), every token refresh, every request through forward auth and the password
-grant. A user who does not qualify gets *"Your account does not meet the requirements to access this application"*; the
-log has the rule that failed. The `rauthy` client, which is the Admin UI, is never checked, so rules cannot lock the
+grant. The rules are tried in the order they are listed, and the first one that fails decides what the user is told: its
+message, or *"Your account does not meet the requirements to access this application"* if it has none. The message is
+for you to write on purpose. The general one does not say which rule failed, so it does not reveal which values are
+checked; write a message like *"Only for people in Uganda, Kenya or Tanzania"* only when telling the user helps. The log
+always names the rule that failed. The `rauthy` client, which is the Admin UI, is never checked, so rules cannot lock the
 admins out.
 
 An access token that was issued already stays valid until it expires. The admin changes the user, or the rules, and the
@@ -81,5 +84,5 @@ at most 100 values in a list.
 ## API
 
 `GET /auth/v1/clients/{id}/access_rules` and `PUT` with `{"rules": [{"field": "country", "op": "in", "value": ["UG",
-"KE"]}]}`. `PUT` replaces all rules, an empty list removes them. The `GET` answer lists the fields, with their kind (`text`, `number`, `bool`, `date`, `country`, `choice`, `list`) and choices,
+"KE"]}]}`. Each rule can have an optional `"message"` (one line, up to 200 characters). `PUT` replaces all rules, an empty list removes them. The `GET` answer lists the fields, with their kind (`text`, `number`, `bool`, `date`, `country`, `choice`, `list`) and choices,
 and the conditions that can be used. In JSON a true / false value is `true` or `false`, a range is `[18, 65]`. It needs the `Clients` permission of an API key, or an admin session.

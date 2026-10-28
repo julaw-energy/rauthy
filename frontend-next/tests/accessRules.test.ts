@@ -25,7 +25,7 @@ const kinds = {
 } as const;
 const kindOf = (f: string) => kinds[f as keyof typeof kinds] ?? 'text';
 
-const row = (over: Partial<Row>): Row => ({ field: 'age', op: 'gte', text: '', text2: '', list: [], ...over });
+const row = (over: Partial<Row>): Row => ({ field: 'age', op: 'gte', text: '', text2: '', list: [], message: '', ...over });
 
 test('numbers show math signs and a range', () => {
     const ops = opsFor('number');
@@ -138,4 +138,21 @@ test('problems a person can fix are caught before saving', () => {
     assert.match(problem([row({ field: 'email', op: 'eq', text: '  ' })], kindOf), /needs a value/);
     assert.equal(problem([row({ field: 'email', op: 'is_set' })], kindOf), '', 'no value needed');
     assert.equal(problem([row({ field: 'email_verified', op: 'eq', text: 'true' })], kindOf), '');
+});
+
+test('the message of a rule is kept, trimmed, and left out when empty', () => {
+    const r = row({ field: 'country', op: 'in', list: ['UG'], message: '  Only for Uganda ' });
+    assert.deepEqual(toRule(r, 'country'), {
+        field: 'country',
+        op: 'in',
+        value: ['UG'],
+        message: 'Only for Uganda'
+    });
+    assert.equal('message' in toRule(row({ op: 'gte', text: '18', message: '   ' }), 'number'), false);
+    assert.equal(toRow({ field: 'age', op: 'gte', value: 18, message: 'Adults only' }).message, 'Adults only');
+    assert.equal(toRow({ field: 'age', op: 'gte', value: 18 }).message, '');
+    // picking another condition or field does not lose what was written
+    assert.equal(changeOp(r, 'not_in', 'country').message, '  Only for Uganda ');
+    assert.equal(changeField(r, 'age', 'number').message, '  Only for Uganda ');
+    assert.match(problem([row({ op: 'is_set', message: 'x'.repeat(201) })], kindOf), /longer than 200/);
 });

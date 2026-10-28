@@ -120,7 +120,7 @@
 
 <FormSection
     title="Access rules"
-    desc="Only users who meet <b>all</b> of these rules can log in to this client, for example <code>country is one of UG, KE, TZ</code> or <code>age is at least 18</code>. The rules are checked at every login and token refresh. A user who has no value for a field does not meet a rule on it."
+    desc="Only users who meet <b>all</b> of these rules can log in to this client, for example <code>country is one of UG, KE, TZ</code> or <code>age is at least 18</code>. The rules are checked at every login and token refresh. A user who has no value for a field does not meet a rule on it. The rules are tried in order, and the user is shown the message of the first one that fails, or a general message if it has none."
 >
     {#if err}
         <p class="text-destructive text-sm">{err}</p>
@@ -227,6 +227,12 @@
                 <Trash2 class="size-4" />
             </Button>
         </div>
+        <Input
+            bind:value={r.message}
+            placeholder="Message for the user if this rule refuses the login (optional)"
+            maxLength={200}
+            autocomplete="off"
+        />
     {/each}
 
     {#if isLoaded}

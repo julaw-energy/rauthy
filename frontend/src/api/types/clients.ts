@@ -122,6 +122,8 @@ export interface ClientAccessRule {
     field: string;
     op: string;
     value?: string | number | boolean | (string | number)[] | null;
+    /** what the user is told when this rule refuses the login */
+    message?: string | null;
 }
 
 /** `list` is a list whose elements are among `options` (roles, groups) */

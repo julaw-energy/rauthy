@@ -180,6 +180,8 @@ async fn test_client_access_rules() -> Result<(), Box<dyn Error>> {
         json!([{"field": "age", "op": "between", "value": [65, 18]}]),
         json!([{"field": "age", "op": "between", "value": [18]}]),
         json!([{"field": "country", "op": "is_set", "value": "x"}]),
+        json!([{"field": "country", "op": "is_set", "message": "two\nlines"}]),
+        json!([{"field": "country", "op": "is_set", "message": "x".repeat(201)}]),
         json!(
             (0..21)
                 .map(|_| json!({"field": "country", "op": "is_set"}))
@@ -209,8 +211,6 @@ async fn test_client_access_rules() -> Result<(), Box<dyn Error>> {
         json!([{"field": "email", "op": "ends_with", "value": "@nowhere.invalid"}]),
         // the test user has no birthdate, so no age: a missing value never meets a rule
         json!([{"field": "age", "op": "gte", "value": 18}]),
-        json!([{"field": "age", "op": "between", "value": [18, 65]}]),
-        json!([{"field": "country", "op": "in", "value": ["UG", "KE", "TZ"]}]),
         json!([{"field": "roles", "op": "contains", "value": "no_such_role"}]),
         // all rules must hold: one that is met does not make up for one that is not
         json!([
@@ -228,6 +228,45 @@ async fn test_client_access_rules() -> Result<(), Box<dyn Error>> {
             "{unmet} must refuse the browser login"
         );
     }
+
+    // the user hears the message of the first rule that fails, or the general one
+    let refusal = |res: reqwest::Response| async move {
+        assert_eq!(res.status(), 403);
+        let body: Value = res.json().await.unwrap();
+        body["message"].as_str().unwrap().to_string()
+    };
+    let res = put_rules(json!([
+        {"field": "email", "op": "ends_with", "value": "@localhost"},
+        {"field": "country", "op": "in", "value": ["UG"], "message": "Only for people in Uganda"},
+        {"field": "age", "op": "gte", "value": 18, "message": "You must be 18 or older"}
+    ]))
+    .await?;
+    check_status(res, 200).await?;
+    assert_eq!(
+        get_rules().await?["rules"][1]["message"],
+        "Only for people in Uganda",
+        "the message is stored"
+    );
+    let said = refusal(token_request(&password_grant(&secret)).await?).await;
+    assert_eq!(
+        said, "Only for people in Uganda",
+        "the first failing rule speaks"
+    );
+    let res = put_rules(json!([
+        {"field": "country", "op": "in", "value": ["UG"]}
+    ]))
+    .await?;
+    check_status(res, 200).await?;
+    let said = refusal(token_request(&password_grant(&secret)).await?).await;
+    assert_eq!(
+        said, "Your account does not meet the requirements to access this application",
+        "without a message of its own the general one is used"
+    );
+    // restore the rule the refresh check below relies on
+    let res =
+        put_rules(json!([{"field": "email", "op": "ends_with", "value": "@nowhere.invalid"}]))
+            .await?;
+    check_status(res, 200).await?;
 
     // ... and so is a refresh, while the rule stays unmet
     let refresh = TokenRequest {

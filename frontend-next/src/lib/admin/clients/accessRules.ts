@@ -12,6 +12,8 @@ export type Row = {
     text2: string;
     /** the values of `is one of` and `is none of` */
     list: string[];
+    /** what the user is told when this rule refuses the login, empty for the general message */
+    message: string;
 };
 
 export type OpItem = { value: string; label: string };
@@ -98,6 +100,7 @@ export function emptyRow(field: string, kind: AccessRuleFieldKind): Row {
         text: kind === 'bool' ? 'true' : '',
         text2: '',
         list: [],
+        message: '',
     };
 }
 
@@ -105,16 +108,23 @@ export function emptyRow(field: string, kind: AccessRuleFieldKind): Row {
 export function changeField(row: Row, field: string, kind: AccessRuleFieldKind): Row {
     const keep = opsFor(kind).some(o => o.value === row.op);
     const fresh = emptyRow(field, kind);
-    return keep ? { ...fresh, op: row.op } : fresh;
+    const message = row.message;
+    return keep ? { ...fresh, op: row.op, message } : { ...fresh, message };
 }
 
 /** The row after another condition was picked: the value is kept when the same input still fits. */
 export function changeOp(row: Row, op: string, kind: AccessRuleFieldKind): Row {
     if (valueMode(kind, row.op) === valueMode(kind, op)) return { ...row, op };
-    return { ...emptyRow(row.field, kind), op };
+    return { ...emptyRow(row.field, kind), op, message: row.message };
 }
 
 export function toRule(row: Row, kind: AccessRuleFieldKind): ClientAccessRule {
+    const rule = ruleWithoutMessage(row, kind);
+    const message = row.message.trim();
+    return message ? { ...rule, message } : rule;
+}
+
+function ruleWithoutMessage(row: Row, kind: AccessRuleFieldKind): ClientAccessRule {
     const { field, op } = row;
     switch (valueMode(kind, op)) {
         case 'none':
@@ -133,7 +143,9 @@ export function toRule(row: Row, kind: AccessRuleFieldKind): ClientAccessRule {
 }
 
 export function toRow(rule: ClientAccessRule): Row {
-    const row: Row = { field: rule.field, op: rule.op, text: '', text2: '', list: [] };
+    const row: Row = { field: rule.field, op: rule.op, text: '', text2: '',
+        list: [],
+        message: rule.message ?? '' };
     const v = rule.value;
     if (rule.op === 'between' && Array.isArray(v)) {
         row.text = String(v[0] ?? '');
@@ -152,6 +164,7 @@ const isNumber = (s: string) => s.trim() !== '' && Number.isFinite(Number(s.trim
 export function problem(rows: Row[], kindOf: (field: string) => AccessRuleFieldKind): string {
     for (const r of rows) {
         if (!r.field) return 'Every rule needs a field';
+        if (r.message.length > 200) return `The message of the rule on ${r.field} is longer than 200 characters`;
         switch (valueMode(kindOf(r.field), r.op)) {
             case 'number':
                 if (!isNumber(r.text)) return `The rule on ${r.field} needs a number`;

@@ -19,7 +19,7 @@ rollout), not only what changed.
   All rules of a client must hold; a missing value never meets a rule (except "is empty"). The conditions are `is`,
   `is not`, `>`, `>=`, `<`, `<=`, `between`, `is one of`, `is none of`, `contains`, `starts with`, `ends with`, `has a value`,
   `is empty`. Checked at every login, token refresh, password grant and forward auth request, never for the `rauthy` client.
-  The editor offers the right input for each field: math signs and a **between** range for numbers (both ends included), a
+  Each rule is a numbered card (rules are tried in that order, they can be moved up and down). The editor offers the right input for each field: math signs and a **between** range for numbers (both ends included), a
   true / false choice for boolean fields, a searchable country picker, choice lists for fixed values, roles and groups.
   New section in the client editor, `GET` / `PUT /auth/v1/clients/{id}/access_rules`. A client without rules costs one cache
   lookup. Each rule can have its own message for the user; the first failing rule's message is shown, otherwise "Your

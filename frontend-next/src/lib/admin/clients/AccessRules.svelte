@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { Plus, Trash2 } from '@lucide/svelte';
+    import { ArrowDown, ArrowUp, Plus, Trash2 } from '@lucide/svelte';
     import FormSection from '$lib5/FormSection.svelte';
     import Button from '$lib5/button/Button.svelte';
     import Input from '$lib5/form/Input.svelte';
@@ -106,6 +106,15 @@
         rows = rows.filter((_, idx) => idx !== i);
     }
 
+    /** the order is the order the rules are tried in */
+    function move(i: number, by: -1 | 1) {
+        const j = i + by;
+        if (j < 0 || j >= rows.length) return;
+        const next = [...rows];
+        [next[i], next[j]] = [next[j], next[i]];
+        rows = next;
+    }
+
     function pickField(i: number, field: string) {
         rows[i] = changeField(rows[i], field, kindOf(field));
     }
@@ -129,17 +138,37 @@
     {#each rows as r, i (i)}
         {@const kind = kindOf(r.field)}
         {@const mode = valueMode(kind, r.op)}
-        <div class="grid items-end gap-2 sm:grid-cols-[1.3fr_1fr_1.8fr_auto]">
+        <div class="border-border bg-card/40 flex flex-col gap-3 rounded-lg border p-3">
+        <div class="flex items-center justify-between border-b pb-2">
+            <span class="text-sm font-semibold">
+                Rule {i + 1}
+                {#if i === 0 && rows.length > 1}
+                    <span class="text-muted-foreground font-normal">- tried first</span>
+                {/if}
+            </span>
+            <span class="flex items-center">
+                <Button invisible ariaLabel="Move this rule up" onclick={() => move(i, -1)}>
+                    <ArrowUp class="size-4 {i === 0 ? 'opacity-30' : ''}" />
+                </Button>
+                <Button invisible ariaLabel="Move this rule down" onclick={() => move(i, 1)}>
+                    <ArrowDown class="size-4 {i === rows.length - 1 ? 'opacity-30' : ''}" />
+                </Button>
+                <Button invisible ariaLabel="Remove this rule" onclick={() => remove(i)}>
+                    <Trash2 class="size-4" />
+                </Button>
+            </span>
+        </div>
+        <div class="grid items-end gap-2 sm:grid-cols-[1.3fr_1fr_1.8fr]">
             <InputSelect
                 value={r.field}
                 onChange={v => pickField(i, v)}
-                label={i === 0 ? 'Field' : ''}
+                label={'Field'}
                 items={fields.map(f => ({ value: f.name, label: fieldLabel(f) }))}
             />
             <InputSelect
                 value={r.op}
                 onChange={v => pickOp(i, v)}
-                label={i === 0 ? 'Condition' : ''}
+                label={'Condition'}
                 items={opsFor(kind)}
             />
 
@@ -148,7 +177,7 @@
             {:else if mode === 'bool'}
                 <InputSelect
                     bind:value={r.text}
-                    label={i === 0 ? 'Value' : ''}
+                    label={'Value'}
                     items={[
                         { value: 'true', label: 'true' },
                         { value: 'false', label: 'false' },
@@ -160,7 +189,7 @@
                         typ="number"
                         step="any"
                         bind:value={() => r.text, v => (r.text = asText(v))}
-                        label={i === 0 ? 'From' : ''}
+                        label={'From'}
                         placeholder="lowest"
                         autocomplete="off"
                     />
@@ -168,7 +197,7 @@
                         typ="number"
                         step="any"
                         bind:value={() => r.text2, v => (r.text2 = asText(v))}
-                        label={i === 0 ? 'To' : ''}
+                        label={'To'}
                         placeholder="highest"
                         autocomplete="off"
                     />
@@ -178,14 +207,14 @@
                     typ="number"
                     step="any"
                     bind:value={() => r.text, v => (r.text = asText(v))}
-                    label={i === 0 ? 'Value' : ''}
+                    label={'Value'}
                     placeholder="a number"
                     autocomplete="off"
                 />
             {:else if mode === 'date'}
                 <InputDate
                     bind:value={r.text}
-                    label={i === 0 ? 'Value' : ''}
+                    label={'Value'}
                     min="1900-01-01"
                     max="2100-01-01"
                 />
@@ -194,45 +223,44 @@
                     <MultiPick
                         bind:value={r.list}
                         items={countries}
-                        label={i === 0 ? 'Value' : ''}
+                        label={'Value'}
                         placeholder="pick countries"
                     />
                 {:else if kind === 'choice' || kind === 'list'}
                     <MultiPick
                         bind:value={r.list}
                         items={optionItems(r.field)}
-                        label={i === 0 ? 'Value' : ''}
+                        label={'Value'}
                         placeholder="pick values"
                     />
                 {:else}
                     <MultiPick
                         bind:value={r.list}
-                        label={i === 0 ? 'Value' : ''}
+                        label={'Value'}
                         placeholder="type a value, press Enter"
                     />
                 {/if}
             {:else if kind === 'country'}
-                <InputCountry bind:value={r.text} label={i === 0 ? 'Value' : ''} placeholder="pick a country" />
+                <InputCountry bind:value={r.text} label={'Value'} placeholder="pick a country" />
             {:else if kind === 'choice' || kind === 'list'}
                 <InputSelect
                     bind:value={r.text}
-                    label={i === 0 ? 'Value' : ''}
+                    label={'Value'}
                     items={optionItems(r.field)}
                 />
             {:else}
-                <Input bind:value={r.text} label={i === 0 ? 'Value' : ''} autocomplete="off" />
+                <Input bind:value={r.text} label={'Value'} autocomplete="off" />
             {/if}
 
-            <Button invisible ariaLabel="Remove this rule" onclick={() => remove(i)}>
-                <Trash2 class="size-4" />
-            </Button>
         </div>
         <Input
             bind:value={r.message}
-            placeholder="Message for the user if this rule refuses the login (optional)"
+            label="Message if this rule fails"
+            placeholder="optional, otherwise the user sees a general message"
             maxLength={200}
             autocomplete="off"
         />
+        </div>
     {/each}
 
     {#if isLoaded}

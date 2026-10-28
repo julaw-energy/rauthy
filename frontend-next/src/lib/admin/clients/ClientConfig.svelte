@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { toast } from 'svelte-sonner';
     import Msg from '$lib5/Msg.svelte'
     ;import FormSection from '$lib5/FormSection.svelte';
     import Button from '$lib5/button/Button.svelte';
@@ -247,6 +248,7 @@
     async function onSubmit(form: HTMLFormElement, params: URLSearchParams) {
         if (redirectURIsErr || postLogoutRedirectURIsErr) {
             err = redirectURIsErr || postLogoutRedirectURIsErr;
+            toast.error(err);
             return;
         }
         err = '';
@@ -340,13 +342,16 @@
             let rulesErr = await accessRef?.save();
             if (rulesErr) {
                 err = rulesErr;
+                toast.error(rulesErr);
                 return;
             }
         }
         if (res.error) {
             err = res.error.message;
+            toast.error(err);
         } else {
             success = true;
+            toast.success('Client saved');
             onSave();
             setTimeout(() => {
                 success = false;
@@ -688,7 +693,7 @@
             <Button type="submit">
                 {t.common.save}
             </Button>
-            <Msg {success} {err} />
+            <Msg {success} {err} text="Saved" />
         </div>
     </Form>
 </div>

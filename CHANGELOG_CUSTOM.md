@@ -14,6 +14,7 @@ rollout), not only what changed.
 
 ### Changes
 
+- Saving a client no longer scrolls the panel back to the top, and shows a "Client saved" toast (errors as a toast too), plus "Saved" next to the tick.
 - **Access rules per client.** A client can say who may log in by the user's values and attributes: `country is one of
   UG, KE, TZ`, `age is at least 18`, `email ends with @example.com`, `roles contains staff`, `attr:<name> has a value`.
   All rules of a client must hold; a missing value never meets a rule (except "is empty"). The conditions are `is`,
@@ -98,6 +99,8 @@ No new migration. Moving from custom.1 or custom.2 needs nothing special (the da
 
 ### Changes
 
+- Saving a client no longer scrolls the panel back to the top, and shows a "Client saved" toast (errors as a toast too), plus "Saved" next to the tick.
+
 - **Profile pictures of federated users.** The `picture` claim of the provider (`avatar_url` for Github) is stored when
   a user logs in through an auth provider and kept current on every login. It is shown in the account and admin UI, and
   it is the `picture` claim of the ID token and userinfo for client applications (scope `profile`). Only `https` links
@@ -156,6 +159,8 @@ The first release of the fork, based on upstream v0.37.2.
   once. See [Upgrading Hiqlite](book/src/config/upgrading_hiqlite.md) for the in-place upgrade.
 
 ### Changes
+
+- Saving a client no longer scrolls the panel back to the top, and shows a "Client saved" toast (errors as a toast too), plus "Saved" next to the tick.
 
 - **Message channels.** `email` and `sms` always exist (recipient: the user's email address / phone number). Custom
   channels can be created, each with a driver, a recipient (`email`, `phone` or a custom attribute `attr:<name>`) and an

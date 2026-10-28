@@ -29,8 +29,11 @@
 
     let focusFirst: undefined | (() => void) = $state();
 
+    // the client object is replaced after every save, only a different client moves the focus
+    const clientId = $derived(client.id);
+
     $effect(() => {
-        if (client.id) {
+        if (clientId) {
             requestAnimationFrame(() => {
                 focusFirst?.();
             });

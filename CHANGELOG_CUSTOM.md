@@ -10,7 +10,7 @@ rollout), not only what changed.
 
 ---
 
-## v0.37.2-custom.4 (not released yet)
+## v0.37.2-custom.4 (2026-10-28)
 
 ### Changes
 

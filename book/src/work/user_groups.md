@@ -50,4 +50,7 @@ If another change got in first, no row matches, the change reads the user again 
 times. On one node the changes also queue up, so this is rare. It works the same on Hiqlite and Postgres. Nothing in the
 schema changed and there is no migration.
 
+A group name must not contain a comma, because the comma is the separator: creating or renaming a group to a name with a
+comma is refused (names that already exist are not touched).
+
 `PUT` / `PATCH /users/{id}` still work as before. Renaming or deleting a group is unchanged.

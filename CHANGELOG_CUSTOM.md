@@ -37,7 +37,8 @@ Bug fix for `custom.5`. No migration, no config change.
   (roles are never touched). Until now only `PUT` / `PATCH /users/{id}` could change groups, and both replace the whole
   list. In the audit log the change is an `update` of the user. No migration. Why groups are a list in the API: they are
   stored as one comma separated text column of names on the user, see
-  [Adding and Removing One Group](book/src/work/user_groups.md). Tests: `zzn_user_groups` (incl. 8 changes at once).
+  [Adding and Removing One Group](book/src/work/user_groups.md). Group names can no longer contain a comma (create and rename): the groups of a user are one comma separated text, so a comma
+  split one name into two groups. Existing names are not touched. Tests: `zzn_user_groups` (incl. 8 changes at once).
 - **Hidden fields are marked in the client editor.** Under *Required user data*, a profile field that is hidden for all
   users shows **(hidden)** next to its name. Hovering it explains that users cannot fill it in, so requiring it would lock
   them out, and says how to show it (Config -> User fields). See

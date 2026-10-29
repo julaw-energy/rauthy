@@ -23,8 +23,21 @@ pub struct Group {
 
 // CRUD
 impl Group {
+    /// The groups of a user are stored as one text of names separated by commas, so a comma in a
+    /// name would split it into two groups.
+    pub fn check_name(name: &str) -> Result<(), ErrorResponse> {
+        if name.contains(',') {
+            return Err(ErrorResponse::new(
+                ErrorResponseType::BadRequest,
+                "A group name must not contain a comma",
+            ));
+        }
+        Ok(())
+    }
+
     // Inserts a new group into the database
     pub async fn create(group_req: GroupRequest) -> Result<Self, ErrorResponse> {
+        Self::check_name(&group_req.group)?;
         for group in Group::find_all().await? {
             if group.name == group_req.group {
                 return Err(ErrorResponse::new(
@@ -145,6 +158,10 @@ impl Group {
     ) -> Result<Self, ErrorResponse> {
         let client = DB::hql();
         let group = Group::find(id).await?;
+        // a name that was accepted before may be kept (when only the meta changes)
+        if new_name != group.name {
+            Self::check_name(&new_name)?;
+        }
         let users = User::find_with_group(&group.name).await?;
 
         let new_group = Self {
@@ -263,5 +280,18 @@ impl From<Group> for GroupResponse {
             name: value.name,
             meta,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_comma_cannot_be_part_of_a_name() {
+        assert!(Group::check_name("staff").is_ok());
+        assert!(Group::check_name("team a/b:c*").is_ok());
+        assert!(Group::check_name("staff,finance").is_err());
+        assert!(Group::check_name(",").is_err());
     }
 }

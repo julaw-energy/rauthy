@@ -84,6 +84,16 @@ async fn test_add_and_remove_one_group() -> Result<(), Box<dyn Error>> {
     }
     let url = |g: &str| format!("/users/{id}/groups/{g}");
 
+    // a comma would split one name into two groups, so it is refused
+    let res = send(
+        Method::POST,
+        "/groups",
+        &admin,
+        Some(json!({ "group": "bad,name" })),
+    )
+    .await?;
+    assert_eq!(res.status(), 400, "no comma in a group name");
+
     // add, add another: the first one stays without being sent again
     let user: Value = check_status(
         send(Method::PUT, &url("one_grp_0"), &admin, None).await?,

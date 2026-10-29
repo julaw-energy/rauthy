@@ -1752,6 +1752,94 @@ impl User {
         Ok(html)
     }
 
+    /// Adds or removes ONE group, without sending or replacing the whole list.
+    ///
+    /// The groups are a single comma separated column. The write only succeeds if the column still
+    /// holds what was read (a compare and swap in SQL), so two changes at the same time cannot
+    /// overwrite each other: the one that lost reads again and applies its change on top.
+    ///
+    /// Adding a group the user has, or removing one it does not have, changes nothing and is not an
+    /// error. `check` sees the user and the list that would be saved, and can refuse the change.
+    ///
+    /// Returns the user and whether anything changed.
+    pub async fn change_group(
+        id: &str,
+        group: &str,
+        add: bool,
+        mut check: impl FnMut(&User, &[String]) -> Result<(), ErrorResponse>,
+    ) -> Result<(User, bool), ErrorResponse> {
+        crate::entity::audit_log::refuse_system_user_id(id)?;
+        if group.is_empty() || group.contains(',') {
+            return Err(ErrorResponse::new(
+                ErrorResponseType::BadRequest,
+                "Invalid group name",
+            ));
+        }
+        if add && !Group::find_all().await?.iter().any(|g| g.name == group) {
+            return Err(ErrorResponse::new(
+                ErrorResponseType::NotFound,
+                "The group does not exist",
+            ));
+        }
+
+        const SQL_HQL: &str = "UPDATE users SET groups = $1 WHERE id = $2 AND groups IS $3";
+        const SQL_PG: &str =
+            "UPDATE users SET groups = $1 WHERE id = $2 AND groups IS NOT DISTINCT FROM $3";
+
+        // changes on this node queue up instead of fighting over the same row; the compare and swap
+        // below is what keeps changes on different nodes apart
+        static GROUP_CHANGE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        let _queued = GROUP_CHANGE.lock().await;
+
+        let client = DB::hql();
+        for attempt in 0..10 {
+            if attempt > 0 {
+                // somebody else changed the user in between: do not trust the cache
+                client
+                    .delete(Cache::User, format!("{IDX_USERS}_{id}"))
+                    .await?;
+            }
+            let mut user = User::find(id.to_string()).await?;
+            let mut groups = user.get_groups();
+            let has = groups.iter().any(|g| g == group);
+            if add == has {
+                return Ok((user, false));
+            }
+            if add {
+                groups.push(group.to_string());
+            } else {
+                groups.retain(|g| g != group);
+            }
+            check(&user, &groups)?;
+
+            let new = if groups.is_empty() {
+                None
+            } else {
+                Some(groups.join(","))
+            };
+            let old = user.groups.clone();
+            let changed = if is_hiqlite() {
+                client.execute(SQL_HQL, params!(&new, id, &old)).await?
+            } else {
+                DB::pg_execute(SQL_PG, &[&new, &id, &old]).await?
+            };
+            if changed == 0 {
+                continue;
+            }
+
+            user.groups = new;
+            let idx = format!("{IDX_USERS}_{}", user.id);
+            client.put(Cache::User, idx, &user, CACHE_TTL_USER).await?;
+            let idx = format!("{IDX_USERS}_{}", user.email);
+            client.put(Cache::User, idx, &user, CACHE_TTL_USER).await?;
+            return Ok((user, true));
+        }
+        Err(ErrorResponse::new(
+            ErrorResponseType::Internal,
+            "The user is being changed too often right now, please try again",
+        ))
+    }
+
     pub fn delete_group(&mut self, group: &str) {
         if self.groups.is_none() {
             return;

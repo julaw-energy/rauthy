@@ -2681,6 +2681,115 @@ pub async fn patch_user(
     handle_put_user_by_id(user_id, req, principal, upd_req, has_preferred_username).await
 }
 
+/// Adds ONE group to a user
+///
+/// Unlike `PUT` / `PATCH /users/{id}`, the list of groups is not sent: only this group is added and
+/// every other group of the user stays as it is, also when somebody else changes the user at the
+/// same time. Adding a group the user already has changes nothing and is not an error. The group
+/// must exist (`404` otherwise).
+///
+/// A group admin can only add groups it manages.
+///
+/// **Permissions**
+/// - rauthy_admin
+/// - group admin (for the groups it manages)
+/// - api key with `Users` `Update`
+#[utoipa::path(
+    put,
+    path = "/users/{id}/groups/{group}",
+    tag = "users",
+    responses(
+        (status = 200, description = "Ok, the user with all its groups", body = UserResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+        (status = 404, description = "The user or the group does not exist", body = ErrorResponse),
+    ),
+)]
+#[put("/users/{id}/groups/{group}")]
+pub async fn put_user_group(
+    path: web::Path<(String, String)>,
+    principal: ReqPrincipal,
+) -> Result<HttpResponse, ErrorResponse> {
+    change_user_group(path.into_inner(), principal, true).await
+}
+
+/// Removes ONE group from a user
+///
+/// Only this group is removed, every other group of the user stays as it is, also when somebody else
+/// changes the user at the same time. Removing a group the user does not have changes nothing and is
+/// not an error.
+///
+/// A group admin can only remove groups it manages.
+///
+/// **Permissions**
+/// - rauthy_admin
+/// - group admin (for the groups it manages)
+/// - api key with `Users` `Update`
+#[utoipa::path(
+    delete,
+    path = "/users/{id}/groups/{group}",
+    tag = "users",
+    responses(
+        (status = 200, description = "Ok, the user with its remaining groups", body = UserResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden", body = ErrorResponse),
+        (status = 404, description = "The user does not exist", body = ErrorResponse),
+    ),
+)]
+#[delete("/users/{id}/groups/{group}")]
+pub async fn delete_user_group(
+    path: web::Path<(String, String)>,
+    principal: ReqPrincipal,
+) -> Result<HttpResponse, ErrorResponse> {
+    change_user_group(path.into_inner(), principal, false).await
+}
+
+async fn change_user_group(
+    (id, group): (String, String),
+    principal: ReqPrincipal,
+    add: bool,
+) -> Result<HttpResponse, ErrorResponse> {
+    principal.validate_api_key_or_group_admin(AccessGroup::Users, AccessRights::Update)?;
+
+    // the same rules as a `PATCH` that changes only this group
+    let is_self = principal.user_id() == Ok(id.as_str());
+    let (user, changed) = User::change_group(&id, &group, add, |user, new_groups| {
+        let roles = user.get_roles();
+        principal.validate_group_admin_user_change(
+            user.roles_iter(),
+            user.groups_iter(),
+            &roles,
+            new_groups,
+        )?;
+        if !is_self {
+            principal.validate_group_admin_can_manage_change(
+                user.roles_iter(),
+                user.groups_iter(),
+                &roles,
+                new_groups,
+            )?;
+        }
+        Ok(())
+    })
+    .await?;
+
+    if changed {
+        let cloned = user.clone();
+        task::spawn(async move {
+            let email = cloned.email.clone();
+            if let Err(err) = ClientScim::create_update_user(cloned).await {
+                error!(
+                    "Error during SCIM Client user update (group) for {}: {:?}",
+                    email, err
+                );
+            }
+        });
+    }
+
+    let values = UserValues::find(&user.id).await?;
+    Ok(HttpResponse::Ok().json(user.into_response(values)))
+}
+
 #[inline]
 async fn handle_put_user_by_id(
     user_id: String,

@@ -43,6 +43,7 @@
   - [User Profile Fields](work/user_profile.md)
   - [The New Admin UI](work/admin_ui.md)
   - [Delegated Group Admins](work/group_admins.md)
+  - [Adding and Removing One Group](work/user_groups.md)
   - [Ephemeral Clients](work/ephemeral_clients.md)
   - [Resource Indicators (RFC 8707)](work/resource_indicators.md)
   - [Token Exchange (RFC 8693)](work/token_exchange.md)

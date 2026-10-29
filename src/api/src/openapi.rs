@@ -288,6 +288,8 @@ use utoipa::{OpenApi, openapi};
         users::get_user_by_email,
         users::put_user_by_id,
         users::patch_user,
+        users::put_user_group,
+        users::delete_user_group,
         users::put_user_self,
         users::get_user_self_delete_config,
         users::delete_user_self,

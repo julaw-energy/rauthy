@@ -245,6 +245,8 @@ fn action_of(method: &Method, pattern: &str) -> &'static str {
     match *method {
         Method::POST if collection => "create",
         Method::PUT | Method::PATCH if !pattern.ends_with("/secret") => "update",
+        // taking ONE group off a user changes the user, it does not delete it
+        Method::DELETE if pattern == "/users/{id}/groups/{group}" => "update",
         Method::DELETE => "delete",
         _ => "action",
     }
@@ -332,6 +334,15 @@ mod tests {
         assert_eq!(action_of(&Method::PUT, "/users/{id}"), "update");
         assert_eq!(action_of(&Method::PATCH, "/users/{id}"), "update");
         assert_eq!(action_of(&Method::DELETE, "/users/{id}"), "delete");
+        // one group off a user is a change of the user, not its deletion
+        assert_eq!(
+            action_of(&Method::DELETE, "/users/{id}/groups/{group}"),
+            "update"
+        );
+        assert_eq!(
+            action_of(&Method::PUT, "/users/{id}/groups/{group}"),
+            "update"
+        );
         assert_eq!(action_of(&Method::POST, "/users/{id}/otp"), "action");
         assert_eq!(action_of(&Method::PUT, "/clients/{id}/secret"), "action");
     }

@@ -28,6 +28,7 @@
     import InputOtp from '$lib5/form/InputOtp.svelte';
     import IconCheck from '$icons/IconCheck.svelte';
     import PasskeyTypeSelect from '$lib/PasskeyTypeSelect.svelte';
+    import ErrorAlert from '$lib/ErrorAlert.svelte';
 
     let { user = $bindable() }: { user: UserResponse } = $props();
 
@@ -550,13 +551,20 @@
         {:else}
             <div>
                 <Button
-                    level={passkeys.length === 0 ? 1 : 2}
+                    level={passkeys.length <= 1 ? 1 : 2}
                     onclick={() => onRegisterPasskeyClick('passkey')}
                 >
                     {t.mfa.webauthn.registerNew}
                 </Button>
             </div>
         {/if}
+    {/if}
+
+    {#if passkeys.length === 1}
+        <ErrorAlert>
+            <p class="font-semibold">{t.mfa.webauthn.onlyOneTitle}</p>
+            <p class="mt-1">{t.mfa.webauthn.onlyOneText}</p>
+        </ErrorAlert>
     {/if}
 
     {#if passkeys.length > 0}

@@ -56,13 +56,27 @@ Numbers compare as numbers (`18` equals `18.0`), text without regard to case, an
 attribute) matches when **any** of its elements does.
 
 ```admonish warning
-**A missing value never meets a rule**, except `is empty`. "country is one of UG" does not let in a user who has no
-country, and "country is not RW" does not either. Rules deny by default, so a client that is restricted by country
+**A missing value never meets a rule**, except `is empty` and the negations `is not` and `is not one of`. "country is
+one of UG" does not let in a user who has no country. Rules deny by default, so a client that is restricted by country
 should also have the country in its [required user data](required_client_data.md): the user then fills it in and is not
 turned away for a field they never saw.
+
+A negation holds for nothing: a user **without groups** is not in `admin_group`, so "groups is not one of admin_group"
+lets them in, and "groups contains staff" does not. The same is true for every field, so "country is not one of RU" lets
+in a user who has no country. Add "country is set" if that user should be turned away.
 ```
 
 ## When It Is Checked
+
+**The order of the checks.** Each one runs only after the previous passed: first the client's *group*
+(`restrict_group_prefix`: a user outside of it is told *"You do not have permission to view this application"* at once, before an
+MFA or any data is asked for), then the *required user data* (below), then the access rules.
+
+**After the required user data.** A user who still misses a field that the client requires is not checked against the
+rules yet: they are first sent to fill it in (a user who signed in with Google has only an email and a name), and the
+rules decide at the login that follows, with the new values. Without this a rule on `country` would turn the user away
+before they were ever asked for their country.
+
 
 At every login (password, passkey, provider), every token refresh, every request through forward auth and the password
 grant. The rules are tried in the order they are listed, and the first one that fails decides what the user is told: its

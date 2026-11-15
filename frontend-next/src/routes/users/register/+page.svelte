@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import InputGender from '$lib5/form/InputGender.svelte';
     import * as Card from '$lib/components/ui/card';
     import Button from '$lib5/button/Button.svelte';
@@ -412,9 +413,7 @@
                             {t.register.emailCheck}
                         </p>
                     {:else if err}
-                        <p class="text-destructive text-center text-sm" role="alert">
-                            {err}
-                        </p>
+                        <ErrorAlert {err} />
                     {/if}
 
                     {#if providers.length > 0}

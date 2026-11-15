@@ -1,5 +1,6 @@
 <script lang="ts">
     import { Check } from '@lucide/svelte';
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
 
     // Shared inline feedback used by forms: an error text and/or a success check.
     let {
@@ -19,6 +20,4 @@
         {text}
     </span>
 {/if}
-{#if err}
-    <p class="text-destructive text-sm break-words" role="alert">{err}</p>
-{/if}
+<ErrorAlert {err} />

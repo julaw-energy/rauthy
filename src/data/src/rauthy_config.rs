@@ -645,6 +645,7 @@ impl Default for Vars {
                 http_workers: 0,
                 proxy_mode: false,
                 trusted_proxies: Vec::default(),
+                internal_hosts: Vec::default(),
                 additional_allowed_origin_schemes: Vec::default(),
                 metrics_enable: false,
                 metrics_addr: "0.0.0.0".into(),
@@ -3417,6 +3418,9 @@ impl Vars {
         if let Some(v) = t_str_vec(&mut table, "server", "trusted_proxies", "TRUSTED_PROXIES") {
             self.server.trusted_proxies = v;
         }
+        if let Some(v) = t_str_vec(&mut table, "server", "internal_hosts", "INTERNAL_HOSTS") {
+            self.server.internal_hosts = v.into_iter().map(|h| h.to_ascii_lowercase()).collect();
+        }
         if let Some(v) = t_str_vec(
             &mut table,
             "server",
@@ -4136,6 +4140,15 @@ impl Vars {
             panic!("Database set to Postgres but missing `database.pg_*` config");
         }
 
+        for host in &self.server.internal_hosts {
+            if host.contains("://") || host.contains('/') || host.contains(' ') {
+                panic!(
+                    "server.internal_hosts: '{host}' must be a plain host[:port] like 'rauthy:8080', \
+                    without a scheme or a path"
+                );
+            }
+        }
+
         if self.device_grant.user_code_length > 255 {
             panic!("device_grant.user_code_length must be <=255");
         }
@@ -4682,6 +4695,10 @@ pub struct VarsServer {
     pub http_workers: u16,
     pub proxy_mode: bool,
     pub trusted_proxies: Vec<String>,
+    /// `host[:port]` names under which other services reach Rauthy directly, for example
+    /// `rauthy:8080` inside a Docker network. A discovery request that arrives with one of them in
+    /// its `Host` header gets the back-channel endpoints at that address. Lower case, no scheme.
+    pub internal_hosts: Vec<String>,
     pub additional_allowed_origin_schemes: Vec<String>,
     pub metrics_enable: bool,
     pub metrics_addr: Cow<'static, str>,

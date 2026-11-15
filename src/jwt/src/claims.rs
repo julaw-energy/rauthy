@@ -1,11 +1,10 @@
+use rauthy_api_types::country_names::country_name;
 use rauthy_api_types::oidc::{Audience, JktClaim};
-use rauthy_data::entity::users::User;
 use rauthy_data::entity::users_values::UserValues;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fmt::Write;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use utoipa::ToSchema;
@@ -59,46 +58,47 @@ impl From<AddressClaim<'_>> for rauthy_api_types::oidc::AddressClaim {
     }
 }
 
+/// The value if it is filled in: spaces around it are removed, blank counts as nothing.
+fn filled(v: &Option<String>) -> Option<&str> {
+    v.as_deref().map(str::trim).filter(|s| !s.is_empty())
+}
+
 impl AddressClaim<'_> {
-    pub fn try_build<'a>(user: &'a User, values: &'a UserValues) -> Option<AddressClaim<'a>> {
+    /// Builds the `address` claim from what the user has filled in, `None` if that is nothing.
+    ///
+    /// `formatted` is the address as it is written on a letter, one line per part, without the
+    /// recipient's name (the `name` claim has it) and without a trailing newline:
+    /// the street, then the postal code with the city, then the country by its English name. A part the user did not
+    /// fill in is left out; an empty or blank value counts as not filled in.
+    pub fn try_build(values: &UserValues) -> Option<AddressClaim<'_>> {
         let mut slf = AddressClaim {
-            formatted: format!("{}\n", user.email_recipient_name()),
-            street_address: None,
-            locality: None,
-            postal_code: None,
-            country: None,
+            formatted: String::new(),
+            street_address: filled(&values.street),
+            locality: filled(&values.city),
+            postal_code: filled(&values.zip),
+            country: filled(&values.country),
         };
 
-        if let Some(street) = &values.street {
-            writeln!(slf.formatted, "{street}").expect("AddressClaim to build");
-            slf.street_address = Some(street);
+        let mut lines: Vec<String> = Vec::with_capacity(3);
+        if let Some(street) = slf.street_address {
+            lines.push(street.to_string());
+        }
+        match (slf.postal_code, slf.locality) {
+            (Some(zip), Some(city)) => lines.push(format!("{zip} {city}")),
+            (Some(part), None) | (None, Some(part)) => lines.push(part.to_string()),
+            (None, None) => {}
+        }
+        if let Some(country) = slf.country {
+            // a person reads `formatted`: "Uganda", not "UG". The `country` member keeps the code,
+            // which is what other systems look it up by. A country typed as a name stays as typed.
+            lines.push(country_name(country).unwrap_or(country).to_string());
         }
 
-        if let Some(zip) = &values.zip {
-            slf.postal_code = Some(zip);
-
-            if let Some(city) = &values.city {
-                writeln!(slf.formatted, "{zip}, {city}").expect("AddressClaim to build");
-                slf.locality = Some(city);
-            } else {
-                writeln!(slf.formatted, "{zip}").expect("AddressClaim to build");
-            }
+        if lines.is_empty() {
+            return None;
         }
-
-        if let Some(country) = &values.country {
-            writeln!(slf.formatted, "{country}").expect("AddressClaim to build");
-            slf.country = Some(country);
-        }
-
-        if slf.street_address.is_some()
-            || slf.locality.is_some()
-            || slf.postal_code.is_some()
-            || slf.country.is_some()
-        {
-            Some(slf)
-        } else {
-            None
-        }
+        slf.formatted = lines.join("\n");
+        Some(slf)
     }
 }
 
@@ -680,5 +680,93 @@ mod tests {
             v.get("act").is_none(),
             "a token issued without an `actor_token` must not carry `act`"
         );
+    }
+}
+
+#[cfg(test)]
+mod address_tests {
+    use super::*;
+
+    fn values(street: &str, zip: &str, city: &str, country: &str) -> UserValues {
+        let opt = |s: &str| (!s.is_empty()).then(|| s.to_string());
+        UserValues {
+            street: opt(street),
+            zip: opt(zip),
+            city: opt(city),
+            country: opt(country),
+            ..Default::default()
+        }
+    }
+
+    fn formatted(v: &UserValues) -> Option<String> {
+        AddressClaim::try_build(v).map(|a| a.formatted)
+    }
+
+    #[test]
+    fn street_city_country_in_that_order() {
+        let v = values("8th Street", "", "Kampala", "UG");
+        assert_eq!(formatted(&v).unwrap(), "8th Street\nKampala\nUganda");
+        let a = AddressClaim::try_build(&v).unwrap();
+        assert_eq!(
+            a.locality,
+            Some("Kampala"),
+            "the city is there without a postal code"
+        );
+        assert_eq!(a.street_address, Some("8th Street"));
+        assert_eq!(a.country, Some("UG"), "the member keeps the code");
+    }
+
+    #[test]
+    fn postal_code_and_city_share_a_line() {
+        let v = values("Torstrasse 1", "10119", "Berlin", "DE");
+        assert_eq!(
+            formatted(&v).unwrap(),
+            "Torstrasse 1\n10119 Berlin\nGermany"
+        );
+        let v = values("", "10119", "", "DE");
+        assert_eq!(
+            formatted(&v).unwrap(),
+            "10119\nGermany",
+            "a postal code alone"
+        );
+    }
+
+    #[test]
+    fn what_is_missing_is_left_out() {
+        assert_eq!(formatted(&values("", "", "", "UG")).unwrap(), "Uganda");
+        assert_eq!(
+            formatted(&values("8th Street", "", "", "")).unwrap(),
+            "8th Street"
+        );
+        assert!(
+            formatted(&values("", "", "", "")).is_none(),
+            "nothing filled in, no claim"
+        );
+    }
+
+    #[test]
+    fn blank_values_count_as_missing() {
+        let v = UserValues {
+            street: Some("  ".into()),
+            city: Some("".into()),
+            country: Some(" UG ".into()),
+            ..Default::default()
+        };
+        let a = AddressClaim::try_build(&v).unwrap();
+        assert_eq!(a.formatted, "Uganda");
+        assert_eq!(a.street_address, None);
+        assert_eq!(a.locality, None);
+        assert_eq!(a.country, Some("UG"), "spaces around a value are removed");
+    }
+
+    #[test]
+    fn a_country_typed_as_a_name_stays() {
+        let v = values("", "", "", "Uganda");
+        let a = AddressClaim::try_build(&v).unwrap();
+        assert_eq!(a.formatted, "Uganda");
+        assert_eq!(a.country, Some("Uganda"));
+        let v = values("", "", "", "Côte d'Ivoire");
+        let a = AddressClaim::try_build(&v).unwrap();
+        assert_eq!(a.formatted, "Côte d'Ivoire");
     }
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import Button from '$lib5/button/Button.svelte';
     import { isDefaultScope } from '$utils/helpers';
     import type { ScopeResponse } from '$api/types/scopes.ts';
@@ -43,7 +44,7 @@
         </div>
 
         {#if err}
-            <p class="text-destructive text-sm">{err}</p>
+            <ErrorAlert {err} />
         {/if}
     {/if}
 </div>

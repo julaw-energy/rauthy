@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { Badge } from '$lib/components/ui/badge';
     import Button from '$lib/components/ui/button/button.svelte';
     import { Input } from '$lib/components/ui/input';
@@ -228,6 +229,6 @@
         {/if}
 
         {#if info && !err}<span class="text-muted-foreground text-xs">{info}</span>{/if}
-        {#if err}<span class="text-destructive text-xs">{err}</span>{/if}
+        {#if err}<ErrorAlert {err} />{/if}
     </div>
 {/if}

@@ -70,6 +70,8 @@ port_https = 8444
 pub_url = 'localhost:8081'
 scheme = 'http'
 http_workers = 1
+# a name a service in the Docker network would use, for the test of the discovery document
+internal_hosts = ['rauthy-internal:8081']
 
 [tls]
 cert_path = 'tls/cert-chain.pem'

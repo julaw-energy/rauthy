@@ -22,6 +22,8 @@ export interface ProviderRequest {
     client_secret_post: boolean;
     auto_onboarding: boolean;
     auto_link: boolean;
+    /** optional in a request: absent means false */
+    trust_mfa?: boolean;
 
     /// Validation: PATTERN_URI
     client_id: string;
@@ -115,6 +117,7 @@ export interface ProviderResponse {
     client_secret_post: boolean;
     auto_onboarding: boolean;
     auto_link: boolean;
+    trust_mfa: boolean;
 }
 
 export interface ProviderLinkedUserResponse {

@@ -129,6 +129,7 @@ pub async fn get_settings_static(principal: ReqPrincipal) -> Result<HttpResponse
             .v("server.http_workers", &c.server.http_workers)
             .v("server.proxy_mode", &c.server.proxy_mode)
             .v("server.trusted_proxies", &c.server.trusted_proxies)
+            .v("server.internal_hosts", &c.server.internal_hosts)
             .v("server.metrics_enable", &c.server.metrics_enable)
             .v("server.metrics_addr", &c.server.metrics_addr)
             .v("server.metrics_port", &c.server.metrics_port)

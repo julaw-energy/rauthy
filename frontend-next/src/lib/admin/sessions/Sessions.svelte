@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { onMount } from 'svelte';
     import { redirectToLogin } from '$utils/helpers';
     import type { SessionResponse } from '$api/types/session.ts';
@@ -121,7 +122,7 @@
 
 <ContentAdmin>
     {#if err}
-        <p class="text-destructive text-sm">{err}</p>
+        <ErrorAlert {err} />
     {/if}
 
     <div id="sessions" class="min-h-0">

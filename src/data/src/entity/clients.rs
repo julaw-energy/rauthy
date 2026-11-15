@@ -371,6 +371,10 @@ VALUES ($1, $2, $3, $4)"#;
         }
 
         self.delete_cache().await?;
+        // the rows of our own tables go with the client (foreign key cascade); their cache entries do not,
+        // and a client created again under the same id must not inherit them
+        crate::entity::client_required_fields::ClientRequiredFields::delete_cache(&self.id).await?;
+        crate::entity::client_access_rules::ClientAccessRules::delete_cache(&self.id).await?;
 
         // We only clean up the cache. The database uses foreign key a cascade.
         if self.is_dynamic() {
@@ -1691,7 +1695,7 @@ impl Client {
             } else {
                 Err(ErrorResponse::new(
                     ErrorResponseType::Forbidden,
-                    "You don't have access to this client, please contact your Administrator",
+                    "You do not have permission to view this application, please contact your Administrator",
                 ))
             }
         } else {

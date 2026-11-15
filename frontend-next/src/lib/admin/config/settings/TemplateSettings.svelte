@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { onMount } from 'svelte';
     import { toast } from 'svelte-sonner';
     import { fetchDelete, fetchGet, fetchPost, fetchPut } from '$api/fetch';
@@ -289,7 +290,7 @@
                 </Button>
             </div>
 
-            {#if err}<p class="text-destructive text-sm">{err}</p>{/if}
+            {#if err}<ErrorAlert {err} />{/if}
             {#if ok}<p class="text-sm">{ok}</p>{/if}
             {#each warnings as w}
                 <p class="text-sm text-amber-600 dark:text-amber-400">{w}</p>

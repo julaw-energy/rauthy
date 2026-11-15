@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import * as Card from '$lib/components/ui/card';
     import { getCsrfToken, purgeStorage, saveCsrfToken } from '$utils/helpers';
     import Button from '$lib5/button/Button.svelte';
@@ -90,9 +91,7 @@
                 </div>
 
                 {#if err}
-                    <p class="text-destructive text-sm" role="alert">
-                        {err}
-                    </p>
+                    <ErrorAlert {err} />
                 {/if}
             </Card.Content>
         </Card.Root>

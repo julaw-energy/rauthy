@@ -179,6 +179,9 @@ pub struct AuthProvider {
     pub client_secret_post: bool,
     pub auto_onboarding: bool,
     pub auto_link: bool,
+    /// Treat every login through this provider as an MFA login (the provider does its own second
+    /// factor), without an MFA claim in its token.
+    pub trust_mfa: bool,
 }
 
 impl AuthProvider {
@@ -191,9 +194,9 @@ INSERT INTO
 auth_providers (id, name, enabled, typ, issuer, authorization_endpoint, token_endpoint,
 userinfo_endpoint, jwks_endpoint, client_id, secret, scope, admin_claim_path, admin_claim_value,
 mfa_claim_path, mfa_claim_value, use_pkce, client_secret_basic, client_secret_post, auto_onboarding,
-auto_link)
+auto_link, trust_mfa)
 VALUES
-($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)"#;
+($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)"#;
 
         if is_hiqlite() {
             DB::hql()
@@ -220,7 +223,8 @@ VALUES
                         slf.client_secret_basic,
                         slf.client_secret_post,
                         slf.auto_onboarding,
-                        slf.auto_link
+                        slf.auto_link,
+                        slf.trust_mfa
                     ),
                 )
                 .await?;
@@ -249,6 +253,7 @@ VALUES
                     &slf.client_secret_post,
                     &slf.auto_onboarding,
                     &slf.auto_link,
+                    &slf.trust_mfa,
                 ],
             )
             .await?;
@@ -362,8 +367,8 @@ SET name = $1, enabled = $2, issuer = $3, typ = $4, authorization_endpoint = $5,
 token_endpoint = $6, userinfo_endpoint = $7, jwks_endpoint = $8, client_id = $9, secret = $10,
 scope = $11, admin_claim_path = $12, admin_claim_value = $13, mfa_claim_path = $14,
 mfa_claim_value = $15, use_pkce = $16, client_secret_basic = $17, client_secret_post = $18,
-auto_onboarding = $19, auto_link = $20
-WHERE id = $21"#;
+auto_onboarding = $19, auto_link = $20, trust_mfa = $21
+WHERE id = $22"#;
 
         if is_hiqlite() {
             DB::hql()
@@ -390,6 +395,7 @@ WHERE id = $21"#;
                         self.client_secret_post,
                         self.auto_onboarding,
                         self.auto_link,
+                        self.trust_mfa,
                         self.id.clone()
                     ),
                 )
@@ -418,6 +424,7 @@ WHERE id = $21"#;
                     &self.client_secret_post,
                     &self.auto_onboarding,
                     &self.auto_link,
+                    &self.trust_mfa,
                     &self.id,
                 ],
             )
@@ -477,6 +484,7 @@ impl AuthProvider {
             client_secret_post: req.client_secret_post,
             auto_onboarding: req.auto_onboarding,
             auto_link: req.auto_link,
+            trust_mfa: req.trust_mfa,
         })
     }
 
@@ -630,6 +638,7 @@ impl TryFrom<AuthProvider> for ProviderResponse {
             client_secret_post: value.client_secret_post,
             auto_onboarding: value.auto_onboarding,
             auto_link: value.auto_link,
+            trust_mfa: value.trust_mfa,
         })
     }
 }
@@ -1286,7 +1295,12 @@ impl AuthProviderIdClaims<'_> {
         }
 
         // check if mfa has been used by upstream claim
-        let mut provider_mfa_login = ProviderMfaLogin::No;
+        let mut provider_mfa_login = if provider.trust_mfa {
+            // the admin declared that this provider always does its own second factor
+            ProviderMfaLogin::Yes
+        } else {
+            ProviderMfaLogin::No
+        };
         if let Some(path) = &provider.mfa_claim_path {
             if provider.mfa_claim_value.is_none() {
                 return Err(ErrorResponse::new(
@@ -1471,10 +1485,29 @@ impl AuthProviderIdClaims<'_> {
                 tz: None,
             },
         };
-        if let Some(bday) = &self.birthdate {
-            user_values.birthdate = Some(bday.to_string());
-            found_values = true;
-        }
+        // What a provider sends is checked like the same value typed into the account page. A value
+        // that does not pass is left out, so one odd field does not cost the user the others.
+        use crate::entity::users_values::ProviderField as F;
+        let take = |target: &mut Option<String>, field: F, raw: Option<&str>| -> bool {
+            let Some(raw) = raw else {
+                return false;
+            };
+            match UserValues::from_provider(field, raw) {
+                Some(v) => {
+                    *target = Some(v);
+                    true
+                }
+                None => {
+                    debug!(?field, "Ignoring an invalid value from the provider");
+                    false
+                }
+            }
+        };
+        found_values |= take(
+            &mut user_values.birthdate,
+            F::Birthdate,
+            self.birthdate.as_deref(),
+        );
         // OIDC `gender` is free text; only `male` / `female` / `other` are stored
         if let Some(gender) = &self.gender
             && let Some(gender) = ["female", "male", "other"]
@@ -1484,26 +1517,14 @@ impl AuthProviderIdClaims<'_> {
             user_values.gender = Some(gender.to_string());
             found_values = true;
         }
-        if let Some(phone) = &self.phone {
-            user_values.phone = Some(phone.to_string());
-            found_values = true;
-        }
+        found_values |= take(&mut user_values.phone, F::Phone, self.phone.as_deref());
         if let Some(addr) = &self.address {
-            if let Some(street) = addr.street_address {
-                user_values.street = Some(street.to_string());
-            }
-            if let Some(country) = addr.country {
-                user_values.country = Some(country.to_string());
-            }
-            if let Some(zip) = addr.postal_code {
-                user_values.zip = Some(zip.to_string());
-            }
-            found_values = true;
+            found_values |= take(&mut user_values.street, F::Street, addr.street_address);
+            found_values |= take(&mut user_values.city, F::City, addr.locality);
+            found_values |= take(&mut user_values.zip, F::Zip, addr.postal_code);
+            found_values |= take(&mut user_values.country, F::Country, addr.country);
         }
-        if let Some(tz) = &self.zoneinfo {
-            user_values.tz = Some(tz.to_string());
-            found_values = true;
-        }
+        found_values |= take(&mut user_values.tz, F::Tz, self.zoneinfo.as_deref());
 
         let preferred_username = if let Some(username) = &self.preferred_username {
             Some(username.to_string())

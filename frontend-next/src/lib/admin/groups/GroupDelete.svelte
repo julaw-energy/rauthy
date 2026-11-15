@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import Button from '$lib5/button/Button.svelte';
     import { useI18n } from '$state/i18n.svelte';
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
@@ -39,6 +40,6 @@
     </div>
 
     {#if err}
-        <p class="text-destructive text-sm">{err}</p>
+        <ErrorAlert {err} />
     {/if}
 </div>

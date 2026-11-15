@@ -188,7 +188,7 @@ export const I18nEn: I18n = {
     authorize: {
         clientForceMfa: `This login forces MFA to achieve higher security.\nTo get access, you need 
             to log in to your account and add at least one additional Passkey`,
-        clientGroupPrefixForbidden: 'Missing group assignment for this login',
+        clientGroupPrefixForbidden: 'You do not have permission to view this application. Please contact your administrator.',
         email: 'E-Mail',
         emailBadFormat: 'Bad E-Mail format',
         emailRequired: 'E-Mail is required',
@@ -265,6 +265,9 @@ export const I18nEn: I18n = {
             p3: 'For more information, see',
             registerNew: 'Register New Passkey',
             docLinkText: 'the documentation about passkeys',
+            onlyOneTitle: 'Security risk: only one passkey',
+            onlyOneText:
+                'You have only one passkey registered. If you lose this device or key, you lose access to your account and only an administrator can restore it. Register a second passkey now, on another device or a hardware key.',
             unsupportedText:
                 'Your browser does not support Webauthn credentials and must be updated.',
         },

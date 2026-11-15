@@ -248,6 +248,9 @@ export const I18nZh: I18n = {
             p3: '欲了解更多信息，请参见',
             registerNew: '注册新密钥',
             docLinkText: '关于通行密钥的文档',
+            onlyOneTitle: 'Security risk: only one passkey',
+            onlyOneText:
+                'You have only one passkey registered. If you lose this device or key, you lose access to your account and only an administrator can restore it. Register a second passkey now, on another device or a hardware key.',
             unsupportedText:
                 'Your browser does not support Webauthn credentials and must be updated.',
         },

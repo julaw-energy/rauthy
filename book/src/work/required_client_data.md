@@ -26,10 +26,15 @@ requirements are dropped on the next save.
 
 When someone logs in to the client and something is missing:
 
-1. The login is **not completed**; the user is told that their account needs updating.
+1. The login is **not completed**; a popup tells them *"Some information for this account is missing. You need
+   to update these values before you can proceed with the login."* This is the same after a login with a provider
+   such as Google, where an account often has only an email and a name.
 2. The button takes them to their account page, which lists exactly what the client still needs.
 3. Once everything is filled in, the same page shows **Continue**, which returns to the login. Since the
    session already exists, the client then gets its login.
+
+The data is asked for **after** the client's group check (a user who may not use the application is turned away first,
+without being asked for anything) and **before** the [access rules](client_access_rules.md) are applied.
 
 Custom attributes are managed by admins unless you marked them as editable by users. For those the user is told
 to ask an administrator.

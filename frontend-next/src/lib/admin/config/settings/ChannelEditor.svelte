@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { toast } from 'svelte-sonner';
     import { Plus, X } from '@lucide/svelte';
     import { fetchDelete, fetchPost, fetchPut } from '$api/fetch';
@@ -484,6 +485,6 @@
             Delete is available once the channel has expired. Use <b>Expire now</b> to close it right away.
         </p>
     {/if}
-    {#if err}<p class="text-destructive text-sm">{err}</p>{/if}
+    {#if err}<ErrorAlert {err} />{/if}
     {#if ok}<p class="text-sm">{ok}</p>{/if}
 </div>

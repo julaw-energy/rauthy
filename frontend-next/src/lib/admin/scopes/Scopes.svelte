@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { onMount } from 'svelte';
     import { toast } from 'svelte-sonner';
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
@@ -137,7 +138,7 @@
 
 <ContentAdmin>
     {#if err}
-        <p class="text-destructive text-sm">{err}</p>
+        <ErrorAlert {err} />
     {/if}
 
     <div id="scopes" class="min-h-0">

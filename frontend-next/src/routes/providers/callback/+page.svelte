@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import Loading from '$lib5/Loading.svelte';
     import { getProviderToken, getVerifierUpstreamFromStorage } from '$utils/helpers';
     import { onMount } from 'svelte';
@@ -20,6 +21,7 @@
     import type { ToSAwaitLoginResponse, ToSLatestResponse } from '$api/types/tos';
     import TosAccept from '$lib/TosAccept.svelte';
     import ContentCenter from '$lib/ContentCenter.svelte';
+    import Modal from '$lib/Modal.svelte';
     import type { MfaPurpose } from '$api/types/mfa';
     import OtpRequest from '$lib5/OtpRequest.svelte';
     import type { OtpAdditionalData } from '$mfa/otp/types';
@@ -36,6 +38,20 @@
     let tosAcceptCode = $state('');
     let tosForceAccept = $state(false);
     let needsValuesUpdate = $state(false);
+
+    // Which application the login was for: the login page saved it before it went to the provider.
+    let accountUrl = $derived.by(() => {
+        if (!needsValuesUpdate) return '/auth/v1/account';
+        try {
+            let c = JSON.parse(localStorage.getItem('rauthy_login_client') || 'null');
+            if (c?.id) {
+                return `/auth/v1/account?complete_for=${encodeURIComponent(c.id)}&client_name=${encodeURIComponent(c.name || '')}&return=${encodeURIComponent(c.ret || '')}`;
+            }
+        } catch {
+            // fall through
+        }
+        return '/auth/v1/account';
+    });
 
     onMount(async () => {
         let pErr = useParam('error').get();
@@ -193,12 +209,12 @@
     {:else if clientMfaForce}
         <Button onclick={() => (window.location.href = '/auth/v1/account')}>Account</Button>
     {:else if needsValuesUpdate}
-        <div class="grid max-w-sm gap-3 text-center">
+        <Modal showModal={true} strict>
             <p>{t.authorize.needsUserUpdate}</p>
-            <Button onclick={() => window.location.replace('/auth/v1/account')}>
+            <Button onclick={() => window.location.replace(accountUrl)}>
                 {t.authorize.navigateToAccount}
             </Button>
-        </div>
+        </Modal>
     {:else if tos}
         <TosAccept
             {tos}
@@ -208,9 +224,7 @@
             {onToSCancel}
         />
     {:else if error}
-        <p class="text-destructive text-center text-sm" role="alert">
-            {error}
-        </p>
+        <ErrorAlert err={error} class="max-w-md" />
     {:else}
         <Loading />
     {/if}

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import Button from '$lib5/button/Button.svelte';
     import { useI18n } from '$state/i18n.svelte';
     import { fetchDelete } from '$api/fetch';
@@ -51,6 +52,6 @@
     {/if}
 
     {#if err}
-        <p class="text-destructive text-sm">{err}</p>
+        <ErrorAlert {err} />
     {/if}
 </div>

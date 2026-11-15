@@ -140,7 +140,8 @@ impl UserValuesValidator<'_> {
         Ok(())
     }
 
-    #[inline(always)]
+    /// Whether the user has to complete their data before this login for `client_id` may finish:
+    /// a field the client requires is missing, or the stored values no longer pass the validation.
     pub async fn does_user_need_update(
         user: &User,
         client_id: &str,
@@ -148,15 +149,18 @@ impl UserValuesValidator<'_> {
         if client_id == "rauthy" {
             return Ok(false);
         }
-
-        // fields this client needs before it gets a login
         if !ClientRequiredFields::missing_for(user, client_id)
             .await?
             .is_empty()
         {
             return Ok(true);
         }
+        Self::needs_revalidation(user).await
+    }
 
+    /// With `revalidate_during_login`, stored values that do not pass today's validation send the
+    /// user to fix them.
+    pub async fn needs_revalidation(user: &User) -> Result<bool, ErrorResponse> {
         if settings::user_values().revalidate_during_login {
             let uv = UserValues::find(&user.id).await?.unwrap_or_default();
             let user_values = Some(UserValuesRequest {

@@ -295,6 +295,20 @@ pub fn validate_country(value: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
+/// An IANA time zone name like `Africa/Kampala` or `UTC`: the id other systems look the zone up by.
+/// Abbreviations (`EAT`, `CST`) are not accepted, they are ambiguous and carry no rules for
+/// daylight saving time.
+pub fn validate_tz(value: &str) -> Result<(), ValidationError> {
+    let known = value.len() <= 48 && value.parse::<chrono_tz::Tz>().is_ok();
+    if known && (value.contains('/') || value == "UTC") {
+        Ok(())
+    } else {
+        Err(ValidationError::new(
+            "an IANA time zone like Africa/Kampala",
+        ))
+    }
+}
+
 /// `YYYY-MM-DD`, a real calendar date, not before 1900 and not in the future.
 pub fn validate_birthdate(value: &str) -> Result<(), ValidationError> {
     let err = || ValidationError::new("birthdate must be a real date between 1900-01-01 and today");
@@ -309,6 +323,29 @@ pub fn validate_birthdate(value: &str) -> Result<(), ValidationError> {
 #[cfg(test)]
 mod tests_user_values {
     use super::*;
+
+    #[test]
+    fn time_zones_are_iana_ids() {
+        assert!(validate_tz("Africa/Kampala").is_ok());
+        assert!(validate_tz("Europe/Berlin").is_ok());
+        assert!(validate_tz("America/Argentina/Buenos_Aires").is_ok());
+        assert!(validate_tz("UTC").is_ok());
+        // abbreviations are ambiguous and have no daylight saving rules
+        for bad in [
+            "EAT",
+            "CST",
+            "IST",
+            "CET",
+            "EST5EDT",
+            "",
+            "Mars/Olympus",
+            "africa/kampala",
+            "+03:00",
+        ] {
+            assert!(validate_tz(bad).is_err(), "{bad}");
+        }
+        assert!(validate_tz(&"Africa/".repeat(10)).is_err());
+    }
 
     #[test]
     fn country_codes_sorted_and_complete() {

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { useI18n } from '$state/i18n.svelte';
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
     import ContentAdmin from '$lib5/ContentAdmin.svelte';
@@ -316,7 +317,7 @@
 <ContentAdmin>
     <div class="grid min-h-0 gap-3" id="pam">
         {#if err}
-            <p class="text-destructive text-sm">{err}</p>
+            <ErrorAlert {err} />
         {/if}
 
         <Tabs {tabs} bind:selected={selectedNav} />

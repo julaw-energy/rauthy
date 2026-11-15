@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import type { UserResponse } from '$api/types/user.ts';
     import { fetchDelete, fetchGet } from '$api/fetch';
     import type { PasskeyResponse } from '$api/types/webauthn.ts';
@@ -122,6 +123,6 @@
     {/if}
 
     {#if err}
-        <p class="text-destructive text-sm">{err}</p>
+        <ErrorAlert {err} />
     {/if}
 </div>

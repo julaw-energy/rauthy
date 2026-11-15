@@ -252,6 +252,9 @@ export const I18nJa: I18n = {
             p3: '詳しくは次をご覧ください:',
             registerNew: '新しい Passkey を登録',
             docLinkText: 'Passkey についての説明',
+            onlyOneTitle: 'Security risk: only one passkey',
+            onlyOneText:
+                'You have only one passkey registered. If you lose this device or key, you lose access to your account and only an administrator can restore it. Register a second passkey now, on another device or a hardware key.',
             unsupportedText: 'お使いのブラウザは WebAuthn に対応していないため、更新が必要です。',
         },
         otp: {

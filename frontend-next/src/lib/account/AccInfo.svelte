@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import CheckIcon from '$lib5/CheckIcon.svelte';
     import { buildWebIdUri, formatDateFromTs, saveProviderToken } from '$utils/helpers';
     import Button from '$lib5/button/Button.svelte';
@@ -174,12 +175,17 @@
                 {#if isFederated}
                     <div class="grid gap-1">
                         <div>
-                            <Button ariaLabel={t.account.providerUnlink} level={2} onclick={unlinkProvider}>
+                            <Button
+                                ariaLabel={t.account.providerUnlink}
+                                level={2}
+                                class="border-brand-orange rounded-[3px]"
+                                onclick={unlinkProvider}
+                            >
                                 {t.account.providerUnlink}
                             </Button>
                         </div>
                         {#if unlinkErr}
-                            <p class="text-destructive text-xs">{t.account.providerUnlinkDesc}</p>
+                            <ErrorAlert err={t.account.providerUnlinkDesc} />
                         {/if}
                     </div>
                 {:else if providers.length > 0}

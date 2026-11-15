@@ -49,6 +49,10 @@ pub struct ProviderRequest {
     pub client_secret_post: bool,
     pub auto_onboarding: bool,
     pub auto_link: bool,
+    /// Count every login through this provider as an MFA login. Only for providers that do their
+    /// own second factor. Optional for older API clients: absent means `false`.
+    #[serde(default)]
+    pub trust_mfa: bool,
 
     // This validation is pretty loose, but if we make it too strict,
     // we will most probably get into compatibility issues.
@@ -199,6 +203,7 @@ pub struct ProviderResponse {
     pub client_secret_post: bool,
     pub auto_onboarding: bool,
     pub auto_link: bool,
+    pub trust_mfa: bool,
 }
 
 #[derive(Serialize, Deserialize, FromPgRow, ToSchema)]

@@ -12,6 +12,7 @@ use rauthy_data::entity::auth_codes::{AuthCode, AuthCodeToSAwait};
 use rauthy_data::entity::auth_providers::ProviderMfaLogin;
 use rauthy_data::entity::browser_id::BrowserId;
 use rauthy_data::entity::client_access_rules::ClientAccessRules;
+use rauthy_data::entity::client_required_fields::ClientRequiredFields;
 use rauthy_data::entity::clients::Client;
 use rauthy_data::entity::cred_stuff_detect::CredStuffDetect;
 use rauthy_data::entity::forward_auth::ForwardAuthCallbackState;
@@ -314,6 +315,12 @@ pub(crate) async fn finish_authorize(
     provider_mfa_login: Option<ProviderMfaLogin>,
 ) -> Result<AuthStep, ErrorResponse> {
     client.validate_enabled()?;
+    // Order of the checks, each one only after the previous passed:
+    // 1. the group the client is restricted to. Someone who may not use the application is turned
+    //    away at once, before they are asked for an MFA or for any of their data.
+    // 2. the data the client requires: a missing field sends the user to fill it in, and the access
+    //    rules (3.) wait for it, otherwise a rule on a value the user was never asked for refuses them.
+    client.validate_user_groups(&user)?;
     client
         .validate_mfa(&user, provider_mfa_login)
         .await
@@ -324,9 +331,17 @@ pub(crate) async fn finish_authorize(
                 *needs_mfa = true;
             }
         })?;
-    client.validate_user_groups(&user)?;
-    // rules on the user's values and attributes, like the country or the age
-    ClientAccessRules::validate_user(&user, &client.id).await?;
+    // 3. rules on the user's values and attributes, like the country or the age. They wait until the
+    // user has filled in what the client requires: with a value still missing, a rule on it would
+    // refuse the login before the user was ever asked for it. The user is sent to complete the
+    // profile, and the rules decide on the next login, with the values in place.
+    let data_missing = client.id != "rauthy"
+        && !ClientRequiredFields::missing_for(&user, &client.id)
+            .await?
+            .is_empty();
+    if !data_missing {
+        ClientAccessRules::validate_user(&user, &client.id).await?;
+    }
     client.validate_redirect_uri(&data.redirect_uri)?;
     client.validate_code_challenge(&data.code_challenge, &data.code_challenge_method)?;
 
@@ -348,7 +363,8 @@ pub(crate) async fn finish_authorize(
     if need_tos_accept {
         code_lifetime = code_lifetime.add(config.vars.tos.accept_timeout);
     }
-    let needs_user_update = UserValuesValidator::does_user_need_update(&user, &client.id).await?;
+    let needs_user_update = data_missing
+        || (client.id != "rauthy" && UserValuesValidator::needs_revalidation(&user).await?);
 
     let state = data.state.as_deref();
     let state_hash = if data.is_forward_auth == Some(true) {

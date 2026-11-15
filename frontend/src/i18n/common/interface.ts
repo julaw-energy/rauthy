@@ -219,6 +219,8 @@ export interface I18n {
             p3: string;
             registerNew: string;
             docLinkText: string;
+            onlyOneTitle: string;
+            onlyOneText: string;
             unsupportedText: string;
         };
 

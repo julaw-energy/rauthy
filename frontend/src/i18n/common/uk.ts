@@ -270,6 +270,9 @@ export const I18nUk: I18n = {
             p3: 'Для отримання додаткової інформації дивіться',
             registerNew: 'Зареєструвати новий ключ',
             docLinkText: 'документацію про ключі доступу (passkeys)',
+            onlyOneTitle: 'Security risk: only one passkey',
+            onlyOneText:
+                'You have only one passkey registered. If you lose this device or key, you lose access to your account and only an administrator can restore it. Register a second passkey now, on another device or a hardware key.',
             unsupportedText:
                 'Your browser does not support Webauthn credentials and must be updated.',
         },

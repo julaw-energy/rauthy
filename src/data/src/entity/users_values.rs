@@ -24,7 +24,62 @@ pub struct UserValues {
     pub tz: Option<String>,
 }
 
+/// The user values an identity provider can hand over at a login.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ProviderField {
+    Birthdate,
+    Phone,
+    Street,
+    Zip,
+    City,
+    Country,
+    Tz,
+}
+
 impl UserValues {
+    /// A value from an identity provider, checked like the same value typed into the account page.
+    ///
+    /// A provider is not ours to trust: it can send a text of any length, with line breaks (which
+    /// would forge extra lines in the `formatted` address), a zone that does not exist or a phone
+    /// number in a spelling we do not store. A value that does not pass is dropped: the login goes
+    /// on, and the user can fill the field in. Spaces are trimmed, a phone number loses the spaces,
+    /// dashes and brackets a person writes it with, a country code is made upper case and a zone
+    /// is stored by its IANA id.
+    pub fn from_provider(field: ProviderField, raw: &str) -> Option<String> {
+        use rauthy_api_types::cust_validation::{
+            validate_birthdate, validate_country, validate_tz,
+        };
+        use rauthy_common::regex::{RE_ALNUM, RE_CITY, RE_DATE_STR, RE_PHONE, RE_STREET};
+
+        let v = raw.trim();
+        if v.is_empty() {
+            return None;
+        }
+        let ok = match field {
+            ProviderField::Birthdate => RE_DATE_STR.is_match(v) && validate_birthdate(v).is_ok(),
+            ProviderField::Phone => {
+                let phone: String = v
+                    .chars()
+                    .filter(|c| !matches!(c, ' ' | '-' | '(' | ')' | '.'))
+                    .collect();
+                return RE_PHONE.is_match(&phone).then_some(phone);
+            }
+            ProviderField::Street => v.chars().count() <= 48 && RE_STREET.is_match(v),
+            ProviderField::Zip => v.len() <= 24 && RE_ALNUM.is_match(v),
+            ProviderField::City => v.chars().count() <= 48 && RE_CITY.is_match(v),
+            ProviderField::Country => {
+                let c = if v.len() == 2 {
+                    v.to_ascii_uppercase()
+                } else {
+                    v.to_string()
+                };
+                return validate_country(&c).is_ok().then_some(c);
+            }
+            ProviderField::Tz => validate_tz(v).is_ok(),
+        };
+        ok.then(|| v.to_string())
+    }
+
     #[inline(always)]
     fn cache_idx(user_id: &str) -> String {
         format!("{IDX_USERS_VALUES}_{user_id}")
@@ -392,6 +447,44 @@ impl From<UserValues> for UserValuesResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_values_are_checked_like_typed_ones() {
+        use ProviderField::*;
+        let f = UserValues::from_provider;
+        assert_eq!(f(Birthdate, "1996-09-14").as_deref(), Some("1996-09-14"));
+        assert_eq!(f(Birthdate, "14.09.1996"), None);
+        assert_eq!(f(Birthdate, "2999-01-01"), None, "not in the future");
+
+        assert_eq!(
+            f(Phone, "+256 750-659-226").as_deref(),
+            Some("+256750659226")
+        );
+        assert_eq!(f(Phone, "0750659226"), None, "no country code");
+        assert_eq!(f(Phone, "+256"), None);
+
+        assert_eq!(
+            f(Country, "ug").as_deref(),
+            Some("UG"),
+            "a code is upper case"
+        );
+        assert_eq!(f(Country, "UG").as_deref(), Some("UG"));
+        assert_eq!(f(Country, "ZZ"), None);
+        assert_eq!(f(Country, "Uganda").as_deref(), Some("Uganda"));
+
+        assert_eq!(f(Tz, "Africa/Kampala").as_deref(), Some("Africa/Kampala"));
+        assert_eq!(f(Tz, "EAT"), None);
+        assert_eq!(f(Tz, "Mars/Olympus"), None);
+
+        assert_eq!(f(Street, "  8th Street ").as_deref(), Some("8th Street"));
+        assert_eq!(f(Street, "8th Street\nFake Line"), None, "no line breaks");
+        assert_eq!(f(Street, &"x".repeat(49)), None, "too long");
+        assert_eq!(f(Zip, "00100").as_deref(), Some("00100"));
+        assert_eq!(f(Zip, "00 100"), None);
+        assert_eq!(f(City, "Kampala").as_deref(), Some("Kampala"));
+        assert_eq!(f(City, "<script>"), None);
+        assert_eq!(f(City, "   "), None, "blank is nothing");
+    }
 
     #[test]
     fn hidden_fields_keep_what_is_stored() {

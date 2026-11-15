@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { untrack } from 'svelte';
     import IconEnvelope from '$icons/IconEnvelope.svelte';
     import Button from '$lib/button/Button.svelte';
@@ -350,7 +351,7 @@
                 {#if success}
                     <IconCheck width="1.4rem" />
                 {:else if error}
-                    <span class="text-destructive text-sm">{error}</span>
+                    <ErrorAlert err={error} class="w-auto" />
                 {/if}
             </div>
         </div>

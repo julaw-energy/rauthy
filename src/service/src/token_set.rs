@@ -433,7 +433,7 @@ impl TokenSet {
         if scope.contains("address")
             && let Some(values) = &user_values
         {
-            claims.address = rauthy_jwt::claims::AddressClaim::try_build(user, values);
+            claims.address = rauthy_jwt::claims::AddressClaim::try_build(values);
         }
         if scope.contains("phone")
             && let Some(values) = &user_values

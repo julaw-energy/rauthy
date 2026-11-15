@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { onMount } from 'svelte';
     import { ArrowDown, ArrowUp, Plus, Trash2 } from '@lucide/svelte';
     import FormSection from '$lib5/FormSection.svelte';
@@ -28,7 +29,7 @@
     } from './accessRules';
 
     // Who may log in to this client, by what their user values and attributes are. All rules must
-    // hold. A user without a value for a field never meets a rule on it (except "is empty").
+    // hold. A user without a value for a field never meets a rule on it, except "is empty" and the negations ("is not", "is not one of").
     // The input of every rule follows the kind of its field: a number gets math signs and a range,
     // a true / false field a true / false choice, a country the country picker, and so on.
     // The parent calls `save()` together with its own save.
@@ -129,10 +130,10 @@
 
 <FormSection
     title="Access rules"
-    desc="Only users who meet <b>all</b> of these rules can log in to this client, for example <code>country is one of UG, KE, TZ</code> or <code>age is at least 18</code>. The rules are checked at every login and token refresh. A user who has no value for a field does not meet a rule on it. The rules are tried in order, and the user is shown the message of the first one that fails, or a general message if it has none."
+    desc="Only users who meet <b>all</b> of these rules can log in to this client, for example <code>country is one of UG, KE, TZ</code> or <code>age is at least 18</code>. The rules are checked at every login and token refresh. A user who has no value for a field does not meet a rule on it, except <i>is empty</i>, <i>is not</i> and <i>is not one of</i>: someone without groups is not in <code>admin</code>. Users who still have to fill in required user data are checked after they did. The rules are tried in order, and the user is shown the message of the first one that fails, or a general message if it has none."
 >
     {#if err}
-        <p class="text-destructive text-sm">{err}</p>
+        <ErrorAlert {err} />
     {/if}
 
     {#each rows as r, i (i)}

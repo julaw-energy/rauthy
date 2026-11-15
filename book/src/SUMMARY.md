@@ -18,6 +18,7 @@
   - [Logging and Auditing](config/logging.md)
   - [Backups](config/backup.md)
   - [TLS](config/tls.md)
+  - [Services in the Same Network](config/internal_hosts.md)
   - [Sessions](config/sessions.md)
   - [User Registration](config/user_reg.md)
   - [High Availability](config/ha.md)

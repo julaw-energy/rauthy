@@ -8,6 +8,7 @@ pub mod auth_providers;
 pub mod backup;
 pub mod blacklist;
 pub mod clients;
+pub mod country_names;
 pub mod cust_validation;
 pub mod email_jobs;
 pub mod events;

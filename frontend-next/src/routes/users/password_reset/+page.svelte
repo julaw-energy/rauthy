@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import * as Card from '$lib/components/ui/card';
     import Button from '$lib/button/Button.svelte';
     import { IS_DEV, TPL_CLIENT_LOGO_UPDATED } from '$utils/constants';
@@ -87,9 +88,7 @@
                             {t.authorize.passwordResetSuccess}
                         </p>
                     {:else if err}
-                        <p class="text-destructive text-center text-sm" role="alert">
-                            {err}
-                        </p>
+                        <ErrorAlert {err} />
                     {/if}
                 </Form>
             </Card.Content>

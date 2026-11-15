@@ -10,6 +10,86 @@ rollout), not only what changed.
 
 ---
 
+## v0.37.2-custom.7 (2026-11-15)
+
+Bug fixes for the access rules, plus a trust-MFA switch per provider. **One migration** (adds `auth_providers.trust_mfa`, default false, on Hiqlite and Postgres). No config change.
+
+### Security
+
+- **Values an identity provider sends are checked before they are stored.** A login with Google, Github or another provider
+  copied `birthdate`, `phone`, the street, the postal code, the country and the time zone from the provider into the user's
+  profile **without any validation**, which the account page and the API do apply. A provider could send a text of any
+  length, with line breaks (which would forge lines in the `formatted` address of the ID token), a time zone that does not
+  exist or a birthdate in the future. Now every value goes through the same checks as the same value typed into the account
+  page (`UserValues::from_provider`). A value that fails is left out, the login goes on, and the user can fill the field in.
+  A phone number loses the spaces and dashes it was written with, a country code is made upper case. The provider's
+  `locality` is stored as the city (it was ignored, so a provider's city never reached the profile).
+
+### Bugfix
+
+- **Access rules were checked before the required user data.** A user who signed in with Google has only an email, a
+  given name and a family name. A rule like `country in UG` refused that user at once, although the client requires the
+  country and the user would have been asked for it. Now a login first looks at the required user data: while a field is
+  missing the rules wait, the user fills it in, and the rules decide at the login that follows. Refresh, password grant
+  and forward auth keep checking the rules as before.
+- **A user without groups failed every group rule, also the negations.** A negation now holds when there is nothing to
+  compare: `groups not in [admin_group]` and `groups is not admin_group` let in a user who has no groups (and
+  `country is not RU` a user without a country). Positive rules (`in`, `contains`, `is`, `>=`, ...) still fail on a
+  missing value. Add `is set` to a rule set that must turn away users without a value.
+  See [Client Access Rules](book/src/work/client_access_rules.md).
+- **The order of the login checks.** Each check runs only after the one before it passed:
+  1. *The group of the client* (`restrict_group_prefix`). A user outside of it is turned away at once, before an MFA is
+     asked for (until now a client that forces MFA told such a user to set up a second factor first) and before any data
+     is asked. The message says *"You do not have permission to view this application"* (it said "client").
+  2. *The data the client requires.* A missing field sends the user to fill it in.
+  3. *The access rules*, with the values filled in.
+- **The popup after a login with a provider (Google, ...).** The page that comes back from the provider showed only a
+  line of text when the account lacked required data, and its button led to the account page without telling it which
+  application the login was for, so the account page did not list what was missing. It is the same popup as at the
+  password login again (*"Some information for this account is missing. ..."*), and its button opens the account page
+  with the list of the missing details and a way back to the login. The login page remembers the application before it
+  goes to the provider (`rauthy_login_client` in the browser's local storage).
+
+### Changes
+
+- **"Trust MFA of this provider" per auth provider.** When set, every login through the provider counts as MFA, so a client that forces MFA accepts a Google or similar login without asking for a local passkey. Off by default. The API field `trust_mfa` is optional (absent = false). The old UI does not know it, saving a provider there turns it off.
+
+- **Warning when an account has only one passkey.** The MFA page of the account shows a red box that explains that losing this one device or key locks the user out until an administrator removes it, and asks for a second passkey. The register button is highlighted while only one exists.
+- **`server.internal_hosts` is listed on the static settings page** (read only).
+
+- **The discovery document for services in the same network (`server.internal_hosts`).** The document at
+  `/.well-known/openid-configuration` has only public URLs, which a container in the Docker network either cannot reach or
+  reaches by going out through the proxy and back. With `internal_hosts = ['rauthy:8080']` (or `INTERNAL_HOSTS`), a request
+  that arrives with that name in its `Host` header gets `token_endpoint`, `userinfo_endpoint`, `jwks_uri`,
+  `introspection_endpoint` and `revocation_endpoint` at `http://rauthy:8080/auth/v1/...`. The `issuer` and the endpoints a
+  browser is sent to (`authorize`, `logout`, `device`) stay public, and so does the document for every other host, the proxy
+  included (it forwards the public `Host`). Only listed names count and only the raw `Host` header is read, never
+  `X-Forwarded-Host`. The response has `Vary: Host`. Off by default (empty list), so nothing changes without the setting.
+  See [Services in the Same Network](book/src/config/internal_hosts.md). Test: `test_well_known_for_internal_hosts`
+  (`config-test.toml` lists `rauthy-internal:8081`).
+- **A time zone must be an IANA id** like `Africa/Kampala` (or `UTC`) in every request that carries one (profile, admin
+  update, registration), with the error on the field. Abbreviations (`EAT`, `CST`, `IST`) and offsets are refused: they
+  are ambiguous and carry no daylight saving rules. The `zoneinfo` claim is the IANA id, as OIDC asks.
+- **Faster login: the required user data of a client is cached.** Every login for a client read `client_required_fields`
+  from the database, and now twice (once to decide about the access rules, once for the popup). It is read once per login
+  and from the cache (like the access rules), cleared when the list is saved or the client is deleted. The cache entries
+  of the rules and of the required data are also cleared when a client is deleted, so a client created again under the same id
+  does not inherit them. No index was missing: the audit, reminder and client tables have the ones their queries use.
+- **The `address` claim is written like an address.** The ID token and `/userinfo` had `formatted` as the user's name, the
+  street, the postal code and the city and the country, each on a line and with a newline at the end
+  (`"Jane Doe\n8th Street\nUG\n"`), and the **city was missing** unless the user also had a postal code (neither
+  `formatted` nor `locality`). Now `formatted` is the street, then the postal code with the city, then the country, one line
+  each and no trailing newline (`"8th Street\n00100 Nairobi\nKenya"`). The name is not part of it (the `name` claim has it).
+  A part that is not filled in is left out, a blank value counts as not filled in, and spaces around a value are removed.
+  The country in `formatted` is its English name (`Uganda`); the `country` member keeps the code (`UG`), because other
+  systems look a country up by its code. A country that was typed in as a name stays as typed. `street_address`, `locality`,
+  `postal_code` and `country` are as before. Clients that read `formatted` get no name line.
+  Unit tests in `claims.rs`.
+- **Errors are shown as a box.** An error text is now a bordered, tinted box with an icon (`ErrorAlert.svelte`), in the
+  login, registration, password reset, logout, device and callback pages, the forms of the account page and the whole
+  Admin UI, where it was a red line.
+- **The *unlink provider* button** on the account page has an orange border and a small corner radius.
+
 ## v0.37.2-custom.6 (2026-10-29)
 
 Bug fix for `custom.5`. No migration, no config change.

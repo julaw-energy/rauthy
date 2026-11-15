@@ -10,7 +10,21 @@ Besides email and name, Rauthy stores a few more standard OpenID Connect claims 
 | Phone | `phone_number` | International format `+256700216664` (E.164, 8 to 15 digits). Can be verified, see [Verifying Email and Phone](verification.md) |
 | Street, ZIP, City | `address` | |
 | Country | `address` | ISO 3166-1 alpha-2 code like `UG`. The UI shows a country list; older free-text values are still accepted |
-| Time zone | `zoneinfo` | An IANA name like `Africa/Kampala` |
+| Time zone | `zoneinfo` | An IANA id like `Africa/Kampala` (or `UTC`). Abbreviations like `EAT` and offsets are refused: they are ambiguous and have no daylight saving rules |
+
+## The Address in the Tokens
+
+The ID token and `/userinfo` carry the `address` claim built from the street, ZIP, city and country. Its members are
+`street_address`, `locality` (the city), `postal_code` and `country` (the **code**, `UG`, which other systems can look up
+by). `formatted` is the address as on a letter, a line each and without the name: the street, the ZIP with the city, then the
+**English name** of the country, for example `"8th Street\n00100 Nairobi\nKenya"`. A part that is not filled in is left out,
+and with nothing filled in there is no `address` claim.
+
+## Values From an Identity Provider
+
+A login with Google, Github or another provider can bring a birthdate, a phone number, an address and a time zone. They
+are checked like the same value typed into the account page, and a value that does not pass is left out (the login goes
+on, the user can fill the field in later).
 
 ## Required, Optional or Hidden
 

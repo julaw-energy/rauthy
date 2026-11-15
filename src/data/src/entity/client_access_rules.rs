@@ -10,8 +10,9 @@
 //!
 //! The comparison itself is a pure function ([`holds`]), so it is tested without a database.
 //!
-//! A value that is missing never satisfies a rule, except for `not_set`. That makes the rules
-//! deny by default: "country in UG" does not let in a user who has no country.
+//! A value that is missing never satisfies a rule, except for `not_set` and the negations `ne` and
+//! `not_in`. That makes the rules deny by default: "country in UG" does not let in a user who has no
+//! country. A negation holds for nothing: a user without groups is not in "admin".
 
 use crate::database::{Cache, DB};
 use crate::entity::groups::Group;
@@ -220,7 +221,9 @@ fn scalar_eq(actual: &str, expected: &Scalar) -> bool {
     }
 }
 
-/// Whether one rule holds for what the user has. A missing value fails every rule but `not_set`.
+/// Whether one rule holds for what the user has. A missing value (or an empty list, like a user
+/// without groups) fails every rule, except `not_set` and the negations `ne` and `not_in`: someone
+/// with no groups is not in `admin`, and has no group that differs from it either.
 fn holds(op: Op, actual: &Actual, expected: &Expected) -> bool {
     match op {
         Op::IsSet => return actual.is_set(),
@@ -228,7 +231,7 @@ fn holds(op: Op, actual: &Actual, expected: &Expected) -> bool {
         _ => {}
     }
     if !actual.is_set() {
-        return false;
+        return matches!(op, Op::Ne | Op::NotIn);
     }
 
     match (op, expected) {
@@ -409,6 +412,14 @@ pub struct ClientAccessRules;
 impl ClientAccessRules {
     fn cache_idx(client_id: &str) -> String {
         format!("client_access_rules_{client_id}")
+    }
+
+    /// Forgets the cached rules of a client, when the client is deleted.
+    pub async fn delete_cache(client_id: &str) -> Result<(), ErrorResponse> {
+        DB::hql()
+            .delete(Cache::App, Self::cache_idx(client_id))
+            .await?;
+        Ok(())
     }
 
     fn parse(json: &str) -> Vec<ClientAccessRule> {
@@ -710,8 +721,8 @@ mod tests {
         assert!(run("not_in", text("RW"), list.clone()));
         assert!(!run("not_in", text("UG"), list.clone()));
         assert!(
-            !run("not_in", Actual::Missing, list),
-            "missing never passes"
+            run("not_in", Actual::Missing, list),
+            "no country is not in the list"
         );
     }
 
@@ -742,7 +753,10 @@ mod tests {
     fn equality_of_text_numbers_and_bools() {
         assert!(run("eq", text("Female"), Some(json!("female"))));
         assert!(run("ne", text("Female"), Some(json!("male"))));
-        assert!(!run("ne", Actual::Missing, Some(json!("male"))));
+        assert!(
+            run("ne", Actual::Missing, Some(json!("male"))),
+            "nothing is not male"
+        );
         assert!(run("eq", text("18"), Some(json!(18))), "18 equals 18");
         assert!(run("eq", text("18.0"), Some(json!(18))), "18.0 equals 18");
         assert!(run("eq", Actual::Bool(true), Some(json!(true))));
@@ -764,6 +778,15 @@ mod tests {
             !run("is_set", Actual::List(vec![]), None),
             "an empty list is not set"
         );
+        // a user without groups: positive checks fail, negations hold
+        let none = Actual::List(vec![]);
+        assert!(!run("contains", none.clone(), Some(json!("admin_group"))));
+        assert!(!run("in", none.clone(), Some(json!(["admin_group"]))));
+        assert!(run("not_in", none.clone(), Some(json!(["admin_group"]))));
+        assert!(run("ne", none.clone(), Some(json!("admin_group"))));
+        assert!(run("not_set", none, None));
+        // numbers and ranges still need a value
+        assert!(!run("lt", Actual::Missing, Some(json!(18))));
     }
 
     fn with_message(mut r: ClientAccessRule, m: Option<&str>) -> ClientAccessRule {

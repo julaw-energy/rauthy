@@ -1291,9 +1291,19 @@ pub async fn get_forward_auth(req: HttpRequest) -> Result<HttpResponse, ErrorRes
 ///
 /// Capable OIDC clients can use this endpoint to auto-discover all necessary OIDC information and
 /// endpoints that are provided by rauthy to automatically choose the best / safest options.
-async fn well_known_response() -> Result<HttpResponse, ErrorResponse> {
-    let wk = WellKnown::json().await?;
+async fn well_known_response(req: &HttpRequest) -> Result<HttpResponse, ErrorResponse> {
+    // The raw `Host` header, on purpose: `connection_info()` would prefer `X-Forwarded-Host`, and
+    // the proxy sets that for everyone. A service in the Docker network calls `rauthy:8080` and
+    // sends that as its `Host`; the proxy forwards the public host. The host is only used when
+    // `server.internal_hosts` lists it.
+    let host = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok());
+    let wk = WellKnown::json_for(host).await?;
     Ok(HttpResponse::Ok()
+        // the same URL answers differently by host, a shared cache must not mix the two
+        .insert_header((header::VARY, "Host"))
         .insert_header((CONTENT_TYPE, APPLICATION_JSON))
         .insert_header((
             header::ACCESS_CONTROL_ALLOW_ORIGIN,
@@ -1311,8 +1321,8 @@ async fn well_known_response() -> Result<HttpResponse, ErrorResponse> {
     ),
 )]
 #[get("/.well-known/openid-configuration")]
-pub async fn get_well_known() -> Result<HttpResponse, ErrorResponse> {
-    well_known_response().await
+pub async fn get_well_known(req: HttpRequest) -> Result<HttpResponse, ErrorResponse> {
+    well_known_response(&req).await
 }
 
 // RFC 8414 alias for `/.well-known/openid-configuration`. Some MCP clients
@@ -1320,8 +1330,8 @@ pub async fn get_well_known() -> Result<HttpResponse, ErrorResponse> {
 // discovery and won't read `client_id_metadata_document_supported` from the
 // OIDC-only doc. Body is identical; we just expose it under the second path.
 #[get("/.well-known/oauth-authorization-server")]
-pub async fn get_well_known_oauth() -> Result<HttpResponse, ErrorResponse> {
-    well_known_response().await
+pub async fn get_well_known_oauth(req: HttpRequest) -> Result<HttpResponse, ErrorResponse> {
+    well_known_response(&req).await
 }
 
 // RFC 8414 §3.1 path-insertion alias for the AS-metadata document. Because
@@ -1341,11 +1351,13 @@ pub async fn get_well_known_oauth() -> Result<HttpResponse, ErrorResponse> {
 // claude.ai probes the no-slash form. rauthy runs no `NormalizePath` middleware,
 // so each exact path needs its own route.
 #[get("/.well-known/oauth-authorization-server/auth/v1")]
-pub async fn get_well_known_oauth_rfc8414() -> Result<HttpResponse, ErrorResponse> {
-    well_known_response().await
+pub async fn get_well_known_oauth_rfc8414(req: HttpRequest) -> Result<HttpResponse, ErrorResponse> {
+    well_known_response(&req).await
 }
 
 #[get("/.well-known/oauth-authorization-server/auth/v1/")]
-pub async fn get_well_known_oauth_rfc8414_trailing() -> Result<HttpResponse, ErrorResponse> {
-    well_known_response().await
+pub async fn get_well_known_oauth_rfc8414_trailing(
+    req: HttpRequest,
+) -> Result<HttpResponse, ErrorResponse> {
+    well_known_response(&req).await
 }

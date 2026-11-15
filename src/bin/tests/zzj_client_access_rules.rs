@@ -1,6 +1,6 @@
 use crate::common::{
     CLIENT_ID, PASSWORD, USERNAME, check_status, cookie_csrf_headers_from_res, get_auth_headers,
-    get_backend_url, get_solved_pow,
+    get_backend_url, get_solved_pow, session_headers,
 };
 use rauthy_api_types::oidc::{GrantType, LoginRequest, TokenRequest};
 use rauthy_service::token_set::TokenSet;
@@ -17,6 +17,85 @@ async fn put_rules(rules: Value) -> Result<reqwest::Response, Box<dyn Error>> {
         .json(&json!({ "rules": rules }))
         .send()
         .await?)
+}
+
+async fn put_required(fields: Value) -> Result<reqwest::Response, Box<dyn Error>> {
+    let url = format!("{}/clients/{CLIENT_ID}/required_fields", get_backend_url());
+    Ok(reqwest::Client::new()
+        .put(&url)
+        .headers(get_auth_headers().await?)
+        .json(&json!({ "fields": fields }))
+        .send()
+        .await?)
+}
+
+/// The test user changes their own profile values, the way the account page does
+async fn set_country(country: Option<&str>) -> Result<(), Box<dyn Error>> {
+    let (session, _) = session_headers().await;
+    let list = reqwest::Client::new()
+        .get(format!("{}/users", get_backend_url()))
+        .headers(get_auth_headers().await?)
+        .send()
+        .await?;
+    let users: Value = check_status(list, 200).await?.json().await?;
+    let me = users
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["email"] == USERNAME)
+        .expect("the test user exists");
+    let id = me["id"].as_str().unwrap();
+    let values = country.map_or(json!({}), |c| json!({ "country": c }));
+    let res = reqwest::Client::new()
+        .put(format!("{}/users/{id}/self", get_backend_url()))
+        .headers(session)
+        .json(&json!({"email": USERNAME, "user_values": values}))
+        .send()
+        .await?;
+    check_status(res, 200).await?;
+    Ok(())
+}
+
+const GROUP_CLIENT: &str = "access_rules_group_test";
+
+/// A client of its own that only a group may use: the shared one has settings no update accepts,
+/// and the rules and required data of this one stay apart from the other checks
+async fn create_group_client(prefix: &str) -> Result<(), Box<dyn Error>> {
+    let url = format!("{}/clients", get_backend_url());
+    let res = reqwest::Client::new()
+        .post(&url)
+        .headers(get_auth_headers().await?)
+        .json(&json!({
+            "id": GROUP_CLIENT,
+            "name": "Access rules group test",
+            "confidential": false,
+            "redirect_uris": ["http://localhost:3000/oidc/callback"],
+        }))
+        .send()
+        .await?;
+    let mut client: Value = check_status(res, 200).await?.json().await?;
+    client["restrict_group_prefix"] = json!(prefix);
+    client["challenges"] = json!(["S256", "plain"]);
+    // the test user has no second factor: if MFA were asked first, they would be told to set one up
+    client["force_mfa"] = json!(true);
+    let res = reqwest::Client::new()
+        .put(format!("{url}/{GROUP_CLIENT}"))
+        .headers(get_auth_headers().await?)
+        .json(&client)
+        .send()
+        .await?;
+    check_status(res, 200).await?;
+    Ok(())
+}
+
+async fn delete_group_client() {
+    if let Ok(headers) = get_auth_headers().await {
+        let _ = reqwest::Client::new()
+            .delete(format!("{}/clients/{GROUP_CLIENT}", get_backend_url()))
+            .headers(headers)
+            .send()
+            .await;
+    }
 }
 
 async fn get_rules() -> Result<Value, Box<dyn Error>> {
@@ -64,10 +143,19 @@ fn password_grant(secret: &str) -> TokenRequest {
 /// A login the way the browser does it: `POST /authorize` with the credentials. `202` means the
 /// login went through and a code was issued.
 async fn authorize_status() -> Result<u16, Box<dyn Error>> {
+    Ok(authorize_login().await?.0)
+}
+
+/// The same login, with what the server said besides the status
+async fn authorize_login() -> Result<(u16, String), Box<dyn Error>> {
+    authorize_login_for(CLIENT_ID).await
+}
+
+async fn authorize_login_for(client_id: &str) -> Result<(u16, String), Box<dyn Error>> {
     let challenge_plain = "oDXug9zfYqfz8ejcqMpALRPXfW8QhbKV2AVuScAt8xrLKDAmaRYQ4yRi2uqcH9ys";
     let redirect_uri = "http://localhost:3000/oidc/callback";
     let url = format!(
-        "{}/oidc/authorize?client_id={CLIENT_ID}&redirect_uri={redirect_uri}\
+        "{}/oidc/authorize?client_id={client_id}&redirect_uri={redirect_uri}\
         &response_type=code&code_challenge={challenge_plain}",
         get_backend_url()
     );
@@ -78,7 +166,7 @@ async fn authorize_status() -> Result<u16, Box<dyn Error>> {
         email: Some(USERNAME.to_string()),
         password: Some(PASSWORD.to_string()),
         pow: get_solved_pow().await,
-        client_id: CLIENT_ID.to_string(),
+        client_id: client_id.to_string(),
         redirect_uri: redirect_uri.to_string(),
         scopes: None,
         state: None,
@@ -95,7 +183,8 @@ async fn authorize_status() -> Result<u16, Box<dyn Error>> {
         .json(&login)
         .send()
         .await?;
-    Ok(res.status().as_u16())
+    let status = res.status().as_u16();
+    Ok((status, res.text().await?))
 }
 
 /// Takes the rules off the client when the test ends, also when an assertion panics: they would
@@ -111,6 +200,9 @@ impl Drop for Cleanup {
                 .expect("a runtime for the cleanup")
                 .block_on(async {
                     let _ = put_rules(json!([])).await;
+                    let _ = put_required(json!([])).await;
+                    let _ = set_country(None).await;
+                    delete_group_client().await;
                 });
         })
         .join();
@@ -309,6 +401,128 @@ async fn test_client_access_rules() -> Result<(), Box<dyn Error>> {
     check_status(res, 200).await?;
     let res = token_request(&refresh).await?;
     assert_eq!(res.status(), 200, "without rules the refresh works again");
+
+    // The required user data comes first. The test user has only an email and a name, like a user
+    // who signed in with Google. The client requires the country and a rule is set on it: the user
+    // must be sent to fill it in (205), not be refused (403) for a value never asked for.
+    set_country(None).await?;
+    check_status(put_required(json!(["country"])).await?, 200).await?;
+    let res = put_rules(json!([{"field": "country", "op": "in", "value": ["UG"]}])).await?;
+    check_status(res, 200).await?;
+    assert_eq!(
+        authorize_status().await?,
+        205,
+        "a missing required field comes before the rules"
+    );
+    // once the country is there, the rule decides
+    set_country(Some("DE")).await?;
+    assert_eq!(authorize_status().await?, 403, "now the rule refuses");
+    set_country(Some("UG")).await?;
+    assert_eq!(authorize_status().await?, 202, "and now it lets in");
+    // The group of the client comes first of all. A user outside of it is turned away at once, also
+    // when data is missing and a rule would not be met: they are not sent to fill in a profile for an
+    // application they may not use.
+    set_country(None).await?;
+    delete_group_client().await;
+    create_group_client("no_such_group_prefix").await?;
+    let url = format!("{}/clients/{GROUP_CLIENT}", get_backend_url());
+    let auth = get_auth_headers().await?;
+    let put = |path: &'static str, body: Value| {
+        let (url, auth) = (format!("{url}/{path}"), auth.clone());
+        async move {
+            let res = reqwest::Client::new()
+                .put(url)
+                .headers(auth)
+                .json(&body)
+                .send()
+                .await?;
+            check_status(res, 200).await?;
+            Ok::<(), Box<dyn Error>>(())
+        }
+    };
+    put("required_fields", json!({"fields": ["country"]})).await?;
+    put(
+        "access_rules",
+        json!({"rules": [{"field": "country", "op": "in", "value": ["UG"]}]}),
+    )
+    .await?;
+    let (status, body) = authorize_login_for(GROUP_CLIENT).await?;
+    assert_eq!(
+        status, 403,
+        "the group check comes before the required data"
+    );
+    assert!(
+        body.contains("permission to view this application"),
+        "the user is told about the application: {body}"
+    );
+    delete_group_client().await;
+
+    // the grants that cannot ask the user for anything keep checking the rules
+    set_country(None).await?;
+    let res = token_request(&password_grant(&secret)).await?;
+    assert_eq!(
+        res.status(),
+        403,
+        "the password grant has no form to fill in"
+    );
+    check_status(put_required(json!([])).await?, 200).await?;
+    assert_eq!(
+        authorize_status().await?,
+        403,
+        "nothing is required, so the rule refuses at once"
+    );
+
+    // a user without groups: positive rules fail, negations hold
+    let url = format!("{}/users", get_backend_url());
+    let users: Value = check_status(
+        reqwest::Client::new()
+            .get(&url)
+            .headers(get_auth_headers().await?)
+            .send()
+            .await?,
+        200,
+    )
+    .await?
+    .json()
+    .await?;
+    let me = users
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["email"] == USERNAME)
+        .unwrap();
+    let has_groups = me["groups"].as_array().is_some_and(|g| !g.is_empty());
+    for (rule, passes) in [
+        (
+            json!({"field": "groups", "op": "not_in", "value": ["no_such_group"]}),
+            true,
+        ),
+        (
+            json!({"field": "groups", "op": "ne", "value": "no_such_group"}),
+            true,
+        ),
+        (
+            json!({"field": "groups", "op": "in", "value": ["no_such_group"]}),
+            false,
+        ),
+        (
+            json!({"field": "groups", "op": "contains", "value": "no_such_group"}),
+            false,
+        ),
+    ] {
+        check_status(put_rules(json!([rule.clone()])).await?, 200).await?;
+        let res = token_request(&password_grant(&secret)).await?;
+        let want = if passes { 200 } else { 403 };
+        assert_eq!(res.status(), want, "{rule} (user has groups: {has_groups})");
+    }
+    // a user without a country is not in a country they must not be in
+    check_status(
+        put_rules(json!([{"field": "country", "op": "not_in", "value": ["RU"]}])).await?,
+        200,
+    )
+    .await?;
+    let res = token_request(&password_grant(&secret)).await?;
+    assert_eq!(res.status(), 200, "no country is not RU");
 
     Ok(())
 }

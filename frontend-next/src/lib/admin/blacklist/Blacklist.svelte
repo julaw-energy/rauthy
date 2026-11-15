@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { formatUtcTsFromDateInput } from '$utils/helpers.js';
     import DataTable from '$lib/components/data-table/data-table.svelte';
     import { dateCol, textCol } from '$lib/components/data-table/columns';
@@ -132,7 +133,7 @@
 
 <ContentAdmin>
     {#if err}
-        <p class="text-destructive text-sm">{err}</p>
+        <ErrorAlert {err} />
     {/if}
 
     <div id="blacklist" class="min-h-0">

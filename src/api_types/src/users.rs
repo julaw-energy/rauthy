@@ -1,5 +1,5 @@
 use crate::cust_validation::{
-    validate_attr_options, validate_attr_regex, validate_birthdate, validate_country,
+    validate_attr_options, validate_attr_regex, validate_birthdate, validate_country, validate_tz,
     validate_vec_groups, validate_vec_roles,
 };
 use crate::generic::Language;
@@ -87,8 +87,8 @@ pub struct NewUserRequest {
     /// Unix timestamp in seconds
     #[validate(range(min = 1719784800))]
     pub user_expires: Option<i64>,
-    /// Validation: Valid Timezone in the format of `Europe/Berlin`
-    #[validate(length(max = 48))]
+    /// Validation: an IANA time zone id like `Europe/Berlin` (or `UTC`), no abbreviations
+    #[validate(custom(function = "validate_tz"))]
     pub tz: Option<String>,
 }
 
@@ -246,8 +246,8 @@ pub struct UserValuesRequest {
     /// `[a-zA-Z0-9À-ÿ-\s]{0,48}`
     #[validate(custom(function = "validate_country"))]
     pub country: Option<String>,
-    /// Validation: Valid Timezone in the format of `Europe/Berlin`
-    #[validate(length(max = 48))]
+    /// Validation: an IANA time zone id like `Europe/Berlin` (or `UTC`), no abbreviations
+    #[validate(custom(function = "validate_tz"))]
     pub tz: Option<String>,
 }
 

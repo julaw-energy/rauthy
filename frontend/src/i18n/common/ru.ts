@@ -266,6 +266,9 @@ export const I18nRu: I18n = {
             p3: 'Для получения дополнительной информации см.',
             registerNew: 'Зарегистрировать новый ключ',
             docLinkText: 'документацию о ключах доступа',
+            onlyOneTitle: 'Security risk: only one passkey',
+            onlyOneText:
+                'You have only one passkey registered. If you lose this device or key, you lose access to your account and only an administrator can restore it. Register a second passkey now, on another device or a hardware key.',
             unsupportedText:
                 'Your browser does not support Webauthn credentials and must be updated.',
         },

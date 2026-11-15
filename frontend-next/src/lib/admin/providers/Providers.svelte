@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { onMount } from 'svelte';
     import { useI18nAdmin } from '$state/i18n_admin.svelte';
     import { fetchPost } from '$api/fetch';
@@ -65,7 +66,7 @@
 
 <ContentAdmin>
     {#if err}
-        <p class="text-destructive text-sm">{err}</p>
+        <ErrorAlert {err} />
     {/if}
 
     <div id="federation" class="min-h-0" aria-label={ta.common.details}>

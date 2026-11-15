@@ -1,8 +1,9 @@
-use crate::database::DB;
+use crate::database::{Cache, DB};
 use crate::entity::user_attr::{UserAttrConfigEntity, UserAttrValueEntity};
 use crate::entity::users::User;
 use crate::entity::users_values::UserValues;
 use hiqlite::macros::{FromRow, params};
+use rauthy_common::constants::CACHE_TTL_APP;
 use rauthy_common::is_hiqlite;
 use rauthy_derive::FromPgRow;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
@@ -36,31 +37,47 @@ pub struct ClientRequiredFieldsRow {
 pub struct ClientRequiredFields;
 
 impl ClientRequiredFields {
+    fn cache_idx(client_id: &str) -> String {
+        format!("client_required_fields_{client_id}")
+    }
+
+    /// Forgets the cached list of a client, after it changed or when the client is deleted.
+    pub async fn delete_cache(client_id: &str) -> Result<(), ErrorResponse> {
+        DB::hql()
+            .delete(Cache::App, Self::cache_idx(client_id))
+            .await?;
+        Ok(())
+    }
+
+    /// Every login for a client reads this list, so it is cached (an empty list too: most clients
+    /// require nothing, and that is the answer to remember).
     pub async fn find(client_id: &str) -> Result<Vec<String>, ErrorResponse> {
-        let row: Option<ClientRequiredFieldsRow> = if is_hiqlite() {
-            DB::hql()
-                .query_map_optional(
-                    "SELECT client_id, fields FROM client_required_fields WHERE client_id = $1",
-                    params!(client_id),
-                )
-                .await?
-        } else {
-            DB::pg_query_opt(
-                "SELECT client_id, fields FROM client_required_fields WHERE client_id = $1",
-                &[&client_id],
-            )
-            .await?
+        let idx = Self::cache_idx(client_id);
+        let joined: String = match DB::hql().get(Cache::App, idx.clone()).await? {
+            Some(cached) => cached,
+            None => {
+                let sql =
+                    "SELECT client_id, fields FROM client_required_fields WHERE client_id = $1";
+                let row: Option<ClientRequiredFieldsRow> = if is_hiqlite() {
+                    DB::hql()
+                        .query_map_optional(sql, params!(client_id))
+                        .await?
+                } else {
+                    DB::pg_query_opt(sql, &[&client_id]).await?
+                };
+                let joined = row.map(|r| r.fields).unwrap_or_default();
+                DB::hql()
+                    .put(Cache::App, idx, &joined, CACHE_TTL_APP)
+                    .await?;
+                joined
+            }
         };
 
-        Ok(row
-            .map(|r| {
-                r.fields
-                    .split(',')
-                    .filter(|s| !s.is_empty())
-                    .map(String::from)
-                    .collect()
-            })
-            .unwrap_or_default())
+        Ok(joined
+            .split(',')
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect())
     }
 
     /// Replaces the list. An empty list removes the row.
@@ -103,6 +120,8 @@ ON CONFLICT (client_id) DO UPDATE SET fields = $2"#;
                 DB::pg_execute(sql, &[&client_id, &joined]).await?;
             }
         }
+
+        Self::delete_cache(client_id).await?;
 
         Ok(clean)
     }

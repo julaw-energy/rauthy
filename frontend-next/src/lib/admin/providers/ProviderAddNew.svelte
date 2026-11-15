@@ -54,6 +54,7 @@
         client_secret_post: false,
         auto_onboarding: false,
         auto_link: false,
+        trust_mfa: false,
 
         // user defined values
         name: '',
@@ -103,6 +104,7 @@
                         client_secret_post: true,
                         auto_onboarding: false,
                         auto_link: false,
+        trust_mfa: false,
                         userinfo_endpoint: 'https://api.github.com/user',
                         use_pkce: false,
 
@@ -143,6 +145,7 @@
                         client_secret_post: false,
                         auto_onboarding: false,
                         auto_link: false,
+        trust_mfa: false,
                         userinfo_endpoint: '',
                         use_pkce: true,
 
@@ -211,6 +214,7 @@
             client_secret_post: config.client_secret_post,
             auto_onboarding: config.auto_onboarding,
             auto_link: config.auto_link,
+            trust_mfa: config.trust_mfa,
 
             client_id: config.client_id,
             client_secret: config.client_secret,
@@ -294,6 +298,7 @@
             client_secret_post: false,
             auto_onboarding: false,
             auto_link: false,
+        trust_mfa: false,
             scope: '',
             admin_claim_path: '',
             admin_claim_value: '',

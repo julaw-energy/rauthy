@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import Loading from '$lib5/Loading.svelte';
     import {
         deleteVerifierFromStorage,
@@ -88,9 +89,7 @@
 
 <div class="flex min-h-dvh items-center justify-center p-4">
     {#if err}
-        <p class="text-destructive text-center text-sm" role="alert">
-            {err}
-        </p>
+        <ErrorAlert {err} class="max-w-md" />
     {:else}
         <Loading />
     {/if}

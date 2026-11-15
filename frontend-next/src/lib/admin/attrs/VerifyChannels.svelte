@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { untrack } from 'svelte';
     import { toast } from 'svelte-sonner';
     import { ArrowDown, ArrowUp } from '@lucide/svelte';
@@ -132,7 +133,7 @@
 
             <div class="flex items-center gap-3">
                 <Button level={2} onclick={save} isLoading={busy}>Save channels</Button>
-                {#if err}<span class="text-destructive text-xs">{err}</span>{/if}
+                {#if err}<ErrorAlert {err} class="w-auto" />{/if}
             </div>
         {/if}
     </div>

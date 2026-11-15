@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { onMount } from 'svelte';
     import { toast } from 'svelte-sonner';
     import type { PaginationState } from '@tanstack/svelte-table';
@@ -278,7 +279,7 @@
 <ContentAdmin>
     <SendMail bind:open={mailOpen} initial={mailInitial} {groups} {roles} trigger={false} />
     {#if err}
-        <p class="text-destructive text-sm">{err}</p>
+        <ErrorAlert {err} />
     {/if}
 
     <div id="users" class="min-h-0">

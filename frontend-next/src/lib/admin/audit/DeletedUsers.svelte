@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { onMount } from 'svelte';
     import { fetchDelete, fetchGet } from '$api/fetch';
     import type { AuditUserResponse } from '$api/types/events';
@@ -39,7 +40,7 @@
         desc="When a user is deleted, their email, names, username and phone are kept so that the history of other things can still say who changed them. Wipe the personal data of a user here, for example on a deletion request: only the id stays, and the history then shows the id. This cannot be undone."
     >
         {#if err}
-            <p class="text-destructive text-sm">{err}</p>
+            <ErrorAlert {err} />
         {/if}
 
         {#if loaded && users.length === 0}

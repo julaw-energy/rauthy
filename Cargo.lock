@@ -4922,6 +4922,7 @@ version = "0.37.2"
 dependencies = [
  "actix-web",
  "chrono",
+ "chrono-tz",
  "hiqlite",
  "openssl",
  "openssl-sys",

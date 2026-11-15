@@ -99,6 +99,18 @@ async fn test_hidden_profile_field_survives_a_self_update() -> Result<(), Box<dy
     let user = update(json!({"tz": "Africa/Kampala"})).await?;
     assert_eq!(user["user_values"]["tz"], "Africa/Kampala");
 
+    // a time zone is an IANA id: an abbreviation or a made up name is refused and changes nothing
+    for bad in ["EAT", "Mars/Olympus", "africa/kampala", "+03:00"] {
+        let res = send(
+            reqwest::Method::PUT,
+            &format!("/users/{id}/self"),
+            &admin,
+            Some(json!({"email": email, "user_values": {"tz": bad}})),
+        )
+        .await?;
+        assert_eq!(res.status(), 400, "{bad} is not a time zone id");
+    }
+
     // hidden: the page cannot send it, and the stored one stays
     set_tz("hidden").await?;
     let user = update(json!({"city": "Kampala"})).await?;

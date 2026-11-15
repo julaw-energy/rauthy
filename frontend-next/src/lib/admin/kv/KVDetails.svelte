@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import DataTable from '$lib/components/data-table/data-table.svelte'
     ;import type { FeaturedColumnDef } from '$lib/components/data-table/data-table-features'
     ;import { Badge } from '$lib/components/ui/badge';
@@ -235,7 +236,7 @@
 
 {#snippet error()}
     {#if err}
-        <p class="text-destructive text-sm">{err}</p>
+        <ErrorAlert {err} />
     {/if}
 {/snippet}
 

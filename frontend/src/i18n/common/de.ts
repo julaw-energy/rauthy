@@ -276,6 +276,9 @@ export const I18nDe: I18n = {
             p3: 'Für weitere Informationen, siehe',
             registerNew: 'Neuen Passkey Registrieren',
             docLinkText: 'die Dokumentation zu Passkeys',
+            onlyOneTitle: 'Security risk: only one passkey',
+            onlyOneText:
+                'You have only one passkey registered. If you lose this device or key, you lose access to your account and only an administrator can restore it. Register a second passkey now, on another device or a hardware key.',
             unsupportedText: 'Dieser Browser ist zu alt und unterstützt kein Webauthn.',
         },
         otp: {

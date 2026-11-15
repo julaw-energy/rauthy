@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import Button from '$lib5/button/Button.svelte';
     import type { ApiKeyResponse } from '$api/types/api_keys.ts';
     import { fetchDelete } from '$api/fetch';
@@ -39,6 +40,6 @@
     </div>
 
     {#if err}
-        <p class="text-destructive text-sm">{err}</p>
+        <ErrorAlert {err} />
     {/if}
 </div>

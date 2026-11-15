@@ -92,6 +92,7 @@
             client_secret_post: provider.client_secret_post,
             auto_onboarding: provider.auto_onboarding,
             auto_link: provider.auto_link,
+            trust_mfa: provider.trust_mfa,
 
             client_id: provider.client_id,
             client_secret: provider.client_secret || undefined,
@@ -136,6 +137,22 @@
                 <div class="grid gap-1 text-sm" transition:slide={{ duration: 150 }}>
                     <p class="text-muted-foreground">{ta.providers.config.autoLinkDesc1}</p>
                     <p class="text-destructive">{ta.providers.config.autoLinkDesc2}</p>
+                </div>
+            {/if}
+            <InputCheckbox ariaLabel="Trust MFA of this provider" bind:checked={provider.trust_mfa}>
+                Trust MFA of this provider
+            </InputCheckbox>
+            {#if provider.trust_mfa}
+                <div class="grid gap-1 text-sm" transition:slide={{ duration: 150 }}>
+                    <p class="text-muted-foreground">
+                        Every login through this provider counts as an MFA login, so clients that force
+                        MFA accept it and the user is not asked for a second factor again. Use this only
+                        when the provider enforces its own second factor for every account.
+                    </p>
+                    <p class="text-destructive">
+                        CAUTION: If the provider allows password-only accounts, such as a public Google
+                        account, a client that forces MFA can then be entered without any second factor.
+                    </p>
                 </div>
             {/if}
         </FormSection>

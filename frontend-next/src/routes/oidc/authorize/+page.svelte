@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import * as Card from '$lib/components/ui/card';
     import { formatDateFromTs, normalizeClientUri, saveCsrfToken } from '$utils/helpers';
     import Button from '$lib5/button/Button.svelte';
@@ -498,6 +499,20 @@
             fwda,
             ...(isAtproto && { handle: atprotoHandle }),
         };
+        // The page that comes back from the provider cannot know which application this was for. It
+        // needs that to tell the user what is missing, and to send them back after they filled it in.
+        try {
+            localStorage.setItem(
+                'rauthy_login_client',
+                JSON.stringify({
+                    id: clientId,
+                    name: clientName,
+                    ret: window.location.pathname + window.location.search,
+                }),
+            );
+        } catch {
+            // private mode: the callback page then offers the plain account page
+        }
         execProviderLogin(payload).then(errMsg => {
             err = errMsg || '';
             isLoading = false;
@@ -750,14 +765,14 @@
                 {/if}
 
                 {#if err}
-                    <p class="text-destructive text-center text-sm" role="alert">
+                    <ErrorAlert>
                         {err}
-                    </p>
-                    {#if err === passkeyDiscoverErr}
-                        <p class="text-destructive text-center text-sm">
-                            {t.authorize.passkeyNotDiscovered}
-                        </p>
-                    {/if}
+                        {#if err === passkeyDiscoverErr}
+                            <span class="text-muted-foreground mt-1 block">
+                                {t.authorize.passkeyNotDiscovered}
+                            </span>
+                        {/if}
+                    </ErrorAlert>
                 {/if}
 
                 {#if emailSuccess}

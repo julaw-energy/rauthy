@@ -12,6 +12,7 @@ rauthy-error = { path = "../error" }
 
 actix-web = { workspace = true }
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
 regex = { workspace = true }
 hiqlite = { workspace = true }
 openssl = { workspace = true }

@@ -149,6 +149,7 @@ impl Client {
             client_secret_post: false,
             auto_onboarding: false,
             auto_link: false,
+            trust_mfa: false,
             client_id: "rauthy".to_owned(),
             client_secret: None,
             scope: String::new(),

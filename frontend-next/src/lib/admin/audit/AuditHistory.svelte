@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { fetchGet } from '$api/fetch';
     import type { AuditEntry, AuditSummary } from '$api/types/events';
     import Button from '$lib5/button/Button.svelte';
@@ -87,7 +88,7 @@
     </div>
 
     {#if err}
-        <p class="text-destructive text-sm">{err}</p>
+        <ErrorAlert {err} />
     {/if}
 
     <ol class="grid gap-2">

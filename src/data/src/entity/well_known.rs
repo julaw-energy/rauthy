@@ -76,6 +76,63 @@ impl WellKnown {
         Ok(json)
     }
 
+    /// The document for a caller that reached Rauthy with `host` in its `Host` header.
+    ///
+    /// The document is built for the public address, and so are all the URLs in it. A service on
+    /// the same network as Rauthy (`rauthy:8080` in a Docker network) should not send its token and
+    /// JWKS requests out through the public proxy and back, and it cannot call the public `https`
+    /// address at all when it has no route to it. So when `host` is one of
+    /// `server.internal_hosts`, the endpoints that SERVICES call move to that host. What a browser is
+    /// sent to and the `issuer`, which must be the `iss` of the tokens, always stay public. Any other
+    /// host, or none, gets the public document, whatever it claims to be.
+    pub async fn json_for(host: Option<&str>) -> Result<String, ErrorResponse> {
+        let Some(host) = host.and_then(Self::internal_host) else {
+            return Self::json().await;
+        };
+
+        let idx = Self::internal_idx(&host);
+        if let Some(cached) = DB::hql().get(Cache::App, idx.clone()).await? {
+            return Ok(cached);
+        }
+
+        let public = Self::json().await?;
+        let base = format!("{}://{host}/auth/v1/", Self::internal_scheme(&host));
+        let json = internalize(&public, &RauthyConfig::get().issuer, &base)?;
+        DB::hql().put(Cache::App, idx, &json, CACHE_TTL_APP).await?;
+        Ok(json)
+    }
+
+    /// `host` as it is written in `server.internal_hosts`, if it is listed there.
+    fn internal_host(host: &str) -> Option<String> {
+        let host = host.trim().to_ascii_lowercase();
+        RauthyConfig::get()
+            .vars
+            .server
+            .internal_hosts
+            .contains(&host)
+            .then_some(host)
+    }
+
+    fn internal_idx(host: &str) -> String {
+        format!("{IDX}-internal-{host}")
+    }
+
+    /// Plain `http` inside the network, unless Rauthy only serves `https` or the caller used the
+    /// `https` port of a listener that serves both.
+    fn internal_scheme(host: &str) -> &'static str {
+        use crate::ListenScheme;
+        let c = RauthyConfig::get();
+        match c.listen_scheme {
+            ListenScheme::Https => "https",
+            ListenScheme::HttpHttps
+                if host.ends_with(&format!(":{}", c.vars.server.port_https)) =>
+            {
+                "https"
+            }
+            _ => "http",
+        }
+    }
+
     /// Rebuilds the WellKnown, serializes it as json and updates it inside the cache.
     /// Should be called after any update on the Scopes.
     pub async fn rebuild() -> Result<(), ErrorResponse> {
@@ -88,9 +145,40 @@ impl WellKnown {
         let json = serde_json::to_string(&slf)?;
 
         DB::hql().put(Cache::App, IDX, &json, CACHE_TTL_APP).await?;
+        // the documents for the internal hosts are made from this one: they are built again on demand
+        for host in &RauthyConfig::get().vars.server.internal_hosts {
+            DB::hql()
+                .delete(Cache::App, Self::internal_idx(host))
+                .await?;
+        }
 
         Ok(())
     }
+}
+
+/// The endpoints other SERVICES call: the back channel. A browser is never sent to these.
+const BACK_CHANNEL: &[&str] = &[
+    "token_endpoint",
+    "userinfo_endpoint",
+    "jwks_uri",
+    "introspection_endpoint",
+    "revocation_endpoint",
+];
+
+/// Moves the back channel endpoints of a discovery document from the `issuer` URL to `base`.
+/// Everything else, the `issuer` included, is left as it is.
+fn internalize(public_json: &str, issuer: &str, base: &str) -> Result<String, ErrorResponse> {
+    let mut doc: serde_json::Value = serde_json::from_str(public_json)?;
+    if let Some(map) = doc.as_object_mut() {
+        for key in BACK_CHANNEL {
+            if let Some(serde_json::Value::String(url)) = map.get_mut(*key)
+                && let Some(rest) = url.strip_prefix(issuer)
+            {
+                *url = format!("{base}{rest}");
+            }
+        }
+    }
+    Ok(serde_json::to_string(&doc)?)
 }
 
 impl WellKnown {
@@ -170,5 +258,84 @@ impl WellKnown {
             authorization_response_iss_parameter_supported: true,
             client_id_metadata_document_supported: true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ISSUER: &str = "https://accounts.example.com/auth/v1/";
+
+    fn public() -> String {
+        serde_json::json!({
+            "issuer": ISSUER,
+            "authorization_endpoint": format!("{ISSUER}oidc/authorize"),
+            "device_authorization_endpoint": format!("{ISSUER}oidc/device"),
+            "token_endpoint": format!("{ISSUER}oidc/token"),
+            "introspection_endpoint": format!("{ISSUER}oidc/introspect"),
+            "revocation_endpoint": format!("{ISSUER}oidc/token/revoke"),
+            "userinfo_endpoint": format!("{ISSUER}oidc/userinfo"),
+            "end_session_endpoint": format!("{ISSUER}oidc/logout"),
+            "registration_endpoint": format!("{ISSUER}clients_dyn"),
+            "jwks_uri": format!("{ISSUER}oidc/certs"),
+            "scopes_supported": ["openid", "email"],
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn services_get_the_back_channel_on_the_internal_host() {
+        let json = internalize(&public(), ISSUER, "http://rauthy:8080/auth/v1/").unwrap();
+        let doc: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let get = |k: &str| doc[k].as_str().unwrap().to_string();
+
+        // what services call: inside the network
+        assert_eq!(
+            get("token_endpoint"),
+            "http://rauthy:8080/auth/v1/oidc/token"
+        );
+        assert_eq!(
+            get("userinfo_endpoint"),
+            "http://rauthy:8080/auth/v1/oidc/userinfo"
+        );
+        assert_eq!(get("jwks_uri"), "http://rauthy:8080/auth/v1/oidc/certs");
+        assert_eq!(
+            get("introspection_endpoint"),
+            "http://rauthy:8080/auth/v1/oidc/introspect"
+        );
+        assert_eq!(
+            get("revocation_endpoint"),
+            "http://rauthy:8080/auth/v1/oidc/token/revoke"
+        );
+
+        // what a browser is sent to, and the issuer: public
+        assert_eq!(get("issuer"), ISSUER);
+        assert_eq!(
+            get("authorization_endpoint"),
+            format!("{ISSUER}oidc/authorize")
+        );
+        assert_eq!(
+            get("device_authorization_endpoint"),
+            format!("{ISSUER}oidc/device")
+        );
+        assert_eq!(get("end_session_endpoint"), format!("{ISSUER}oidc/logout"));
+        assert_eq!(get("registration_endpoint"), format!("{ISSUER}clients_dyn"));
+        assert_eq!(
+            doc["scopes_supported"],
+            serde_json::json!(["openid", "email"])
+        );
+    }
+
+    #[test]
+    fn an_endpoint_that_is_not_under_the_issuer_is_left_alone() {
+        let json = serde_json::json!({
+            "issuer": ISSUER,
+            "token_endpoint": "https://elsewhere.example.com/token",
+        })
+        .to_string();
+        let out = internalize(&json, ISSUER, "http://rauthy:8080/auth/v1/").unwrap();
+        let doc: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(doc["token_endpoint"], "https://elsewhere.example.com/token");
     }
 }

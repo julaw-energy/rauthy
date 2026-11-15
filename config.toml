@@ -2615,6 +2615,23 @@ proxy_mode = false
 # overwritten by: TRUSTED_PROXIES - single String, \n separated values
 trusted_proxies = ['127.0.0.1/32']
 
+# Other services that reach Rauthy directly, not through the proxy, for example
+# from the same Docker network as `rauthy:8080`. The OIDC discovery document is built for
+# the public address (`pub_url`), and so are the URLs in it. A request to
+# `/.well-known/openid-configuration` that arrives with one of these names in its `Host`
+# header gets the endpoints that other services call (`token_endpoint`, `userinfo_endpoint`,
+# `jwks_uri`, `introspection_endpoint`, `revocation_endpoint`) at that address, over the
+# network they are on. Everything a browser is sent to (`authorize`, `logout`, `device`) and the
+# `issuer`, which must match the `iss` of the tokens, stay public. Requests through the proxy
+# carry the public host and are answered as before.
+#
+# Only `host[:port]`, lower case, no scheme and no path. A name that is not listed here is
+# never used, whatever a request sends.
+#
+# default: []
+# overwritten by: INTERNAL_HOSTS - single String, \n separated values
+#internal_hosts = ['rauthy:8080']
+
 # To bring support for applications using deep-linking, you
 # can set custom URL schemes to be accepted when present in
 # the `Origin` header. For instance, a Tauri app would set

@@ -10,6 +10,27 @@ rollout), not only what changed.
 
 ---
 
+## v0.37.2-custom.9 (2026-11-16)
+
+UI only, no migration and no config change. A build of custom.8 can be replaced by this one without any step.
+
+### Changes
+
+- **Consents in the "Connected apps" tab of the new UI.** Upstream's consent feature (`[consent]`, off by default) records
+  what each app may do and lets the user revoke it. Our "Connected apps" tab shows the scopes, the resource and the date
+  of a recorded consent next to the app, with a two-step "Revoke access" button (revoking removes the refresh tokens of
+  the app). Nothing changes while consents are off. Upstream has no consent step at login, so there is nothing else to port.
+- **SvelteKit 3 and current tools for the new UI** (`frontend-next`): SvelteKit 3.2, adapter-static 4, Vite 8.3.8,
+  Svelte 5.57.3, Tailwind 4.3.5. This is the same major version upstream's UI has now. The SvelteKit configuration moved
+  from `svelte.config.js` into `vite.config.ts` (SvelteKit 3 does not read the old file), `$lib` is kept as an alias for
+  the shadcn components. All 46 pages pass the build check.
+
+### Docs
+
+- custom.8's notes claimed that `force_mfa` is enforced on all user grants. That was wrong: upstream checks it when a
+  device is approved, the password grant and the token exchange cannot do MFA and do not check it. Corrected here and
+  in the GitHub Release of custom.8.
+
 ## v0.37.2-custom.8 (2026-11-16)
 
 Merges upstream `main` (`b76a0728`, 12 Nov 2026, 55 commits after 0.37.2, not a tagged upstream release yet) and moves the
@@ -27,8 +48,9 @@ Merges upstream `main` (`b76a0728`, 12 Nov 2026, 55 commits after 0.37.2, not a 
 
 ### Security (from upstream)
 
-- The group prefix and `force_mfa` are enforced on all user grants, the device grant checks the user and the MFA again
-  on approval.
+- The group prefix is checked in the password grant, and so in LDAP binds. The device grant checks the user again and
+  checks `force_mfa` when the device is approved. The password grant and the token exchange cannot do MFA and do not
+  check `force_mfa`, that is by design.
 - Token exchange is limited to the scopes of the exchanging client and to the lifetime of the subject token and the user.
 - The Forward Auth cookie cannot be replayed as a Rauthy session any more, and is separated per client.
 - Refresh tokens are bound to their client. Logout tokens with an `iat` in the future are refused, the `exp` check uses

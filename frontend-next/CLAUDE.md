@@ -7,7 +7,7 @@ SvelteKit 2 + Svelte 5 (runes) + TS + Tailwind 4 + shadcn-svelte ("luma") + bits
 
 ## How it mirrors the old UI (read this first)
 - Logic is SHARED, not copied: aliases `$api $state $utils $mfa $i18n $types $workers $wasm` point
-  into `../frontend/src/*` (svelte.config.js). Upstream changes to API types, i18n texts, session
+  into `../frontend/src/*` (`vite.config.ts`, SvelteKit 3 has no svelte.config.js). Upstream changes to API types, i18n texts, session
   logic, passkey code flow in automatically. Only presentation lives here.
 - `$lib5` -> `src/lib`, `$icons` -> `src/icons` (lucide shims with the old Icon* names), so ported
   files keep their imports. Each `src/lib/**.svelte` = old file's `<script>` verbatim + new markup.

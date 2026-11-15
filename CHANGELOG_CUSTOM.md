@@ -10,6 +10,22 @@ rollout), not only what changed.
 
 ---
 
+## v0.37.2-custom.8 (2026-11-15)
+
+Moves the `trust_mfa` migration of custom.7 to where it belongs. No new feature. **Install this before any later build
+that merges upstream's newer migrations.**
+
+### Bugfix
+
+- **`provider_trust_mfa` is a fork migration now.** custom.7 shipped it in upstream's numbered migration folder as 36
+  (Hiqlite) and V31 (Postgres). Upstream has taken exactly those numbers for its own new migrations, so a build that
+  merges them would have refused to start on a database that ran custom.7. It lives in `migrations_fork` as number 15 now.
+  A database that has it in the old place is adopted at the first start: it is recorded as a fork migration and removed
+  from upstream's table (log line `Adopting the fork migration 'provider_trust_mfa'`). The column itself is not touched.
+  Databases that never ran custom.7 get the column from the fork migration as before.
+- **Order of upgrades:** custom.7 -> custom.8 -> any later build. A later build started on a custom.7 database that did
+  not pass custom.8 stops with a migration error. Restore the backup and go through custom.8.
+
 ## v0.37.2-custom.7 (2026-11-15)
 
 Bug fixes for the access rules, plus a trust-MFA switch per provider. **One migration** (adds `auth_providers.trust_mfa`, default false, on Hiqlite and Postgres). No config change.

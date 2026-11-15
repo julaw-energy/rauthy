@@ -38,6 +38,13 @@ const LEGACY: [(&str, i64, i32); 8] = [
     ("attr_verify_channels", 43, 38),
 ];
 
+/// Fork migrations that were released in upstream's numbering AFTER the first 8, `(name, hiqlite
+/// id, postgres version)`. custom.7 shipped `provider_trust_mfa` as 36 / V31, which upstream
+/// uses for its own migrations now. A database that has it there is adopted by the next build
+/// of this fork (custom.8), BEFORE upstream's new migrations are merged in. Going from custom.7
+/// straight to a build with upstream's new 36 fails at startup: that number is taken.
+const LATE: [(&str, i64, i32); 1] = [("provider_trust_mfa", 36, 31)];
+
 #[derive(Debug, Clone)]
 struct Mig {
     id: i64,
@@ -173,6 +180,9 @@ CREATE TABLE IF NOT EXISTS _fork_migrations
         adopt_hiqlite(&migs).await?;
         tracked = tracked_hiqlite().await?;
     }
+    if adopt_late_hiqlite(&migs, &tracked).await? {
+        tracked = tracked_hiqlite().await?;
+    }
 
     let todo = pending(&migs, &tracked);
     if todo.is_empty() {
@@ -265,6 +275,58 @@ async fn adopt_hiqlite(migs: &[Mig]) -> Result<(), ErrorResponse> {
     Ok(())
 }
 
+/// A database that has a late fork migration in upstream's table (custom.7): the column or table
+/// exists already, so the migration must not run again. Record it here, free the number there.
+/// Returns `true` when something was adopted.
+async fn adopt_late_hiqlite(migs: &[Mig], tracked: &[Tracked]) -> Result<bool, ErrorResponse> {
+    let db = DB::hql();
+    let mut adopted = false;
+    for (name, id, _) in LATE {
+        let rows: Vec<Tracked> = db
+            .query_map(
+                "SELECT id, name, hash FROM _migrations WHERE id = $1 AND name = $2",
+                params!(id, name),
+            )
+            .await
+            .unwrap_or_default();
+        if rows.is_empty() {
+            continue;
+        }
+        let idx = migs
+            .iter()
+            .position(|m| m.name == name)
+            .expect("a late fork migration has a file");
+        if tracked.len() != idx {
+            return Err(mig_err(format!(
+                "The database has the fork migration '{name}' in upstream's migration table, but \
+                {} of the {idx} fork migrations before it. This needs a manual look.",
+                tracked.len()
+            )));
+        }
+        warn!("Adopting the fork migration '{name}' from upstream's migration table (id {id})");
+        let m = &migs[idx];
+        let now = chrono::Utc::now().timestamp();
+        let res = db
+            .txn(vec![
+                (
+                    "INSERT INTO _fork_migrations (id, name, hash, ts) VALUES ($1, $2, $3, $4)"
+                        .to_string(),
+                    params!(m.id, m.name.clone(), m.hash.clone(), now),
+                ),
+                (
+                    "DELETE FROM _migrations WHERE id = $1 AND name = $2".to_string(),
+                    params!(id, name),
+                ),
+            ])
+            .await?;
+        if res.iter().any(|r| r.is_err()) {
+            return Err(mig_err(format!("Adopting '{name}' failed: {res:?}")));
+        }
+        adopted = true;
+    }
+    Ok(adopted)
+}
+
 // ---- Postgres ---------------------------------------------------------------------------
 
 async fn tracked_postgres() -> Result<Vec<Tracked>, ErrorResponse> {
@@ -295,6 +357,9 @@ CREATE TABLE IF NOT EXISTS _fork_migrations
 
     if tracked.is_empty() {
         adopt_postgres(&migs).await?;
+        tracked = tracked_postgres().await?;
+    }
+    if adopt_late_postgres(&migs, &tracked).await? {
         tracked = tracked_postgres().await?;
     }
 
@@ -379,6 +444,53 @@ async fn adopt_postgres(migs: &[Mig]) -> Result<(), ErrorResponse> {
     Ok(())
 }
 
+/// Same as `adopt_late_hiqlite`, for the refinery history.
+async fn adopt_late_postgres(migs: &[Mig], tracked: &[Tracked]) -> Result<bool, ErrorResponse> {
+    let mut adopted = false;
+    for (name, _, version) in LATE {
+        let rows: Vec<HistoryRow> = DB::pg_query(
+            "SELECT version, name FROM refinery_schema_history WHERE version = $1 AND name = $2",
+            &[&version, &name],
+            0,
+        )
+        .await
+        .unwrap_or_default();
+        if rows.is_empty() {
+            continue;
+        }
+        let idx = migs
+            .iter()
+            .position(|m| m.name == name)
+            .expect("a late fork migration has a file");
+        if tracked.len() != idx {
+            return Err(mig_err(format!(
+                "The database has the fork migration '{name}' in the refinery history, but {} of \
+                the {idx} fork migrations before it. This needs a manual look.",
+                tracked.len()
+            )));
+        }
+        warn!("Adopting the fork migration '{name}' from the refinery history (V{version})");
+        let m = &migs[idx];
+        let now = chrono::Utc::now().timestamp();
+        let mut cl = DB::pg().await?;
+        let cl = cl.deref_mut().deref_mut();
+        let tx = cl.transaction().await?;
+        tx.execute(
+            "INSERT INTO _fork_migrations (id, name, hash, ts) VALUES ($1, $2, $3, $4)",
+            &[&m.id, &m.name, &m.hash, &now],
+        )
+        .await?;
+        tx.execute(
+            "DELETE FROM refinery_schema_history WHERE version = $1 AND name = $2",
+            &[&version, &name],
+        )
+        .await?;
+        tx.commit().await?;
+        adopted = true;
+    }
+    Ok(adopted)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,6 +509,14 @@ mod tests {
         for (idx, (name, _, _)) in LEGACY.iter().enumerate() {
             assert_eq!(load::<ForkHiqlite>()[idx].name, *name);
             assert_eq!(load::<ForkPostgres>()[idx].name, *name);
+        }
+    }
+
+    #[test]
+    fn late_names_match_the_files() {
+        for (name, _, _) in LATE {
+            assert!(load::<ForkHiqlite>().iter().any(|m| m.name == name));
+            assert!(load::<ForkPostgres>().iter().any(|m| m.name == name));
         }
     }
 

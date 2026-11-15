@@ -261,6 +261,7 @@ pub struct Vars {
     pub atproto: VarsAtproto,
     pub backchannel_logout: VarsBackchannelLogout,
     pub bootstrap: VarsBootstrap,
+    pub consent: VarsConsent,
     pub cred_stuff_detect: VarsCredStuff,
     pub database: VarsDatabase,
     pub device_grant: VarsDeviceGrant,
@@ -277,6 +278,7 @@ pub struct Vars {
     pub http_client: VarsHttpClient,
     pub i18n: VarsI18n,
     pub lifetimes: VarsLifetimes,
+    pub ldap: VarsLdap,
     pub logging: VarsLogging,
     pub matrix: VarsMatrix,
     pub mfa: VarsMfa,
@@ -323,6 +325,7 @@ impl Default for Vars {
                 token_revoke_device_tokens: false,
                 whoami_headers: false,
                 admin_button_hide: false,
+                password_reset_link_always: false,
                 redirect_root_to_account: false,
             },
             auth_headers: VarsAuthHeaders {
@@ -356,7 +359,9 @@ impl Default for Vars {
                 bootstrap_dir: "bootstrap".into(),
                 generated_secrets_file: String::new().into(),
                 generated_secrets_ttl: Duration::from_secs(600),
+                reconcile: false,
             },
+            consent: VarsConsent { enable: false },
             cred_stuff_detect: VarsCredStuff {
                 blacklist_duration: Duration::from_secs(24 * 3600),
                 blacklist_threshold: 15,
@@ -508,11 +513,13 @@ impl Default for Vars {
                 level_backchannel_logout_failed: EventLevel::Critical,
                 level_force_logout: EventLevel::Notice,
                 level_user_login_revoke: EventLevel::Warning,
+                level_consent_revoked: EventLevel::Notice,
                 level_scim_task_failed: EventLevel::Critical,
                 level_email_send_error: EventLevel::Critical,
                 level_suspicious_request: EventLevel::Notice,
                 level_new_login_location: EventLevel::Notice,
                 level_token_issued: EventLevel::Info,
+                level_ldap_login: EventLevel::Info,
                 level_failed_logins_25: EventLevel::Critical,
                 level_failed_logins_20: EventLevel::Critical,
                 level_failed_logins_15: EventLevel::Warning,
@@ -614,6 +621,17 @@ impl Default for Vars {
                 email: VarsOtpEmail {
                     enable: true,
                 },
+            },
+            ldap: VarsLdap {
+                enable: false,
+                listen_address: "0.0.0.0".into(),
+                port: 6360,
+                base_dn: "dc=rauthy,dc=local".into(),
+                cert_path: None,
+                key_path: None,
+                plain_text: false,
+                disable_ip_brute_force_protection: false,
+                max_connections: 1000,
             },
             pam: VarsPam {
                 remote_password_len: 24,
@@ -1361,6 +1379,7 @@ Your account has not been compromised and no data was leaked."#.into()),
                 tz: UserValueConfigValue::Optional,
                 revalidate_during_login: false,
                 name_order_reverse: false,
+                password_reset_redirect_timeout: 5,
                 preferred_username: VarsUserPreferredUsername {
                     preferred_username: UserValueConfigValue::Optional,
                     immutable: true,
@@ -1440,6 +1459,7 @@ impl Vars {
         slf.parse_auth_headers(&mut table);
         slf.parse_backchannel_logout(&mut table);
         slf.parse_bootstrap(&mut table);
+        slf.parse_consent(&mut table);
         slf.parse_cred_stuff(&mut table);
         slf.parse_database(&mut table, &mut secrets);
         slf.parse_device_grant(&mut table);
@@ -1457,6 +1477,7 @@ impl Vars {
         slf.parse_http_client(&mut table);
         slf.parse_i18n(&mut table);
         slf.parse_lifetimes(&mut table);
+        slf.parse_ldap(&mut table);
         slf.parse_logging(&mut table);
         slf.parse_matrix(&mut table);
         slf.parse_mfa(&mut table);
@@ -1624,6 +1645,14 @@ impl Vars {
             "ADMIN_BUTTON_HIDE",
         ) {
             self.access.admin_button_hide = v;
+        }
+        if let Some(v) = t_bool(
+            &mut table,
+            "access",
+            "password_reset_link_always",
+            "PASSWORD_RESET_LINK_ALWAYS",
+        ) {
+            self.access.password_reset_link_always = v;
         }
         if let Some(v) = t_bool(
             &mut table,
@@ -1824,6 +1853,9 @@ impl Vars {
         ) {
             self.bootstrap.generated_secrets_ttl = v;
         }
+        if let Some(v) = t_bool(&mut table, "bootstrap", "reconcile", "BOOTSTRAP_RECONCILE") {
+            self.bootstrap.reconcile = v;
+        }
 
         check_table_empty(table, "bootstrap");
     }
@@ -1833,6 +1865,16 @@ impl Vars {
             self.bootstrap.generated_secrets_file =
                 generated_secrets::default_file_path(&node_config.data_dir).into();
         }
+    }
+
+    fn parse_consent(&mut self, table: &mut toml::Table) {
+        let mut table = t_table(table, "consent");
+
+        if let Some(v) = t_bool(&mut table, "consent", "enable", "CONSENT_ENABLE") {
+            self.consent.enable = v;
+        }
+
+        check_table_empty(table, "consent");
     }
 
     fn parse_cred_stuff(&mut self, table: &mut toml::Table) {
@@ -2756,6 +2798,15 @@ impl Vars {
         if let Some(v) = t_str(
             &mut table,
             "events",
+            "level_consent_revoked",
+            "EVENT_LEVEL_CONSENT_REVOKED",
+        ) {
+            self.events.level_consent_revoked =
+                EventLevel::from_str(&v).expect("Cannot parse EventLevel for consent_revoked");
+        }
+        if let Some(v) = t_str(
+            &mut table,
+            "events",
             "level_scim_task_failed",
             "EVENT_LEVEL_SCIM_TASK_FAILED",
         ) {
@@ -2788,6 +2839,15 @@ impl Vars {
         ) {
             self.events.level_token_issued =
                 EventLevel::from_str(&v).expect("Cannot parse EventLevel for level_token_issued");
+        }
+        if let Some(v) = t_str(
+            &mut table,
+            "events",
+            "level_ldap_login",
+            "EVENT_LEVEL_LDAP_LOGIN",
+        ) {
+            self.events.level_ldap_login =
+                EventLevel::from_str(&v).expect("Cannot parse EventLevel for level_ldap_login");
         }
 
         if let Some(v) = t_str(
@@ -3273,6 +3333,61 @@ impl Vars {
         }
 
         check_table_empty(table, "mfa");
+    }
+
+    fn parse_ldap(&mut self, table: &mut toml::Table) {
+        let mut table = t_table(table, "ldap");
+
+        if let Some(v) = t_bool(&mut table, "ldap", "enable", "LDAP_ENABLE") {
+            self.ldap.enable = v;
+        }
+        if let Some(v) = t_str(&mut table, "ldap", "listen_address", "LDAP_LISTEN_ADDRESS") {
+            self.ldap.listen_address = v;
+        }
+        if let Some(v) = t_u16(&mut table, "ldap", "port", "LDAP_PORT") {
+            self.ldap.port = v;
+        }
+        if let Some(v) = t_str(&mut table, "ldap", "base_dn", "LDAP_BASE_DN") {
+            self.ldap.base_dn = v.to_lowercase();
+        }
+        // shortcut: does not handle escaped `,` / `=`, which no sane base DN contains
+        let base_dn_valid = self.ldap.base_dn.split(',').all(|rdn| {
+            rdn.split_once('=')
+                .is_some_and(|(k, v)| !k.trim().is_empty() && !v.trim().is_empty())
+        });
+        if !base_dn_valid {
+            panic!("ldap.base_dn '{}' is not a valid DN", self.ldap.base_dn);
+        }
+        self.ldap.cert_path = t_str(&mut table, "ldap", "cert_path", "LDAP_TLS_CERT");
+        self.ldap.key_path = t_str(&mut table, "ldap", "key_path", "LDAP_TLS_KEY");
+        if self.ldap.cert_path.is_some() != self.ldap.key_path.is_some() {
+            panic!("ldap.cert_path and ldap.key_path must be set together");
+        }
+        if let Some(v) = t_bool(&mut table, "ldap", "plain_text", "LDAP_PLAIN_TEXT") {
+            self.ldap.plain_text = v;
+        }
+
+        if let Some(v) = t_bool(
+            &mut table,
+            "ldap",
+            "disable_ip_brute_force_protection",
+            "LDAP_DISABLE_IP_BRUTE_FORCE_PROTECTION",
+        ) {
+            self.ldap.disable_ip_brute_force_protection = v;
+        }
+        if let Some(v) = t_u32(
+            &mut table,
+            "ldap",
+            "max_connections",
+            "LDAP_MAX_CONNECTIONS",
+        ) {
+            if v == 0 {
+                panic!("ldap.max_connections must be greater than 0");
+            }
+            self.ldap.max_connections = v;
+        }
+
+        check_table_empty(table, "ldap");
     }
 
     fn parse_pam(&mut self, table: &mut toml::Table) {
@@ -3906,6 +4021,14 @@ impl Vars {
         ) {
             self.user_registration.domain_blacklist = v;
         }
+        if let Some(v) = t_bool(
+            &mut table,
+            "user_registration",
+            "allow_open_redirect",
+            "USER_REG_OPEN_REDIRECT",
+        ) {
+            self.user_registration.allow_open_redirect = v;
+        }
 
         check_table_empty(table, "user_registration");
     }
@@ -3959,6 +4082,14 @@ impl Vars {
             "USER_VALUES_NAME_ORDER_REVERSE",
         ) {
             self.user_values.name_order_reverse = v;
+        }
+        if let Some(v) = t_u16(
+            &mut table,
+            "user_values",
+            "password_reset_redirect_timeout",
+            "PASSWORD_RESET_REDIRECT_TIMEOUT",
+        ) {
+            self.user_values.password_reset_redirect_timeout = v;
         }
 
         let mut pref_username = t_table(&mut table, "preferred_username");
@@ -4156,7 +4287,14 @@ impl Vars {
         if let Err(err) = validate_max_document_bytes(self.ephemeral_clients.max_document_bytes) {
             panic!("{err}");
         }
+
+        validate_cron("geo.maxmind_update_cron", &self.geo.maxmind_update_cron);
+        validate_cron(
+            "lifetimes.jwk_autorotate_cron",
+            &self.lifetimes.jwk_autorotate_cron,
+        );
         self.validate_ephemeral_clients();
+        self.validate_ldap();
 
         if self.dynamic_clients.enable && self.dynamic_clients.reg_token.is_none() {
             warn!(
@@ -4230,6 +4368,12 @@ impl Vars {
 }
 
 impl Vars {
+    fn validate_ldap(&self) {
+        if self.ldap.plain_text && !self.server.proxy_mode {
+            panic!("ldap.plain_text requires server.proxy_mode, TLS must be terminated by a proxy");
+        }
+    }
+
     /// Only enforced for an enabled feature and an explicitly set `default_scopes`.
     fn validate_ephemeral_clients(&self) {
         let eph = &self.ephemeral_clients;
@@ -4281,6 +4425,7 @@ pub struct VarsAccess {
     pub token_revoke_device_tokens: bool,
     pub whoami_headers: bool,
     pub admin_button_hide: bool,
+    pub password_reset_link_always: bool,
     pub redirect_root_to_account: bool,
 }
 
@@ -4320,6 +4465,12 @@ pub struct VarsBootstrap {
     pub bootstrap_dir: Cow<'static, str>,
     pub generated_secrets_file: Cow<'static, str>,
     pub generated_secrets_ttl: Duration,
+    pub reconcile: bool,
+}
+
+#[derive(Debug)]
+pub struct VarsConsent {
+    pub enable: bool,
 }
 
 #[derive(Debug)]
@@ -4469,6 +4620,16 @@ pub fn validate_max_document_bytes(v: u32) -> Result<(), String> {
     }
 }
 
+/// Schedulers `.unwrap()` the parsed cron and its next occurrence inside a spawned task, where a
+/// panic would only be logged and silently stop the job - so reject such values at startup.
+pub fn validate_cron(key: &str, v: &str) {
+    let schedule = cron::Schedule::from_str(v)
+        .unwrap_or_else(|err| panic!("Invalid cron expression for `{key}`: {err}"));
+    if schedule.upcoming(chrono::Utc).next().is_none() {
+        panic!("`{key}` has no future occurrence: {v}");
+    }
+}
+
 #[derive(Debug)]
 pub struct VarsEphemeralClients {
     pub enable: bool,
@@ -4548,11 +4709,13 @@ pub struct VarsEvents {
     pub level_backchannel_logout_failed: EventLevel,
     pub level_force_logout: EventLevel,
     pub level_user_login_revoke: EventLevel,
+    pub level_consent_revoked: EventLevel,
     pub level_scim_task_failed: EventLevel,
     pub level_email_send_error: EventLevel,
     pub level_suspicious_request: EventLevel,
     pub level_new_login_location: EventLevel,
     pub level_token_issued: EventLevel,
+    pub level_ldap_login: EventLevel,
 
     pub level_failed_logins_25: EventLevel,
     pub level_failed_logins_20: EventLevel,
@@ -4653,6 +4816,24 @@ pub struct VarsOtp {
 #[derive(Debug)]
 pub struct VarsOtpEmail {
     pub enable: bool,
+}
+
+#[derive(Debug)]
+pub struct VarsLdap {
+    pub enable: bool,
+    pub listen_address: String,
+    pub port: u16,
+    /// Always lowercase.
+    pub base_dn: String,
+    /// `None` reuses the `[tls]` certificate.
+    pub cert_path: Option<String>,
+    pub key_path: Option<String>,
+    /// Serves plain LDAP without TLS, only allowed with `server.proxy_mode`.
+    pub plain_text: bool,
+    /// Skips the per-IP brute-force checks for user binds, the per-user counter still applies.
+    pub disable_ip_brute_force_protection: bool,
+    /// Open connections at most, further ones wait until one is closed.
+    pub max_connections: u32,
 }
 
 #[derive(Debug)]
@@ -4815,6 +4996,7 @@ pub struct VarsUserValuesConfig {
     pub tz: UserValueConfigValue,
     pub revalidate_during_login: bool,
     pub name_order_reverse: bool,
+    pub password_reset_redirect_timeout: u16,
     pub preferred_username: VarsUserPreferredUsername,
 }
 
@@ -5154,7 +5336,7 @@ pub fn t_str_vec(
     }
 
     let Value::Array(arr) = value? else {
-        return None;
+        panic!("{}", err_t(key, parent, "Array of Strings"));
     };
     let mut res = Vec::with_capacity(arr.len());
     for value in arr {
@@ -5208,6 +5390,88 @@ pub fn err_t(key: &str, parent: &str, typ: &str) -> String {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn consent_enable() {
+        let mut vars = Vars::default();
+        vars.parse_consent(&mut toml::Table::new());
+        assert!(!vars.consent.enable);
+
+        let mut table: toml::Table = toml::from_str("[consent]\nenable = true").unwrap();
+        vars.parse_consent(&mut table);
+        assert!(vars.consent.enable);
+    }
+
+    #[test]
+    fn consent_revoked_event_level() {
+        let mut vars = Vars::default();
+        assert_eq!(vars.events.level_consent_revoked, EventLevel::Notice);
+
+        let mut table: toml::Table =
+            toml::from_str("[events]\nlevel_consent_revoked = 'critical'").unwrap();
+        vars.parse_events(&mut table, &mut RauthySecrets::default());
+        assert_eq!(vars.events.level_consent_revoked, EventLevel::Critical);
+    }
+
+    #[test]
+    fn user_registration_allow_open_redirect() {
+        let mut vars = Vars::default();
+        assert!(!vars.user_registration.allow_open_redirect);
+
+        let mut table: toml::Table =
+            toml::from_str("[user_registration]\nallow_open_redirect = true").unwrap();
+        vars.parse_user_registration(&mut table);
+        assert!(vars.user_registration.allow_open_redirect);
+    }
+
+    #[test]
+    #[should_panic(expected = "Array of Strings")]
+    fn test_t_str_vec_rejects_string() {
+        let mut table: toml::Table = toml::from_str("domain_blacklist = 'x'").unwrap();
+        t_str_vec(&mut table, "user_registration", "domain_blacklist", "");
+    }
+
+    #[test]
+    fn ldap() {
+        let mut vars = Vars::default();
+        vars.parse_ldap(&mut toml::Table::new());
+        assert!(!vars.ldap.enable);
+        assert_eq!(vars.ldap.port, 6360);
+        assert!(vars.ldap.cert_path.is_none());
+        assert!(!vars.ldap.disable_ip_brute_force_protection);
+        assert_eq!(vars.ldap.max_connections, 1000);
+
+        let mut table: toml::Table = toml::from_str(
+            "[ldap]\nenable = true\nport = 636\nbase_dn = 'DC=Example,DC=com'\ncert_path = 'c'\nkey_path = 'k'\nplain_text = true\ndisable_ip_brute_force_protection = true\nmax_connections = 10",
+        )
+        .unwrap();
+        vars.parse_ldap(&mut table);
+        assert!(vars.ldap.enable);
+        assert_eq!(vars.ldap.port, 636);
+        assert_eq!(vars.ldap.base_dn, "dc=example,dc=com");
+        assert_eq!(vars.ldap.cert_path.as_deref(), Some("c"));
+        assert!(vars.ldap.plain_text);
+        assert!(vars.ldap.disable_ip_brute_force_protection);
+        assert_eq!(vars.ldap.max_connections, 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "requires server.proxy_mode")]
+    fn ldap_plain_text_without_proxy_mode() {
+        let mut vars = Vars::default();
+        vars.ldap.plain_text = true;
+        vars.server.proxy_mode = true;
+        vars.validate_ldap();
+        vars.server.proxy_mode = false;
+        vars.validate_ldap();
+    }
+
+    #[test]
+    #[should_panic(expected = "not a valid DN")]
+    fn ldap_invalid_base_dn() {
+        let mut table: toml::Table = toml::from_str("[ldap]\nbase_dn = 'rauthy.local'").unwrap();
+        Vars::default().parse_ldap(&mut table);
+    }
 
     #[test]
     fn test_parse_duration() {
@@ -5437,5 +5701,24 @@ default_scopes = ['profile']
     fn validate_ephemeral_default_scopes_is_skipped_when_disabled() {
         eph_vars(false, &["openid"], &["groups"]).validate_ephemeral_clients();
         eph_vars(false, &["openid"], &[]).validate_ephemeral_clients();
+    }
+
+    #[test]
+    fn validate_cron_accepts_valid_schedule() {
+        validate_cron("lifetimes.jwk_autorotate_cron", "0 30 3 1 * * *");
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid cron expression for `lifetimes.jwk_autorotate_cron`")]
+    fn validate_cron_rejects_unparsable_schedule() {
+        // 5-field crontab syntax is not what the `cron` crate expects
+        validate_cron("lifetimes.jwk_autorotate_cron", "30 3 1 * *");
+    }
+
+    #[test]
+    #[should_panic(expected = "`geo.maxmind_update_cron` has no future occurrence")]
+    fn validate_cron_rejects_exhausted_schedule() {
+        // valid syntax, but the year is in the past -> never fires again
+        validate_cron("geo.maxmind_update_cron", "0 30 3 1 * * 2020");
     }
 }

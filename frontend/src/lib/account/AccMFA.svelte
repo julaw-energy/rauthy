@@ -1,33 +1,33 @@
 <script lang="ts">
-    import Button from '$lib5/button/Button.svelte';
+    import Button from '#lib/button/Button.svelte';
     import { onMount, untrack } from 'svelte';
-    import Input from '$lib5/form/Input.svelte';
-    import { useI18n } from '$state/i18n.svelte.js';
-    import { useSession } from '$state/session.svelte.js';
-    import { fetchDelete, fetchGet, fetchPost } from '$api/fetch';
-    import type { PasskeyResponse, WebauthnDeleteRequest } from '$api/types/webauthn.ts';
-    import type { UserResponse } from '$api/types/user.ts';
-    import { PATTERN_USER_NAME } from '$utils/patterns';
-    import { webauthnReg } from '$mfa/webauthn/registration';
-    import WebauthnRequest from '$lib5/WebauthnRequest.svelte';
-    import type { WebauthnAdditionalData, WebauthnServiceReq } from '$mfa/webauthn/types.ts';
-    import UserPasskey from '$lib5/UserPasskey.svelte';
-    import type { MfaModTokenResponse, UserMfaTokenRequest } from '$api/types/mfa_mod_token';
-    import Modal from '$lib/Modal.svelte';
-    import InputPassword from '$lib/form/InputPassword.svelte';
-    import Form from '$lib/form/Form.svelte';
-    import IconArrowPathSquare from '$icons/IconArrowPathSquare.svelte';
-    import Template from '$lib5/Template.svelte';
-    import { TPL_OTP_LENGTH, TPL_IS_OTP_ENABLED } from '$utils/constants';
-    import type { OtpResponse } from '$api/types/otp';
-    import { deleteOtp, postOtp, putOtp } from '$mfa/otp/mod';
-    import type { MfaPurpose } from '$api/types/mfa';
-    import type { OtpAdditionalData, OtpKind, OtpServiceReq } from '$mfa/otp/types';
-    import UserOtp from '$lib5/UserOtp.svelte';
-    import OtpRequest from '$lib5/OtpRequest.svelte';
-    import InputOtp from '$lib5/form/InputOtp.svelte';
-    import IconCheck from '$icons/IconCheck.svelte';
-    import PasskeyTypeSelect from '$lib/PasskeyTypeSelect.svelte';
+    import Input from '#lib/form/Input.svelte';
+    import { useI18n } from '#state/i18n.svelte.js';
+    import { useSession } from '#state/session.svelte.js';
+    import { fetchDelete, fetchGet, fetchPost } from '#api/fetch.ts';
+    import type { PasskeyResponse, WebauthnDeleteRequest } from '#api/types/webauthn.ts';
+    import type { UserResponse } from '#api/types/user.ts';
+    import { PATTERN_USER_NAME } from '#utils/patterns.ts';
+    import { webauthnReg } from '#mfa/webauthn/registration.ts';
+    import WebauthnRequest from '#lib/WebauthnRequest.svelte';
+    import type { WebauthnAdditionalData, WebauthnServiceReq } from '#mfa/webauthn/types.ts';
+    import UserPasskey from '#lib/UserPasskey.svelte';
+    import type { MfaModTokenResponse, UserMfaTokenRequest } from '#api/types/mfa_mod_token.ts';
+    import Modal from '#lib/Modal.svelte';
+    import InputPassword from '#lib/form/InputPassword.svelte';
+    import Form from '#lib/form/Form.svelte';
+    import IconArrowPathSquare from '#icons/IconArrowPathSquare.svelte';
+    import Template from '#lib/Template.svelte';
+    import { TPL_OTP_LENGTH, TPL_IS_OTP_ENABLED } from '#utils/constants.ts';
+    import type { OtpResponse } from '#api/types/otp.ts';
+    import { deleteOtp, postOtp, putOtp } from '#mfa/otp/mod.ts';
+    import type { MfaPurpose } from '#api/types/mfa.ts';
+    import type { OtpAdditionalData, OtpKind, OtpServiceReq } from '#mfa/otp/types.ts';
+    import UserOtp from '#lib/UserOtp.svelte';
+    import OtpRequest from '#lib/OtpRequest.svelte';
+    import InputOtp from '#lib/form/InputOtp.svelte';
+    import IconCheck from '#icons/IconCheck.svelte';
+    import PasskeyTypeSelect from '#lib/PasskeyTypeSelect.svelte';
 
     let { user = $bindable() }: { user: UserResponse } = $props();
 
@@ -76,7 +76,9 @@
 
     type RegType = undefined | 'passkey' | 'otp';
     // Saves the type of the reg button the user clicked before fetching an MFA mod token, so that
-    // we can show the correct input after a successful fetch.
+    // we can resume that action after a successful fetch. It is consumed by the resume itself and
+    // dropped when the re-authentication is aborted, so that an old click cannot trigger an action
+    // after an unrelated successful fetch.
     let requestedBeforeTokenFetch: RegType = $state(undefined);
 
     onMount(() => {
@@ -111,8 +113,12 @@
         }
     });
 
+    let submittedOtp = '';
+
     $effect(() => {
-        if (mfaModToken && otpValueNew.replaceAll(' ', '').length === otpSize) {
+        const code = otpValueNew.replaceAll(' ', '');
+        if (mfaModToken && code.length === otpSize && code !== submittedOtp) {
+            submittedOtp = code;
             handleActivateOtp();
         }
     });
@@ -246,9 +252,7 @@
             // a bigger setup that is not implemented so far for this special case. That could be
             // improved in the future.
             await fetchMfaToken({});
-            if (mfaModToken) {
-                showPasskeyInput = true;
-            } else {
+            if (!mfaModToken) {
                 console.error('Could not fetch MFA mod token for federated user');
             }
         } else {
@@ -288,16 +292,13 @@
             requestedBeforeTokenFetch = 'otp';
             if (isUserFederatedOnly) {
                 await fetchMfaToken({});
-                if (mfaModToken) {
-                    tokenId = mfaModToken.id;
-                } else {
+                if (!mfaModToken) {
                     console.error('Error fetching MFA mod token for federated-only user');
-                    return;
                 }
             } else {
                 showModal = true;
-                return;
             }
+            return;
         }
 
         let res = await postOtp(userId, otpKind, otpName, tokenId);
@@ -400,10 +401,13 @@
                 calcModSecs();
             }, 1000);
 
-            if (requestedBeforeTokenFetch == 'passkey') {
+            let action = requestedBeforeTokenFetch;
+            requestedBeforeTokenFetch = undefined;
+
+            if (action === 'passkey') {
                 showPasskeyInput = true;
-            } else if (requestedBeforeTokenFetch == 'otp') {
-                showOtpInput = true;
+            } else if (action === 'otp') {
+                await handleCreateOtp();
             }
         } else {
             pwdErr = t.mfa.passwordInvalid;
@@ -443,6 +447,7 @@
         msg = error;
         mfaPurpose = undefined;
         mfaKind = undefined;
+        requestedBeforeTokenFetch = undefined;
         setTimeout(() => {
             err = false;
             msg = '';
@@ -481,6 +486,15 @@
 
         mfaKind = undefined;
         mfaPurpose = undefined;
+    }
+
+    // A closed re-auth modal without a token means the user aborted, and the action it was about
+    // to perform must not be resumed by any later fetch. A close that only hands over to the
+    // selected method keeps it.
+    function onMfaModalClose() {
+        if (!mfaModToken && !mfaPurpose) {
+            requestedBeforeTokenFetch = undefined;
+        }
     }
 </script>
 
@@ -647,7 +661,7 @@
     </div>
 </div>
 
-<Modal bind:showModal bind:closeModal>
+<Modal bind:showModal bind:closeModal onClose={onMfaModalClose}>
     {#if user.webauthn_user_id}
         <p style:max-width="20rem">
             {t.mfa.reAuthenticatePasskey}

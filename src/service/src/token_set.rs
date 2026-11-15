@@ -73,6 +73,14 @@ impl AtHash {
         let (left_bits, _) = bytes.split_at(bytes.len() / 2);
         Self(base64_url_no_pad_encode(left_bits))
     }
+
+    /// OIDC Core 3.1.3.6: `at_hash` uses the hash of the ID token's `alg`.
+    pub fn for_client(access_token: &[u8], client: &Client) -> Result<Self, ErrorResponse> {
+        Ok(Self::build(
+            access_token,
+            AtHashAlg::try_from(client.id_token_alg.as_str())?,
+        ))
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -249,8 +257,12 @@ impl TokenSet {
                     };
                     for cust_name in csv.split(',') {
                         if let Some(value) = user_attrs.get(cust_name) {
-                            let json = serde_json::from_slice(value.as_slice())
-                                .expect("Converting cust user id attr to json");
+                            let json = serde_json::from_slice(value.as_slice()).map_err(|err| {
+                                ErrorResponse::new(
+                                    ErrorResponseType::Internal,
+                                    format!("Converting cust user id attr to json: {err}"),
+                                )
+                            })?;
                             target.insert(cust_name.to_string(), json);
                         }
                     }
@@ -463,8 +475,12 @@ impl TokenSet {
                     };
                     for cust_name in csv.split(',') {
                         if let Some(value) = user_attrs.get(cust_name) {
-                            let json = serde_json::from_slice(value.as_slice())
-                                .expect("Converting cust user id attr to json");
+                            let json = serde_json::from_slice(value.as_slice()).map_err(|err| {
+                                ErrorResponse::new(
+                                    ErrorResponseType::Internal,
+                                    format!("Converting cust user id attr to json: {err}"),
+                                )
+                            })?;
                             target.insert(cust_name.to_string(), json);
                         }
                     }
@@ -579,6 +595,7 @@ impl TokenSet {
                 is_mfa,
                 sid.map(|s| s.0),
                 Some(jti.0),
+                client,
             )
             .await?;
         }
@@ -628,6 +645,7 @@ impl TokenSet {
     pub async fn for_token_exchange(
         user: Option<&User>,
         client: &Client,
+        lifetime: i64,
         dpop_fingerprint: Option<DpopFingerprint>,
         scope: TokenScopes<'_>,
         resource: Option<&str>,
@@ -679,7 +697,7 @@ impl TokenSet {
             user,
             client,
             dpop_fingerprint,
-            client.access_token_lifetime as i64,
+            lifetime,
             TokenScopes::new(scope.0.as_ref()),
             customs_access,
             None,
@@ -693,7 +711,7 @@ impl TokenSet {
             access_token,
             token_type,
             id_token: None,
-            expires_in: client.access_token_lifetime,
+            expires_in: lifetime as i32,
             refresh_token: None,
             scope: Some(scope.0.into_owned()),
         })
@@ -806,10 +824,7 @@ impl TokenSet {
         )
         .await?;
 
-        let at_hash = AtHash::build(
-            access_token.as_bytes(),
-            AtHashAlg::try_from(client.access_token_alg.as_str())?,
-        );
+        let at_hash = AtHash::for_client(access_token.as_bytes(), client)?;
         let id_token = Self::build_id_token(
             user,
             client,
@@ -879,5 +894,16 @@ mod tests {
 
         let sha512 = AtHash::build(ref_token, AtHashAlg::Sha512);
         assert_eq!(&sha512.0, "p2LHG4H-8pYDc0hyVOo3iIHvZJUqe9tbj3jESOuXbkY");
+    }
+
+    #[test]
+    fn test_at_hash_uses_id_token_alg() {
+        let client = Client {
+            access_token_alg: "RS256".to_string(),
+            id_token_alg: "EdDSA".to_string(),
+            ..Default::default()
+        };
+        let at_hash = AtHash::for_client(b"token", &client).unwrap();
+        assert_eq!(at_hash.0, AtHash::build(b"token", AtHashAlg::Sha512).0);
     }
 }

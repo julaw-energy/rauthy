@@ -1,21 +1,21 @@
 <script lang="ts">
-    import Button from '$lib5/button/Button.svelte';
+    import Button from '#lib/button/Button.svelte';
     import { fade } from 'svelte/transition';
-    import AccModPwd from '$lib5/account/AccModPwd.svelte';
-    import WebauthnRequest from '$lib5/WebauthnRequest.svelte';
-    import CheckIcon from '$lib5/CheckIcon.svelte';
-    import { useI18n } from '$state/i18n.svelte.js';
-    import type { UpdateUserSelfRequest, UserResponse } from '$api/types/user.ts';
-    import type { AuthProviderTemplate } from '$api/templates/AuthProvider.ts';
-    import IconCheck from '$icons/IconCheck.svelte';
+    import AccModPwd from '#lib/account/AccModPwd.svelte';
+    import WebauthnRequest from '#lib/WebauthnRequest.svelte';
+    import CheckIcon from '#lib/CheckIcon.svelte';
+    import { useI18n } from '#state/i18n.svelte.js';
+    import type { UpdateUserSelfRequest, UserResponse } from '#api/types/user.ts';
+    import type { AuthProviderTemplate } from '#api/templates/AuthProvider.ts';
+    import IconCheck from '#icons/IconCheck.svelte';
     import type { PropsPassword } from './props.ts';
-    import { fetchGet, fetchPost, fetchPut } from '$api/fetch';
-    import type { WebauthnAdditionalData } from '$mfa/webauthn/types.js';
-    import type { PasskeyResponse } from '$api/types/webauthn.ts';
+    import { fetchGet, fetchPost, fetchPut } from '#api/fetch.ts';
+    import type { WebauthnAdditionalData } from '#mfa/webauthn/types.js';
+    import type { PasskeyResponse } from '#api/types/webauthn.ts';
     import { onMount } from 'svelte';
-    import type { RequestResetRequest } from '$api/types/authorize.ts';
-    import { fetchSolvePow } from '$utils/pow';
-    import type { MfaPurpose } from '$api/types/mfa.js';
+    import type { RequestResetRequest } from '#api/types/authorize.ts';
+    import { fetchSolvePow } from '#utils/pow.ts';
+    import type { MfaPurpose } from '#api/types/mfa.js';
 
     let {
         user = $bindable(),
@@ -95,8 +95,28 @@
 
         isLoading = true;
 
+        // The self-update endpoint replaces the whole profile with what it receives, so send the
+        // current profile values along with the password, normalized the same way as in
+        // `AccEdit.svelte`. Otherwise a password change would clear them.
+        let values = user.user_values;
+        let tz = values?.tz || undefined;
+        if (tz === 'Etc/UTC' || tz === 'UTC') {
+            tz = undefined;
+        }
+
         let payload: UpdateUserSelfRequest = {
+            given_name: user.given_name || undefined,
+            family_name: user.family_name || undefined,
             password_new: passwords.new,
+            user_values: {
+                birthdate: values?.birthdate || undefined,
+                phone: values?.phone || undefined,
+                street: values?.street || undefined,
+                zip: values?.zip || undefined,
+                city: values?.city || undefined,
+                country: values?.country || undefined,
+                tz,
+            },
         };
         if (mfaCode) {
             payload.mfa_code = mfaCode;

@@ -1,35 +1,36 @@
 <script lang="ts">
-    import { normalizeClientUri, redirectToLogout } from '$utils/helpers';
-    import AccInfo from '$lib5/account/AccInfo.svelte';
-    import AccEdit from '$lib5/account/AccEdit.svelte';
+    import { normalizeClientUri, redirectToLogout } from '#utils/helpers.ts';
+    import AccInfo from '#lib/account/AccInfo.svelte';
+    import AccEdit from '#lib/account/AccEdit.svelte';
     import AccMFA from './AccMFA.svelte';
     import AccPassword from './AccPassword.svelte';
     import AccWebId from './AccWebId.svelte';
-    import AccDevices from '$lib5/account/AccDevices.svelte';
-    import { useI18n } from '$state/i18n.svelte.js';
-    import type { UserResponse } from '$api/types/user.ts';
-    import { TPL_AUTH_PROVIDERS, TPL_USER_VALUES_CONFIG } from '$utils/constants';
-    import Template from '$lib5/Template.svelte';
-    import type { AuthProvidersTemplate } from '$api/templates/AuthProvider.ts';
+    import AccDevices from '#lib/account/AccDevices.svelte';
+    import { useI18n } from '#state/i18n.svelte.js';
+    import type { UserResponse } from '#api/types/user.ts';
+    import { TPL_AUTH_PROVIDERS, TPL_USER_VALUES_CONFIG } from '#utils/constants.ts';
+    import Template from '#lib/Template.svelte';
+    import type { AuthProvidersTemplate } from '#api/templates/AuthProvider.ts';
     import { onMount } from 'svelte';
-    import { useParam } from '$state/param.svelte';
-    import Tabs from '$lib5/tabs/Tabs.svelte';
-    import Devices from '$lib5/devices/Devices.svelte';
-    import type { WebIdResponse } from '$api/types/web_id.ts';
-    import IconLogout from '$icons/IconLogout.svelte';
-    import IconUserGroup from '$icons/IconUserGroup.svelte';
-    import Button from '$lib/button/Button.svelte';
-    import A from '$lib5/A.svelte';
-    import ThemeSwitch from '$lib5/ThemeSwitch.svelte';
-    import LangSelector from '$lib5/LangSelector.svelte';
-    import { useSession } from '$state/session.svelte';
-    import AccOther from '$lib/account/AccOther.svelte';
-    import AccPAM from '$lib/account/AccPAM.svelte';
-    import type { PamUserResponse } from '$api/types/pam';
-    import { fetchGet, fetchPost } from '$api/fetch';
-    import type { UserValuesConfig } from '$api/templates/UserValuesConfig';
-    import IconHome from '$icons/IconHome.svelte';
-    import IconArrowLeft from '$icons/IconArrowLeft.svelte';
+    import { useParam } from '#state/param.svelte.ts';
+    import Tabs from '#lib/tabs/Tabs.svelte';
+    import Devices from '#lib/devices/Devices.svelte';
+    import type { WebIdResponse } from '#api/types/web_id.ts';
+    import IconLogout from '#icons/IconLogout.svelte';
+    import IconUserGroup from '#icons/IconUserGroup.svelte';
+    import Button from '#lib/button/Button.svelte';
+    import A from '#lib/A.svelte';
+    import ThemeSwitch from '#lib/ThemeSwitch.svelte';
+    import LangSelector from '#lib/LangSelector.svelte';
+    import { useSession } from '#state/session.svelte.ts';
+    import AccOther from '#lib/account/AccOther.svelte';
+    import AccPAM from '#lib/account/AccPAM.svelte';
+    import AccPrivacy from '#lib/account/AccPrivacy.svelte';
+    import type { PamUserResponse } from '#api/types/pam.ts';
+    import { fetchGet, fetchPost } from '#api/fetch.ts';
+    import type { UserValuesConfig } from '#api/templates/UserValuesConfig.ts';
+    import IconHome from '#icons/IconHome.svelte';
+    import IconArrowLeft from '#icons/IconArrowLeft.svelte';
 
     let {
         user = $bindable(),
@@ -71,7 +72,14 @@
             tabs.push('PAM');
         }
 
-        tabs = [...tabs, t.account.navMfa, t.account.devices, t.account.navEdit, t.common.password];
+        tabs = [
+            ...tabs,
+            t.account.navMfa,
+            t.account.devices,
+            t.account.navEdit,
+            t.common.password,
+            t.account.privacy.privacy,
+        ];
         if (!!webIdData) {
             tabs.push('WebID');
         }
@@ -235,6 +243,8 @@
                     <AccOther {user} />
                 {:else if selected === t.account.devices}
                     <Devices userId={user.id} />
+                {:else if selected === t.account.privacy.privacy}
+                    <AccPrivacy {user} />
                 {/if}
             </div>
         </div>
@@ -276,6 +286,8 @@
                         <AccOther {user} />
                     {:else if selected === t.account.devices}
                         <AccDevices />
+                    {:else if selected === t.account.privacy.privacy}
+                        <AccPrivacy {user} />
                     {/if}
                 </div>
             </div>

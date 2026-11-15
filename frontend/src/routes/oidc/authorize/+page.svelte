@@ -1,9 +1,9 @@
 <script lang="ts">
-    import { formatDateFromTs, normalizeClientUri, saveCsrfToken } from '$utils/helpers';
-    import Button from '$lib5/button/Button.svelte';
-    import WebauthnRequest from '$lib5/WebauthnRequest.svelte';
-    import Input from '$lib5/form/Input.svelte';
-    import LangSelector from '$lib5/LangSelector.svelte';
+    import { formatDateFromTs, normalizeClientUri, saveCsrfToken } from '#utils/helpers.ts';
+    import Button from '#lib/button/Button.svelte';
+    import WebauthnRequest from '#lib/WebauthnRequest.svelte';
+    import Input from '#lib/form/Input.svelte';
+    import LangSelector from '#lib/LangSelector.svelte';
     import {
         IS_DEV,
         TPL_AUTH_PROVIDERS,
@@ -16,18 +16,19 @@
         TPL_LOGIN_ACTION,
         TPL_PASSKEY_REG_TYPE,
         TPL_ATPROTO_ID,
-    } from '$utils/constants.js';
-    import IconHome from '$icons/IconHome.svelte';
-    import Main from '$lib5/Main.svelte';
-    import ContentCenter from '$lib5/ContentCenter.svelte';
-    import { useI18n } from '$state/i18n.svelte';
-    import Template from '$lib5/Template.svelte';
-    import { useParam } from '$state/param.svelte';
-    import ThemeSwitch from '$lib5/ThemeSwitch.svelte';
-    import type { AuthProviderTemplate } from '$api/templates/AuthProvider.ts';
-    import InputPassword from '$lib5/form/InputPassword.svelte';
-    import type { WebauthnAdditionalData } from '$mfa/webauthn/types.ts';
-    import { fetchGet, fetchPost, type IResponse } from '$api/fetch';
+        TPL_PASSWORD_RESET_LINK_ALWAYS,
+    } from '#utils/constants.js';
+    import IconHome from '#icons/IconHome.svelte';
+    import Main from '#lib/Main.svelte';
+    import ContentCenter from '#lib/ContentCenter.svelte';
+    import { useI18n } from '#state/i18n.svelte.ts';
+    import Template from '#lib/Template.svelte';
+    import { useParam } from '#state/param.svelte.ts';
+    import ThemeSwitch from '#lib/ThemeSwitch.svelte';
+    import type { AuthProviderTemplate } from '#api/templates/AuthProvider.ts';
+    import InputPassword from '#lib/form/InputPassword.svelte';
+    import type { WebauthnAdditionalData } from '#mfa/webauthn/types.ts';
+    import { fetchGet, fetchPost, type IResponse } from '#api/fetch.ts';
     import type {
         ActiveOtp,
         CodeChallengeMethod,
@@ -36,24 +37,24 @@
         OtpLoginResponse,
         RequestResetRequest,
         WebauthnLoginResponse,
-    } from '$api/types/authorize.ts';
-    import Form from '$lib5/form/Form.svelte';
-    import ButtonAuthProvider from '$lib5/ButtonAuthProvider.svelte';
+    } from '#api/types/authorize.ts';
+    import Form from '#lib/form/Form.svelte';
+    import ButtonAuthProvider from '#lib/ButtonAuthProvider.svelte';
     import { onMount } from 'svelte';
-    import type { SessionInfoResponse } from '$api/types/session.ts';
-    import ClientLogo from '$lib5/ClientLogo.svelte';
-    import type { ProviderLoginRequest } from '$api/types/auth_provider.ts';
-    import { fetchSolvePow } from '$utils/pow';
-    import { PATTERN_ATPROTO_ID } from '$utils/patterns';
-    import type { ToSAwaitLoginResponse, ToSLatestResponse } from '$api/types/tos';
-    import TosAccept from '$lib/TosAccept.svelte';
-    import { execProviderLogin } from '$utils/login';
-    import Modal from '$lib/Modal.svelte';
-    import Loading from '$lib/Loading.svelte';
-    import OtpRequest from '$lib5/OtpRequest.svelte';
-    import type { MfaPurpose } from '$api/types/mfa';
-    import type { OtpAdditionalData } from '$mfa/otp/types';
-    import IconKey from '$icons/IconKey.svelte';
+    import type { SessionInfoResponse } from '#api/types/session.ts';
+    import ClientLogo from '#lib/ClientLogo.svelte';
+    import type { ProviderLoginRequest } from '#api/types/auth_provider.ts';
+    import { fetchSolvePow } from '#utils/pow.ts';
+    import { PATTERN_ATPROTO_ID } from '#utils/patterns.ts';
+    import type { ToSAwaitLoginResponse, ToSLatestResponse } from '#api/types/tos.ts';
+    import TosAccept from '#lib/TosAccept.svelte';
+    import { execProviderLogin } from '#utils/login.ts';
+    import Modal from '#lib/Modal.svelte';
+    import Loading from '#lib/Loading.svelte';
+    import OtpRequest from '#lib/OtpRequest.svelte';
+    import type { MfaPurpose } from '#api/types/mfa.ts';
+    import type { OtpAdditionalData } from '#mfa/otp/types.ts';
+    import IconKey from '#icons/IconKey.svelte';
 
     const inputWidth = '18rem';
 
@@ -98,6 +99,7 @@
     let clientMfaForce = $state(false);
     let showReset = $state(false);
     let showResetRequest = $state(false);
+    let resetLinkAlways = $state(false);
     let emailSuccess = $state(false);
     let tooManyRequests = $state(false);
     let emailAfterSubmit = $state('');
@@ -118,6 +120,16 @@
     let password = $state('');
     let showPasswordInput = $derived(
         needsPassword && existingMfaUser !== email && !showReset && !isAtproto,
+    );
+    let showResetLink = $derived(
+        !tooManyRequests &&
+            (resetLinkAlways ? !showReset && !isAtproto : showResetRequest && showPasswordInput),
+    );
+    let showRegLink = $derived(
+        isRegOpen &&
+            !tooManyRequests &&
+            !isAtproto &&
+            !(resetLinkAlways ? showReset : showResetRequest),
     );
 
     let tos: undefined | ToSLatestResponse = $state();
@@ -436,14 +448,19 @@
                 tooManyRequests = false;
                 err = '';
             }, diff);
-        } else if (!needsPassword) {
+        } else if (res.status === 0 || res.status >= 500) {
+            // network or server error -> not a credentials problem
+            err = res.error?.message || '';
+        } else if (res.status === 401 && !needsPassword) {
             // this will happen always if the user does the first try with a password-only account
             // the good thing about this is, that it is a prevention against autofill passwords from the browser
             needsPassword = true;
             emailAfterSubmit = email;
-        } else {
+        } else if (res.status === 401) {
             err = t.authorize.invalidCredentials;
             showResetRequest = true;
+        } else {
+            err = res.error?.message || `HTTP ${res.status}`;
         }
     }
 
@@ -555,6 +572,11 @@
     }
 
     async function requestReset() {
+        if (!email) {
+            err = t.authorize.validEmail;
+            return;
+        }
+        err = '';
         isLoading = true;
         let pow = (await fetchSolvePow()) || '';
 
@@ -594,6 +616,7 @@
 <Template id={TPL_CSRF_TOKEN} bind:value={csrfToken} />
 <Template id={TPL_LOGIN_ACTION} bind:value={loginAction} />
 <Template id={TPL_IS_REG_OPEN} bind:value={isRegOpen} />
+<Template id={TPL_PASSWORD_RESET_LINK_ALWAYS} bind:value={resetLinkAlways} />
 <Template id={TPL_PASSKEY_REG_TYPE} bind:value={passkeyRegType} />
 
 <Main>
@@ -690,21 +713,21 @@
                                 width={inputWidth}
                                 required
                             />
-
-                            {#if showResetRequest && !tooManyRequests}
-                                <div class="forgotten">
-                                    <Button
-                                        ariaLabel={t.authorize.passwordForgotten}
-                                        invisible
-                                        onclick={handleShowReset}
-                                    >
-                                        {t.authorize.passwordForgotten}
-                                    </Button>
-                                </div>
-                            {/if}
                         {:else}
                             <!-- This only exists to help password managers to trigger an auto-fill  -->
                             <input type="password" hidden aria-hidden="true" style:display="none" />
+                        {/if}
+
+                        {#if showResetLink}
+                            <div class="forgotten">
+                                <Button
+                                    ariaLabel={t.authorize.passwordForgotten}
+                                    invisible
+                                    onclick={handleShowReset}
+                                >
+                                    {t.authorize.passwordForgotten}
+                                </Button>
+                            </div>
                         {/if}
 
                         {#if !tooManyRequests && !clientMfaForce}
@@ -744,7 +767,7 @@
                         {/if}
                     </Form>
 
-                    {#if isRegOpen && !showResetRequest && !tooManyRequests && !isAtproto}
+                    {#if showRegLink}
                         {#if clientUri}
                             <a
                                 class="reg"
@@ -814,7 +837,7 @@
                                 >
                                     <div class="flex gap-05">
                                         <IconKey width="1.2rem" />
-                                        Passkey
+                                        {t.authorize.passkey}
                                     </div>
                                 </Button>
                             </div>

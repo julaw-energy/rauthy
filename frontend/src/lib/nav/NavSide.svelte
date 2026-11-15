@@ -1,34 +1,34 @@
 <script lang="ts">
-    import ThemeSwitch from '$lib5/ThemeSwitch.svelte';
-    import Button from '$lib5/button/Button.svelte';
-    import LangSelector from '$lib5/LangSelector.svelte';
+    import ThemeSwitch from '#lib/ThemeSwitch.svelte';
+    import Button from '#lib/button/Button.svelte';
+    import LangSelector from '#lib/LangSelector.svelte';
     import { page } from '$app/state';
     import AppVersion from '../AppVersion.svelte';
-    import RauthyLogo from '$lib5/RauthyLogo.svelte';
-    import NavLink from '$lib5/nav/NavLink.svelte';
-    import IconArrowPathSquare from '$icons/IconArrowPathSquare.svelte';
-    import IconUserGroup from '$icons/IconUserGroup.svelte';
-    import IconDocText from '$icons/IconDocText.svelte';
-    import IconOffice from '$icons/IconOffice.svelte';
-    import IconShieldCheck from '$icons/IconShieldCheck.svelte';
-    import IconUser from '$icons/IconUser.svelte';
-    import IconId from '$icons/IconId.svelte';
-    import IconBell from '$icons/IconBell.svelte';
-    import IconStop from '$icons/IconStop.svelte';
-    import IconKey from '$icons/IconKey.svelte';
-    import IconCloud from '$icons/IconCloud.svelte';
-    import IconWrenchScrew from '$icons/IconWrenchScrew.svelte';
-    import IconBookOpen from '$icons/IconBookOpen.svelte';
-    import IconCheckBadge from '$icons/IconCheckBadge.svelte';
-    import { useI18nAdmin } from '$state/i18n_admin.svelte';
-    import IconLogout from '$icons/IconLogout.svelte';
-    import IconUserCircle from '$icons/IconUserCircle.svelte';
-    import { redirectToLogout } from '$utils/helpers';
-    import A from '$lib5/A.svelte';
-    import Tooltip from '$lib5/Tooltip.svelte';
-    import IconCommandLine from '$icons/IconCommandLine.svelte';
-    import IconCircleStack from '$icons/IconCircleStack.svelte';
-    import { useSession } from '$state/session.svelte';
+    import RauthyLogo from '#lib/RauthyLogo.svelte';
+    import NavLink from '#lib/nav/NavLink.svelte';
+    import IconArrowPathSquare from '#icons/IconArrowPathSquare.svelte';
+    import IconUserGroup from '#icons/IconUserGroup.svelte';
+    import IconDocText from '#icons/IconDocText.svelte';
+    import IconOffice from '#icons/IconOffice.svelte';
+    import IconShieldCheck from '#icons/IconShieldCheck.svelte';
+    import IconUser from '#icons/IconUser.svelte';
+    import IconId from '#icons/IconId.svelte';
+    import IconBell from '#icons/IconBell.svelte';
+    import IconStop from '#icons/IconStop.svelte';
+    import IconKey from '#icons/IconKey.svelte';
+    import IconCloud from '#icons/IconCloud.svelte';
+    import IconWrenchScrew from '#icons/IconWrenchScrew.svelte';
+    import IconBookOpen from '#icons/IconBookOpen.svelte';
+    import IconCheckBadge from '#icons/IconCheckBadge.svelte';
+    import { useI18nAdmin } from '#state/i18n_admin.svelte.ts';
+    import IconLogout from '#icons/IconLogout.svelte';
+    import IconUserCircle from '#icons/IconUserCircle.svelte';
+    import { redirectToLogout } from '#utils/helpers.ts';
+    import A from '#lib/A.svelte';
+    import Tooltip from '#lib/Tooltip.svelte';
+    import IconCommandLine from '#icons/IconCommandLine.svelte';
+    import IconCircleStack from '#icons/IconCircleStack.svelte';
+    import { useSession } from '#state/session.svelte.ts';
 
     let ta = useI18nAdmin();
 
@@ -136,13 +136,13 @@
             </div>
         </div>
 
-        <div class="scrollable-content">
-            {#if !collapsed}
+        {#if !collapsed}
+            <div class="scrollable-content">
                 <div class="logo">
                     <RauthyLogo width={compact ? '3rem' : '7rem'} />
                 </div>
 
-                <div class="menu" style:margin-top={compact ? '.5rem' : '1.5rem'}>
+                <div class="menu" data-compact={compact}>
                     <NavLink {compact} {params} route="/users">
                         {#snippet icon(width: string)}
                             <IconUser {width} />
@@ -257,10 +257,8 @@
                         {ta.nav.docs}
                     </NavLink>
                 </div>
-            {/if}
-        </div>
+            </div>
 
-        {#if !collapsed}
             <div class="bottom">
                 {#snippet toLogout()}
                     <div class="logout">
@@ -402,6 +400,7 @@
     }
 
     .menu {
+        margin-top: 1.5rem;
         max-height: 85dvh;
         display: flex;
         flex-direction: column;
@@ -409,8 +408,15 @@
         overflow-y: auto;
     }
 
+    .menu[data-compact='true'] {
+        margin-top: 0.5rem;
+        overflow-y: auto;
+        overflow-x: hidden;
+        white-space: nowrap;
+    }
+
     nav[data-compact='true'] .menu {
-        max-height: 80dvh;
+        max-height: calc(100dvh - 12rem);
     }
 
     .navmod {

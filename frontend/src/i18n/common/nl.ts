@@ -159,6 +159,22 @@ export const I18nNl: I18n = {
             notAvailable: 'Deze naam is niet beschikbaar.',
             preferredUsername: 'Gewenste gebruikersnaam',
         },
+        privacy: {
+            clientId: 'Client-ID',
+            connectedApps: 'Verbonden apps',
+            connectedAppsDesc:
+                'Applicaties die u toestemming heeft gegeven om uw account te gebruiken.',
+            granted: 'Verleend',
+            noConnectedApps: 'Er heeft nog geen applicatie toegang gekregen.',
+            privacy: 'Privacy',
+            resource: 'Resource',
+            revoke: 'Toegang intrekken',
+            revokeDesc:
+                'Intrekken verwijdert de toestemming en de applicatie kan haar toegang niet meer vernieuwen. Access tokens die met de verwijderde refresh tokens zijn uitgegeven, worden ingetrokken bij userinfo en introspectie. Applicaties die hun tokens zelf valideren, kunnen ze nog accepteren tot ze verlopen. De applicatie moet opnieuw om uw toestemming vragen.',
+            scopes: 'Scopes',
+            updated: 'Bijgewerkt',
+            userAgent: 'User-agent',
+        },
         providerLink: 'Account koppelen',
         providerLinkDesc: `U kunt dit account koppelen aan een van de volgende inlogproviders.\nNa
             het activeren van deze functie wordt u doorgestuurd naar de inlogpagina van de gekozen\n
@@ -202,10 +218,12 @@ export const I18nNl: I18n = {
         invalidKeyUsed: 'Ongeldige sleutel',
         login: 'Inloggen',
         mfaAck: 'Bevestigd',
+        mfaOpenApp: 'Open de app om verder te gaan',
         navigateToAccount: 'Account Dashboard',
         needsUserUpdate: `Sommige informatie voor dit account ontbreekt. U moet deze waarden
             bijwerken voordat u kunt doorgaan met inloggen.`,
         orLoginWith: 'of inloggen met',
+        passkey: 'Passkey',
         passkeyNotDiscovered: `Passkeys die niet als Resident Key zijn toegevoegd, kunnen op deze
             manier niet gevonden worden. Voer in plaats daarvan je e-mailadres in.`,
         password: 'Wachtwoord',
@@ -326,6 +344,7 @@ export const I18nNl: I18n = {
     passwordReset: {
         accountLogin: 'Account inloggen',
         badFormat: 'Ongeldig formaat',
+        continueSignIn: 'Doorgaan naar inloggen',
         fidoLink: 'https://fidoalliance.org/fido2',
         generate: 'Genereren',
         newAccDesc1:
@@ -343,7 +362,7 @@ export const I18nNl: I18n = {
         required: 'Verplicht',
         save: 'Opslaan',
         success1: 'Het wachtwoord is succesvol bijgewerkt.',
-        success2: 'U wordt binnenkort doorgestuurd.',
+        success2: 'U wordt over {{ secs }} seconden doorgestuurd.',
         success3: 'Als u niet wordt doorgestuurd, klik dan hier:',
         successPasskey1: 'Uw nieuwe passkey is succesvol geregistreerd.',
         successPasskey2: `Log zo snel mogelijk in op uw account en registreer een tweede

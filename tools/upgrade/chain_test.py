@@ -148,8 +148,12 @@ def log_problems():
         if "panicked" in low:
             bad.append(ln.strip()[:200])
         elif (" ERROR " in ln or " WARN " in ln) and ("migrat" in low or "schema" in low) \
-                and "dev data" not in low:
+                and "dev data" not in low and "found already applied migration" not in low \
+                and "adopting the fork migration" not in low:
             bad.append(ln.strip()[:200])
+    adopted = [ln.strip()[-90:] for ln in text.splitlines() if "Adopting the fork migration" in ln]
+    for a in adopted:
+        print(f"    note: {a}", flush=True)
     return bad[:5]
 
 
@@ -220,7 +224,8 @@ def main():
     ap.add_argument("--candidate", default=DEFAULT_CANDIDATE)
     ap.add_argument("--keep", action="store_true", help="keep the data directory")
     args = ap.parse_args()
-    chain = list(args.images) + [args.candidate]
+    # the candidate runs twice: the second start proves that what the first one did is stable
+    chain = list(args.images) + [args.candidate, args.candidate]
 
     tmp = Path(tempfile.mkdtemp(prefix="rauthy-chain-"))
     data = tmp / "data"

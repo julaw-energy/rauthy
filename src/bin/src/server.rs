@@ -33,6 +33,7 @@ use std::cmp::max;
 use std::error::Error;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 use std::{env, thread};
 use tokio::sync::mpsc;
@@ -191,6 +192,18 @@ pub async fn run(
 
     rauthy_schedulers::spawn();
 
+    if RauthyConfig::get().vars.ldap.enable {
+        let ldap = &RauthyConfig::get().vars.ldap;
+        let tls = match (&ldap.key_path, &ldap.cert_path) {
+            _ if ldap.plain_text => None,
+            (Some(key), Some(cert)) => {
+                Some(tls::load_server_config(key.clone(), cert.clone()).await)
+            }
+            _ => Some(tls::load_tls().await),
+        };
+        tokio::spawn(rauthy_ldap::run(tls.map(Arc::new)));
+    }
+
     if RauthyConfig::get().vars.server.metrics_enable {
         server_with_metrics().await?;
     } else {
@@ -251,6 +264,9 @@ async fn server_with_metrics() -> std::io::Result<()> {
         // no endpoint means it will not expose one, only collect data
         .exclude("/favicon.ico")
         .exclude("/metrics")
+        // Requests that match no route (scans) as one label value, not
+        // one series per path.
+        .mask_unmatched_patterns("UNKNOWN")
         .build()
         .unwrap();
 
@@ -734,6 +750,8 @@ fn api_services() -> actix_web::Scope {
                 .service(users::get_user_missing_fields)
                 .service(users::put_user_device_name)
                 .service(users::delete_user_device)
+                .service(users::get_user_consents)
+                .service(users::delete_user_consent)
                 .service(users::get_user_webid_data)
                 .service(users::put_user_webid_data)
                 .service(users::get_user_email_confirm)

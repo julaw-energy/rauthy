@@ -1,7 +1,7 @@
 <script lang="ts">
-    import A from '$lib5/A.svelte';
+    import A from '#lib/A.svelte';
     import type { Snippet } from 'svelte';
-    import { useTrigger } from '$state/callback.svelte';
+    import { useTrigger } from '#state/callback.svelte.ts';
 
     let {
         compact,
@@ -69,7 +69,13 @@
         flex-direction: column;
         align-items: center;
         font-size: 0.7rem;
-        word-break: break-word;
+    }
+
+    .compact > span {
+        max-width: 100%;
+        white-space: nowrap;
+        overflow-x: hidden;
+        text-overflow: ellipsis;
     }
 
     .compact > span {

@@ -38,6 +38,8 @@ pub struct TplPasswordReset {
     pub magic_link_id: String,
     pub needs_mfa: bool,
     pub password_policy: PasswordPolicyResponse,
+    /// Seconds until the reset page redirects after a successful reset, `0` disables it.
+    pub redirect_timeout: u16,
     pub user_id: String,
 }
 
@@ -66,6 +68,7 @@ pub enum HtmlTemplate {
     OtpLength(u8),
     PasskeyRegType,
     PasswordReset(TplPasswordReset),
+    PasswordResetLinkAlways(bool),
     RestrictedEmailDomain(String),
     StatusCode(StatusCode),
     UserValues,
@@ -94,6 +97,7 @@ impl HtmlTemplate {
             Self::OtpLength(_) => "tpl_otp_length",
             Self::PasskeyRegType => "tpl_passkey_reg_type",
             Self::PasswordReset(_) => "tpl_password_reset",
+            Self::PasswordResetLinkAlways(_) => "tpl_password_reset_link_always",
             Self::RestrictedEmailDomain(_) => "tpl_restricted_email_domain",
             Self::StatusCode(_) => "tpl_status_code",
             Self::UserValues => "tpl_user_values_config",
@@ -123,6 +127,7 @@ impl HtmlTemplate {
             Self::OtpLength(i) => i.to_string(),
             Self::PasskeyRegType => RauthyConfig::get().vars.webauthn.passkey_reg_type_str(),
             Self::PasswordReset(i) => serde_json::to_string(i).unwrap(),
+            Self::PasswordResetLinkAlways(i) => i.to_string(),
             Self::StatusCode(i) => i.to_string(),
             Self::RestrictedEmailDomain(i) => i.to_string(),
             Self::UserValues => crate::settings::user_values_json().to_string(),
@@ -702,7 +707,7 @@ pub struct AdminKVHtml<'a> {
 
 impl AdminKVHtml<'_> {
     pub fn build(lang: &Language, theme_ts: i64) -> String {
-        let res = AdminGroupsHtml {
+        let res = AdminKVHtml {
             lang: lang.html_lang(),
             client_id: "rauthy",
             theme_ts,
@@ -1084,5 +1089,17 @@ impl UserPasswordResetHtml<'_> {
         }
         .render()
         .expect("rendering password_reset.html")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn admin_kv_does_not_render_the_groups_page() {
+        let kv = AdminKVHtml::build(&Language::En, 0);
+        let groups = AdminGroupsHtml::build(&Language::En, 0);
+        assert_ne!(kv, groups);
     }
 }

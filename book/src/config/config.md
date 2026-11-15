@@ -257,6 +257,14 @@ Kubernetes secrets, or simply provide the whole config as one secret (my preferr
 # overwritten by: ADMIN_BUTTON_HIDE
 #admin_button_hide = false
 
+# By default, the 'Password forgotten?' link on the login page will
+# only show up after a failed login. If set to `true`, it will be
+# visible from the start, even before the password input is shown.
+#
+# default: false
+# overwritten by: PASSWORD_RESET_LINK_ALWAYS
+#password_reset_link_always = false
+
 # If set to `true`, requests to `/auth/v1/` will be redirected to
 # `/auth/v1/account` (the account dashboard). This is useful if you want
 # users to land directly on their account page when visiting the root URL.
@@ -372,14 +380,15 @@ Kubernetes secrets, or simply provide the whole config as one secret (my preferr
 # overwritten by: LOGOUT_TOKEN_ALLOW_CLOCK_SKEW
 #allow_clock_skew = '5s'
 
-# The maximum allowed lifetime for Logout Tokens. This value is
+# The maximum allowed age for Logout Tokens. This value is
 # a security check for upstream auth providers. If Rauthy
-# receives a Logout Token, it will check and validate, that the
-# difference between `iat` and `exp` is not greater than
-# `allowed_token_lifetime`. This means Rauthy will reject Logout
-# Tokens from clients with a way too long validity and therefore
-# poor implementations. The RFC states that tokens should be
-# valid for at most 120 seconds.
+# receives a Logout Token, it will reject it when its `iat` is
+# older than `allowed_token_lifetime` plus `allow_clock_skew`.
+# A token whose `iat` lies more than `allow_clock_skew` in the
+# future is rejected as well. The `exp` claim is only checked
+# for expiry, not against this value, so providers issuing
+# tokens with a longer validity keep working. The RFC
+# recommends a validity of at most 120 seconds.
 #
 # type: duration
 # default: '120s'
@@ -494,6 +503,18 @@ Kubernetes secrets, or simply provide the whole config as one secret (my preferr
 # default: '10m'
 # overwritten by: BOOTSTRAP_GENERATED_SECRETS_TTL
 #generated_secrets_ttl = '10m'
+
+# If set to `true`, the `clients.json`, `groups.json`,
+# `roles.json` and `scopes.json` inside `bootstrap_dir` are
+# re-applied on every start, and not only against an empty
+# database. Missing entries are created, changed entries are
+# updated, and nothing is ever deleted. Only the primary node
+# does this. Changes to the files need a restart to be applied.
+# Check the book for the details.
+#
+# default: false
+# overwritten by: BOOTSTRAP_RECONCILE
+#reconcile = false
 
 # This is the directory where the bootstrap logic will look for
 # additional bootstrapping data. It will expect JSON files with
@@ -1431,6 +1452,17 @@ backup_keep_for_local = '3d'
 #
 # default: false
 #HQL_DANGER_RAFT_STATE_RESET=true
+
+[consent]
+# Set to `true` to enable user consent for clients. This feature is
+# still in progress. Currently, it makes a client deletion also delete
+# all legacy refresh tokens (issued before refresh tokens were bound to
+# a client) of all users, and a user's consent revoke also delete that
+# user's legacy refresh tokens.
+#
+# default: false
+# overwritten by: CONSENT_ENABLE
+#enable = false
 
 [cred_stuff_detection]
 ## This section contains values for the credential stuffing
@@ -2381,6 +2413,13 @@ level_secrets_migrated = 'notice'
 # default: warning
 # overwritten by: EVENT_LEVEL_USER_LOGIN_REVOKE
 level_user_login_revoke = 'warning'
+# The level for the generated Event after a user consent
+# for a client has been revoked, either by the user
+# themselves, by an admin or through an API key.
+#
+# default: notice
+# overwritten by: EVENT_LEVEL_CONSENT_REVOKED
+level_consent_revoked = 'notice'
 # The level for the generated Event after a SCIM
 # update task ultimately failed after exceeding
 # all retries.
@@ -2400,6 +2439,12 @@ level_suspicious_request = 'notice'
 # default: info
 # overwritten by: EVENT_LEVEL_TOKEN_ISSUED
 level_token_issued = 'info'
+# The level for the generated Event after a successful
+# LDAP user bind.
+#
+# default: info
+# overwritten by: EVENT_LEVEL_LDAP_LOGIN
+level_ldap_login = 'info'
 
 # The level for the generated Event after certain
 # amounts of false logins from an IP
@@ -2772,6 +2817,80 @@ filter_lang_admin = ['en', 'de', 'es', 'fr', 'ja', 'ko', 'nb', 'nl', 'pt', 'ru',
 # default: "0 30 3 1 * * *"
 # overwritten by: JWK_AUTOROTATE_CRON
 #jwk_autorotate_cron = '0 30 3 1 * * *'
+
+[ldap]
+# Enables a minimal, read-only LDAPS server for clients that can
+# only log in via an LDAP bind, like the Jellyfin LDAP plugin.
+# Only implicit TLS (LDAPS) is supported, no StartTLS.
+# See the book chapter "LDAP" for the directory layout.
+#
+# default: false
+# overwritten by: LDAP_ENABLE
+#enable = false
+
+# The address the LDAPS server listens on.
+#
+# default: '0.0.0.0'
+# overwritten by: LDAP_LISTEN_ADDRESS
+#listen_address = '0.0.0.0'
+
+# The port the LDAPS server listens on.
+#
+# default: 6360
+# overwritten by: LDAP_PORT
+#port = 6360
+
+# The base DN of the directory. Each client gets its own subtree
+# below it at `cn=<client_id>,ou=clients,<base_dn>`.
+#
+# default: 'dc=rauthy,dc=local'
+# overwritten by: LDAP_BASE_DN
+#base_dn = 'dc=rauthy,dc=local'
+
+# TLS certificate and key for the LDAPS server, in PEM format.
+# Both must be set together. If not set, the `[tls]` certificate
+# is used. Set them when Rauthy itself runs plain HTTP behind a
+# reverse proxy that does not terminate TLS for LDAP as well.
+# They are hot-reloaded like the `[tls]` certificate and use
+# `tls.poll_watch_interval` as well.
+#
+# overwritten by: LDAP_TLS_CERT, LDAP_TLS_KEY
+#cert_path = 'tls/ldap.crt'
+#key_path = 'tls/ldap.key'
+
+# Serves plain LDAP without TLS instead of LDAPS, for a reverse
+# proxy that terminates TLS and forwards the raw TCP stream. As a
+# safeguard, this requires `server.proxy_mode = true`. Rauthy
+# then sees the proxy's IP for every LDAP connection, so the
+# per-IP brute-force protection applies to the proxy as a whole.
+# Never expose the plain LDAP port to anything but the proxy.
+#
+# default: false
+# overwritten by: LDAP_PLAIN_TEXT
+#plain_text = false
+
+# Disables the per-IP brute-force protection for LDAP user binds:
+# no credential stuffing detection, no per-IP failed login counter
+# and no IP blacklisting because of failed user binds. Apps like
+# Jellyfin send the binds of all users from a single IP, so a few
+# failed logins from different users would otherwise block the
+# app's IP for everyone. The per-user failed login counter and its
+# login delays still apply, and an already blacklisted IP is still
+# refused. Service binds keep the per-IP protection.
+# CAUTION: a client connecting directly to the LDAPS port can then
+# try passwords across many users without an IP limit. Only enable
+# it when the LDAPS port is reachable for your apps only.
+#
+# default: false
+# overwritten by: LDAP_DISABLE_IP_BRUTE_FORCE_PROTECTION
+#disable_ip_brute_force_protection = false
+
+# The maximum number of open LDAP connections. Further ones wait
+# until a connection is closed.
+#
+# default: 1000
+# overwritten by: LDAP_MAX_CONNECTIONS
+#max_connections = 1000
 
 [logging]
 # This is the log level for stdout logs
@@ -3520,6 +3639,16 @@ storage_type = 'db'
 # default: false
 # overwritten by: USER_VALUES_NAME_ORDER_REVERSE
 #name_order_reverse = false
+
+# Seconds after a successful password reset until the reset
+# page redirects the user, either to the `redirect_uri` of the
+# reset request or to the account dashboard. Set to `0` to
+# disable the redirect: the success message then stays visible
+# with a link to continue.
+#
+# default: 5
+# overwritten by: PASSWORD_RESET_REDIRECT_TIMEOUT
+#password_reset_redirect_timeout = 5
 
 [user_values.preferred_username]
 

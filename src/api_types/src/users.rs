@@ -6,9 +6,9 @@ use crate::generic::Language;
 use crate::oidc::AddressClaim;
 use hiqlite::macros::FromRow;
 use rauthy_common::regex::{
-    RE_ALNUM, RE_ALNUM_48, RE_ALNUM_64, RE_APP_ID, RE_ATTR, RE_ATTR_DESC, RE_CITY, RE_CLIENT_NAME,
-    RE_DATE_STR, RE_GENDER, RE_MFA_CODE, RE_PHONE, RE_PREFERRED_USERNAME, RE_STREET, RE_URI,
-    RE_USER_NAME,
+    RE_ALNUM, RE_ALNUM_48, RE_ALNUM_64, RE_APP_ID, RE_ATTR, RE_ATTR_DESC, RE_CITY, RE_CLIENT_ID,
+    RE_CLIENT_NAME, RE_DATE_STR, RE_GENDER, RE_MFA_CODE, RE_PHONE, RE_PREFERRED_USERNAME,
+    RE_RESOURCE, RE_RESOURCE_OR_EMPTY, RE_STREET, RE_URI, RE_USER_NAME,
 };
 use rauthy_derive::FromPgRow;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::net::IpAddr;
 use std::str::FromStr;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
 #[derive(Serialize, ToSchema)]
@@ -374,6 +374,44 @@ pub struct UserAttrValuesUpdateRequest {
     pub values: Vec<UserAttrValueRequest>,
 }
 
+#[derive(Deserialize, Validate, ToSchema, IntoParams)]
+pub struct UserConsentDeleteParams {
+    /// Validation: `^[a-zA-Z0-9,.:/_\-&?=~#!$'()*+%]{2,256}$`
+    #[validate(regex(
+        path = "*RE_CLIENT_ID",
+        code = "^[a-zA-Z0-9,.:/_\\-&?=~#!$'()*+%]{2,256}$"
+    ))]
+    pub client_id: String,
+    /// Left out for a consent without a resource. An empty value is rejected, unlike the
+    /// `resource` filter of `GET /users/{id}/consents`, where an empty value selects the
+    /// consents without a resource.
+    ///
+    /// Validation: `^[a-zA-Z0-9,.:/_-&?=~!$'()*+%@]{1,1024}$`
+    #[validate(
+        length(max = 1024, code = "^[a-zA-Z0-9,.:/_-&?=~!$'()*+%@]{1,1024}$"),
+        regex(
+            path = "*RE_RESOURCE",
+            code = "^[a-zA-Z0-9,.:/_-&?=~!$'()*+%@]{1,1024}$"
+        )
+    )]
+    pub resource: Option<String>,
+}
+
+#[derive(Deserialize, Validate, ToSchema, IntoParams)]
+pub struct UserConsentsParams {
+    /// Left out for all consents. Only return consents for this resource, or with an empty
+    /// value only the consents without a resource. `DELETE /users/{id}/consents` differs: there,
+    /// a consent without a resource is selected by leaving `resource` out, and an empty value is
+    /// rejected.
+    ///
+    /// Validation: `^[a-zA-Z0-9,.:/_-&?=~!$'()*+%@]{0,1024}$`
+    #[validate(regex(
+        path = "*RE_RESOURCE_OR_EMPTY",
+        code = "^[a-zA-Z0-9,.:/_-&?=~!$'()*+%@]{0,1024}$"
+    ))]
+    pub resource: Option<String>,
+}
+
 #[derive(Deserialize, Validate, ToSchema)]
 pub struct UserRevokeParams {
     /// Validation: IpAddr
@@ -439,6 +477,10 @@ pub struct WebauthnRegFinishRequest {
     /// Validation: `[a-zA-Z0-9]{64}`
     #[validate(regex(path = "*RE_ALNUM_64", code = "[a-zA-Z0-9]{64}"))]
     pub magic_link_id: Option<String>,
+    /// A hint from the UI if `allow_rk` was set during the start of the ceremony. This helps
+    /// improve compatibility with authenticators that do not send any additional information
+    /// whether they created a resident key.
+    pub allow_rk_hint: Option<bool>,
 }
 
 #[derive(Deserialize, Validate, ToSchema)]
@@ -677,6 +719,31 @@ pub struct UserAttrValuesResponse {
 
 #[derive(Serialize, ToSchema)]
 #[cfg_attr(debug_assertions, derive(Deserialize))]
+pub struct UserConsentDeleteResponse {
+    /// `false` if there was no consent to delete
+    pub consent_deleted: bool,
+    pub refresh_tokens_deleted: usize,
+}
+
+#[derive(Serialize, ToSchema)]
+#[cfg_attr(debug_assertions, derive(Deserialize))]
+pub struct UserConsentResponse {
+    pub client_id: String,
+    /// `None` if the client does not exist (anymore), is ephemeral, or has no name
+    pub client_name: Option<String>,
+    /// `None` for a consent without a resource
+    pub resource: Option<String>,
+    pub scopes: Vec<String>,
+    /// Unix timestamp in seconds
+    pub created: i64,
+    /// Unix timestamp in seconds
+    pub updated: i64,
+    /// The user agent of the last consent
+    pub user_agent: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[cfg_attr(debug_assertions, derive(Deserialize))]
 pub struct UserEditableAttrResponse {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -879,4 +946,78 @@ pub struct WebauthnLoginFinishResponse {
 pub struct WebauthnLoginResponse {
     pub code: String,
     pub exp: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn consent_delete_params_resource() {
+        let params = |resource: Option<String>| UserConsentDeleteParams {
+            client_id: "client".to_string(),
+            resource,
+        };
+        assert!(params(None).validate().is_ok());
+        assert!(
+            params(Some("https://api.example.com".to_string()))
+                .validate()
+                .is_ok()
+        );
+        assert!(params(Some(String::new())).validate().is_err());
+        assert!(
+            params(Some("https://api.example.com#frag".to_string()))
+                .validate()
+                .is_err()
+        );
+        let prefix = "https://api.example.com/";
+        let max = format!("{prefix}{}", "a".repeat(1024 - prefix.len()));
+        assert_eq!(max.len(), 1024);
+        assert!(params(Some(max.clone())).validate().is_ok());
+        // an over-long value reports the documented pattern, like an invalid character
+        let err = params(Some(format!("{max}a"))).validate().unwrap_err();
+        let codes = err
+            .field_errors()
+            .get("resource")
+            .unwrap()
+            .iter()
+            .map(|e| e.code.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(codes, ["^[a-zA-Z0-9,.:/_-&?=~!$'()*+%@]{1,1024}$"]);
+        assert!(params(Some(" ".to_string())).validate().is_err());
+        assert!(
+            params(Some("https://api.example.com/ä".to_string()))
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn consents_params_resource() {
+        let params = |resource: Option<String>| UserConsentsParams { resource };
+        assert!(params(None).validate().is_ok());
+        // an empty filter selects the consents without a resource
+        assert!(params(Some(String::new())).validate().is_ok());
+        assert!(
+            params(Some("https://api.example.com/v1?x=1".to_string()))
+                .validate()
+                .is_ok()
+        );
+        assert!(
+            params(Some("https://api.example.com#frag".to_string()))
+                .validate()
+                .is_err()
+        );
+        assert!(params(Some(" ".to_string())).validate().is_err());
+        let prefix = "https://api.example.com/";
+        let max = format!("{prefix}{}", "a".repeat(1024 - prefix.len()));
+        assert_eq!(max.len(), 1024);
+        assert!(params(Some(max.clone())).validate().is_ok());
+        assert!(params(Some(format!("{max}a"))).validate().is_err());
+        assert!(
+            params(Some("https://api.example.com/ä".to_string()))
+                .validate()
+                .is_err()
+        );
+    }
 }

@@ -40,10 +40,27 @@ const LEGACY: [(&str, i64, i32); 8] = [
 
 /// Fork migrations that were released in upstream's numbering AFTER the first 8, `(name, hiqlite
 /// id, postgres version)`. custom.7 shipped `provider_trust_mfa` as 36 / V31, which upstream
-/// uses for its own migrations now. A database that has it there is adopted by the next build
-/// of this fork (custom.8), BEFORE upstream's new migrations are merged in. Going from custom.7
-/// straight to a build with upstream's new 36 fails at startup: that number is taken.
+/// uses for its own migrations now. A database that has it there is adopted at startup, before
+/// upstream's migrations run (`adopt_before_upstream`), so any later build can take that number.
 const LATE: [(&str, i64, i32); 1] = [("provider_trust_mfa", 36, 31)];
+
+const FORK_TABLE_HIQLITE: &str = r#"
+CREATE TABLE IF NOT EXISTS _fork_migrations
+(
+    id   INTEGER NOT NULL CONSTRAINT _fork_migrations_pk PRIMARY KEY,
+    name TEXT    NOT NULL,
+    hash TEXT    NOT NULL,
+    ts   INTEGER NOT NULL
+) STRICT"#;
+
+const FORK_TABLE_POSTGRES: &str = r#"
+CREATE TABLE IF NOT EXISTS _fork_migrations
+(
+    id   BIGINT  NOT NULL CONSTRAINT _fork_migrations_pk PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    hash VARCHAR NOT NULL,
+    ts   BIGINT  NOT NULL
+)"#;
 
 #[derive(Debug, Clone)]
 struct Mig {
@@ -139,6 +156,36 @@ fn pending(migs: &[Mig], tracked: &[Tracked]) -> Vec<Mig> {
     migs.iter().skip(tracked.len()).cloned().collect()
 }
 
+/// Runs BEFORE upstream's migrations. A database that still has fork migrations in upstream's
+/// numbering (the first 8 from custom.1-3, `provider_trust_mfa` from custom.7) is adopted here:
+/// recorded as fork migrations and removed from upstream's table. After that, upstream's
+/// numbers are free, so upstream can use them for its own migrations. Without this the
+/// migration tool of upstream refuses to start: refinery (Postgres) stops on an applied
+/// migration it does not know, and Hiqlite on a different one under the same number.
+pub async fn adopt_before_upstream() -> Result<(), ErrorResponse> {
+    if is_hiqlite() {
+        let db = DB::hql();
+        db.execute(FORK_TABLE_HIQLITE, params!()).await?;
+        let migs = load::<ForkHiqlite>();
+        let mut tracked = tracked_hiqlite().await?;
+        if tracked.is_empty() {
+            adopt_hiqlite(&migs).await?;
+            tracked = tracked_hiqlite().await?;
+        }
+        adopt_late_hiqlite(&migs, &tracked).await?;
+    } else {
+        DB::pg_execute(FORK_TABLE_POSTGRES, &[]).await?;
+        let migs = load::<ForkPostgres>();
+        let mut tracked = tracked_postgres().await?;
+        if tracked.is_empty() {
+            adopt_postgres(&migs).await?;
+            tracked = tracked_postgres().await?;
+        }
+        adopt_late_postgres(&migs, &tracked).await?;
+    }
+    Ok(())
+}
+
 pub async fn apply() -> Result<(), ErrorResponse> {
     if is_hiqlite() {
         apply_hiqlite().await
@@ -160,18 +207,7 @@ async fn tracked_hiqlite() -> Result<Vec<Tracked>, ErrorResponse> {
 
 async fn apply_hiqlite() -> Result<(), ErrorResponse> {
     let db = DB::hql();
-    db.execute(
-        r#"
-CREATE TABLE IF NOT EXISTS _fork_migrations
-(
-    id   INTEGER NOT NULL CONSTRAINT _fork_migrations_pk PRIMARY KEY,
-    name TEXT    NOT NULL,
-    hash TEXT    NOT NULL,
-    ts   INTEGER NOT NULL
-) STRICT"#,
-        params!(),
-    )
-    .await?;
+    db.execute(FORK_TABLE_HIQLITE, params!()).await?;
 
     let migs = load::<ForkHiqlite>();
     let mut tracked = tracked_hiqlite().await?;
@@ -339,18 +375,7 @@ async fn tracked_postgres() -> Result<Vec<Tracked>, ErrorResponse> {
 }
 
 async fn apply_postgres() -> Result<(), ErrorResponse> {
-    DB::pg_execute(
-        r#"
-CREATE TABLE IF NOT EXISTS _fork_migrations
-(
-    id   BIGINT  NOT NULL CONSTRAINT _fork_migrations_pk PRIMARY KEY,
-    name VARCHAR NOT NULL,
-    hash VARCHAR NOT NULL,
-    ts   BIGINT  NOT NULL
-)"#,
-        &[],
-    )
-    .await?;
+    DB::pg_execute(FORK_TABLE_POSTGRES, &[]).await?;
 
     let migs = load::<ForkPostgres>();
     let mut tracked = tracked_postgres().await?;

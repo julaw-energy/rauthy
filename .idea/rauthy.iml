@@ -19,6 +19,7 @@
       <sourceFolder url="file://$MODULE_DIR$/src/macros/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/rauthy-client/examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/rauthy-client/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/i18n/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/book/book" />
       <excludeFolder url="file://$MODULE_DIR$/data" />
       <excludeFolder url="file://$MODULE_DIR$/docs" />

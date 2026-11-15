@@ -9,6 +9,7 @@ use rauthy_data::entity::devices::{DeviceAuthCode, DeviceEntity};
 use rauthy_data::entity::users::User;
 use rauthy_data::events::event::Event;
 use rauthy_data::rauthy_config::RauthyConfig;
+use rauthy_error::ErrorResponse;
 use std::borrow::Cow;
 use std::net::IpAddr;
 use std::ops::{Add, Sub};
@@ -72,6 +73,20 @@ pub async fn grant_type_device_code(peer_ip: IpAddr, payload: TokenRequest) -> H
         });
     }
 
+    // RFC 8707: a `resource` on the token request may only narrow (here: match) the
+    // resource bound at the device authorization request, never widen or introduce a new one.
+    if let Some(requested) = payload.resource.as_deref()
+        && code.resource.as_deref() != Some(requested)
+    {
+        warn!("token request `resource` was not granted at the device authorization request");
+        return HttpResponse::BadRequest().json(OAuth2ErrorResponse {
+            error: OAuth2ErrorTypeResponse::InvalidTarget,
+            error_description: Some(Cow::from(
+                "the requested `resource` was not granted at the device authorization request",
+            )),
+        });
+    }
+
     debug!("device oidc code poll request is valid");
     let mut error = OAuth2ErrorTypeResponse::AuthorizationPending;
     let mut error_description = Cow::default();
@@ -132,6 +147,32 @@ pub async fn grant_type_device_code(peer_ip: IpAddr, payload: TokenRequest) -> H
             }
         };
 
+        // the code was issued for a deleted client with the same id
+        if !code.is_for_client(&client) {
+            if let Err(err) = code.delete().await {
+                error!(?err, "deleting DeviceAuthCode");
+            }
+            return HttpResponse::BadRequest().json(OAuth2ErrorResponse {
+                error: OAuth2ErrorTypeResponse::ExpiredToken,
+                error_description: Some(Cow::from("invalid `device_code` or request has expired")),
+            });
+        }
+
+        // `force_mfa` is checked in `post_device_verify`, where the approving session is known.
+        let access: Result<(), ErrorResponse> = user
+            .check_enabled()
+            .and_then(|_| user.check_expired())
+            .and_then(|_| client.validate_user_groups(&user));
+        if let Err(err) = access {
+            if let Err(err) = code.delete().await {
+                error!(?err, "deleting DeviceAuthCode");
+            }
+            return HttpResponse::BadRequest().json(OAuth2ErrorResponse {
+                error: OAuth2ErrorTypeResponse::AccessDenied,
+                error_description: Some(err.message),
+            });
+        }
+
         let access_exp = now.add(chrono::Duration::seconds(
             client.access_token_lifetime as i64,
         ));
@@ -178,6 +219,7 @@ pub async fn grant_type_device_code(peer_ip: IpAddr, payload: TokenRequest) -> H
             // This is a better UX than asking for a custom name each time.
             // TODO add an optional `name` param to the initial device request?
             name: id.clone(),
+            client_created_micros: code.client_created_micros,
         };
         if let Err(err) = device.insert().await {
             error!("{:?}", err);
@@ -206,8 +248,7 @@ pub async fn grant_type_device_code(peer_ip: IpAddr, payload: TokenRequest) -> H
             code.nonce.map(TokenNonce),
             code.scopes.map(TokenScopes::new),
             None,
-            // resource indicators are not supported for the device flow yet
-            None,
+            code.resource,
             AuthCodeFlow::No,
             DeviceCodeFlow::Yes(id),
         )

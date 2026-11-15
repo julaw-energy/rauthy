@@ -1,28 +1,28 @@
 <script lang="ts">
-    import { generatePassword, normalizeClientUri } from '$utils/helpers';
-    import Button from '$lib5/button/Button.svelte';
-    import PasswordPolicy from '$lib5/PasswordPolicy.svelte';
-    import Input from '$lib5/form/Input.svelte';
-    import WebauthnRequest from '$lib5/WebauthnRequest.svelte';
+    import { generatePassword, normalizeClientUri } from '#utils/helpers.ts';
+    import Button from '#lib/button/Button.svelte';
+    import PasswordPolicy from '#lib/PasswordPolicy.svelte';
+    import Input from '#lib/form/Input.svelte';
+    import WebauthnRequest from '#lib/WebauthnRequest.svelte';
     import { slide } from 'svelte/transition';
-    import LangSelector from '$lib5/LangSelector.svelte';
-    import { IS_DEV, TPL_PASSWORD_RESET } from '$utils/constants';
-    import { useI18n } from '$state/i18n.svelte';
-    import Main from '$lib5/Main.svelte';
-    import ContentCenter from '$lib5/ContentCenter.svelte';
-    import type { PasswordResetTemplate } from '$api/templates/PasswordReset';
-    import Template from '$lib5/Template.svelte';
-    import { useParam } from '$state/param.svelte';
-    import ThemeSwitch from '$lib5/ThemeSwitch.svelte';
-    import type { WebauthnAdditionalData } from '$mfa/webauthn/types.ts';
-    import InputPassword from '$lib5/form/InputPassword.svelte';
-    import A from '$lib5/A.svelte';
-    import { webauthnReg } from '$mfa/webauthn/registration';
-    import Form from '$lib5/form/Form.svelte';
-    import { PATTERN_USER_NAME } from '$utils/patterns';
-    import type { PasswordResetRequest } from '$api/types/password_reset.ts';
-    import type { MfaPurpose } from '$api/types/mfa';
-    import PasskeyTypeSelect from '$lib/PasskeyTypeSelect.svelte';
+    import LangSelector from '#lib/LangSelector.svelte';
+    import { IS_DEV, TPL_PASSWORD_RESET } from '#utils/constants.ts';
+    import { useI18n } from '#state/i18n.svelte.ts';
+    import Main from '#lib/Main.svelte';
+    import ContentCenter from '#lib/ContentCenter.svelte';
+    import type { PasswordResetTemplate } from '#api/templates/PasswordReset.ts';
+    import Template from '#lib/Template.svelte';
+    import { useParam } from '#state/param.svelte.ts';
+    import ThemeSwitch from '#lib/ThemeSwitch.svelte';
+    import type { WebauthnAdditionalData } from '#mfa/webauthn/types.ts';
+    import InputPassword from '#lib/form/InputPassword.svelte';
+    import A from '#lib/A.svelte';
+    import { webauthnReg } from '#mfa/webauthn/registration.ts';
+    import Form from '#lib/form/Form.svelte';
+    import { PATTERN_USER_NAME } from '#utils/patterns.ts';
+    import type { PasswordResetRequest } from '#api/types/password_reset.ts';
+    import type { MfaPurpose } from '#api/types/mfa.ts';
+    import PasskeyTypeSelect from '#lib/PasskeyTypeSelect.svelte';
 
     const inputWidth = '20rem';
 
@@ -39,6 +39,11 @@
     let accountTypeNew = $state('');
     let redirectUri = $state('');
     let success = $state(false);
+    // Falls back to the previous fixed timeout if the template value is missing.
+    let redirectTimeout = $derived(tplData?.redirect_timeout ?? 5);
+    // The success link leads back to the client when it sent a `redirect_uri`,
+    // otherwise to the account dashboard.
+    let redirectsToClient = $derived(!!redirectUri && redirectUri !== '/auth/v1/account');
     let accepted = $state(false);
 
     let mfaPurpose: undefined | MfaPurpose = $state();
@@ -67,14 +72,16 @@
     });
 
     $effect(() => {
-        if (success) {
-            setTimeout(() => {
+        if (success && redirectTimeout > 0) {
+            let timer = setTimeout(() => {
                 if (redirectUri) {
                     window.location.replace(normalizeClientUri(redirectUri));
                 } else {
                     navigateToAccount();
                 }
-            }, 5000);
+            }, redirectTimeout * 1000);
+
+            return () => clearTimeout(timer);
         }
     });
 
@@ -128,6 +135,7 @@
             }
         } else {
             resetValues();
+            redirectUri = res.location || '';
             success = true;
         }
     }
@@ -299,13 +307,18 @@
         {#if success}
             <p>
                 {t.passwordReset.success1}
-                <br />
-                {t.passwordReset.success2}
-                <br />
-                <br />
-                {t.passwordReset.success3}
+                {#if redirectTimeout > 0}
+                    <br />
+                    {t.passwordReset.success2.replace('{{ secs }}', redirectTimeout.toString())}
+                    <br />
+                    <br />
+                    {t.passwordReset.success3}
+                {:else}
+                    <br />
+                    <br />
+                {/if}
                 <A href={redirectUri ? normalizeClientUri(redirectUri) : '/auth/v1/account'}>
-                    Account
+                    {redirectsToClient ? t.passwordReset.continueSignIn : 'Account'}
                 </A>
             </p>
         {:else if tplData}

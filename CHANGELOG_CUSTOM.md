@@ -10,21 +10,55 @@ rollout), not only what changed.
 
 ---
 
-## v0.37.2-custom.8 (2026-11-15)
+## v0.37.2-custom.8 (2026-11-16)
 
-Moves the `trust_mfa` migration of custom.7 to where it belongs. No new feature. **Install this before any later build
-that merges upstream's newer migrations.**
+Merges upstream `main` (`b76a0728`, 12 Nov 2026, 55 commits after 0.37.2, not a tagged upstream release yet) and moves the
+`trust_mfa` migration of custom.7 to where it belongs. Read the upstream notes in `CHANGELOG.md` ("UNRELEASED") as well.
+
+### Upgrade
+
+- **Back up first, restart ALL nodes at once.** Upstream binds refresh tokens to their client and adds user consents
+  (two new migrations). Do not do a rolling release, and a rollback to an older build is not supported.
+- **Forward Auth: invalidate all sessions after the upgrade** (Admin UI > Sessions). The cookie was replayable as a
+  Rauthy session until its session ends.
+- Databases that ran custom.1 to custom.7 are adopted at the first start (log line `Adopting the fork migration`),
+  before upstream's migrations run. Hiqlite and Postgres. Tested one step at a time: upstream 0.37.2, custom.4, custom.6,
+  custom.7, then this build (`tools/upgrade/chain_test.py`).
+
+### Security (from upstream)
+
+- The group prefix and `force_mfa` are enforced on all user grants, the device grant checks the user and the MFA again
+  on approval.
+- Token exchange is limited to the scopes of the exchanging client and to the lifetime of the subject token and the user.
+- The Forward Auth cookie cannot be replayed as a Rauthy session any more, and is separated per client.
+- Refresh tokens are bound to their client. Logout tokens with an `iat` in the future are refused, the `exp` check uses
+  the clock skew the right way round.
+- RSA signing blinding, TLS verification stays on in release builds with `dev_mode`, dependency security updates,
+  `session_validate_ip` for Forward Auth, user values are no longer logged at warn level, a token with a non-JSON custom
+  attribute no longer panics.
+- Postgres: renaming a role or group kept deleting the memberships. Fixed.
+
+### New from upstream (all off by default)
+
+- A read-only LDAP server for apps that can only log in with LDAP (`[ldap]`). A password login by LDAP goes through the
+  same checks as the password grant, including our access rules.
+- User consents (`[consent]`), RFC 8707 resource indicators for the device grant, an externally provisioned client
+  secret via the Admin API, re-applying the bootstrap files on every start, an always visible "password forgotten" link
+  and a password-reset redirect timeout.
+- The new UI (`frontend-next`) has no screens for consents yet.
 
 ### Bugfix
 
-- **`provider_trust_mfa` is a fork migration now.** custom.7 shipped it in upstream's numbered migration folder as 36
-  (Hiqlite) and V31 (Postgres). Upstream has taken exactly those numbers for its own new migrations, so a build that
-  merges them would have refused to start on a database that ran custom.7. It lives in `migrations_fork` as number 15 now.
-  A database that has it in the old place is adopted at the first start: it is recorded as a fork migration and removed
-  from upstream's table (log line `Adopting the fork migration 'provider_trust_mfa'`). The column itself is not touched.
-  Databases that never ran custom.7 get the column from the fork migration as before.
-- **Order of upgrades:** custom.7 -> custom.8 -> any later build. A later build started on a custom.7 database that did
-  not pass custom.8 stops with a migration error. Restore the backup and go through custom.8.
+- **`provider_trust_mfa` is a fork migration.** custom.7 put it into upstream's numbering as 36 / V31, which upstream uses
+  now. It is `migrations_fork` number 15 now, and a database that has it in the old place is adopted before upstream's
+  migrations run. Adopting after them, as it was done for the first 8 fork migrations, can not work on Postgres:
+  refinery stops on an applied migration it does not know. Now both kinds are adopted first, on both databases.
+
+### Changes
+
+- `tools/upgrade/chain_test.py`: walks one database through a chain of images and checks the data after each step,
+  Hiqlite and Postgres.
+- The unit tests of upstream set up their database with our migrations too.
 
 ## v0.37.2-custom.7 (2026-11-15)
 

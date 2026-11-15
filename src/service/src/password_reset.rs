@@ -1,3 +1,4 @@
+use actix_web::http::header::LOCATION;
 use actix_web::{HttpRequest, HttpResponse, cookie};
 use chrono::Utc;
 use rauthy_api_types::generic::PasswordPolicyResponse;
@@ -44,6 +45,10 @@ pub async fn handle_get_pwd_reset<'a>(
             magic_link_id: ml.id.clone(),
             needs_mfa: user.has_webauthn_enabled(),
             password_policy: PasswordPolicyResponse::from(password_policy),
+            redirect_timeout: RauthyConfig::get()
+                .vars
+                .user_values
+                .password_reset_redirect_timeout,
             user_id,
         };
         PwdResetHtml::build(&lang, ThemeCssFull::find_theme_ts_rauthy().await?, tpl)
@@ -139,7 +144,12 @@ pub async fn handle_put_user_passkey_finish(
 
     // delete the cookie
     let cookie = ApiCookie::build(PWD_RESET_COOKIE, "", 0);
-    Ok(HttpResponse::Created().cookie(cookie).finish())
+    let mut res = HttpResponse::Created();
+    res.cookie(cookie);
+    if let Ok(MagicLinkUsage::NewUser(Some(redirect_uri))) = MagicLinkUsage::try_from(&ml.usage) {
+        res.insert_header((LOCATION, redirect_uri));
+    }
+    Ok(res.finish())
 }
 
 /// Returns (magic link deletion cookie, optional custom redirect uri)

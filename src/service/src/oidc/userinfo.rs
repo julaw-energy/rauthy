@@ -161,16 +161,7 @@ pub async fn get_userinfo(
             userinfo.gender = values.gender;
             userinfo.zoneinfo = values.tz;
 
-            if let Some(username) = values.preferred_username {
-                userinfo.preferred_username = Some(username);
-            } else if RauthyConfig::get()
-                .vars
-                .user_values
-                .preferred_username
-                .email_fallback
-            {
-                userinfo.preferred_username = userinfo.email.clone();
-            }
+            userinfo.preferred_username = values.preferred_username;
         }
 
         if has_phone {
@@ -183,6 +174,17 @@ pub async fn get_userinfo(
             });
             userinfo.phone_number = values.phone;
         }
+    }
+
+    if has_profile
+        && userinfo.preferred_username.is_none()
+        && RauthyConfig::get()
+            .vars
+            .user_values
+            .preferred_username
+            .email_fallback
+    {
+        userinfo.preferred_username = Some(user.email.clone());
     }
 
     if has_email {

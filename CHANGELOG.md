@@ -1,5 +1,276 @@
 # Changelog
 
+## UNRELEASED
+
+### Breaking
+
+#### Upgrade: full restart of all nodes
+
+This release binds refresh tokens to their client and adds user consent (`[consent]`). It needs a
+full restart of all nodes, independent of `consent.enable`.
+
+- If you run a HA cluster, you **MUST** stop all nodes with the old version before you start the
+  new one. Do **NOT** do a **ROLLING RELEASE**. Mixed versions in one cluster are not supported.
+- A rollback to an older version after the upgrade is not supported. **CREATE A BACKUP BEFORE YOU
+  UPGRADE!**
+- There is no backfill of consent grants for existing users. As long as `consent.enable` is
+  `false` (the default), nothing changes for existing logins and refresh tokens. See the
+  `[consent]` section in the config reference before you enable it.
+
+### Security
+
+#### Additional `device_code` checks
+
+The `device_code` grant does additional validations for users (another round-trip of enabled and
+not expired), and it checks for a `force_mfa` requirement by the client the user is verifying the
+device for. This is only a snaptshot in time though, since it's impossible to re-validate if the
+device is allowed to refresh tokens.
+
+#### Token Exchange is limited to the exchanging client's scopes and lifetime
+
+An exchanged token inherited all scopes of the `subject_token`, even ones the exchanging client is
+not allowed to have, including custom scopes that embed user attributes. The exchanged token now
+only keeps scopes the exchanging client is allowed. Inherited scopes outside of that are dropped,
+and explicitly requesting one is rejected. The lifetime is now capped by the `subject_token`'s own
+expiry and the user's expiry as well, so a client can no longer extend access by re-exchanging.
+
+#### Forward Auth cookie can no longer be used as a Rauthy session
+
+The Forward Auth session cookie, which the reverse proxy passes on to the protected upstream app, 
+held the exact same value as Rauthy's own session cookie. That was on purpose, so that an 
+invalidation of the main session would immediately log the user out of all forwarded apps. However,
+if was theoretically possible that such a protected app (which knows nothing about authentication
+in the first place, otherwise it would have a native auth), could be malicious and replay the
+forward auth session cookie again Rauthys main API for the logged-in user. The encrypted value
+inside the forward auth session cookie is now tagged as a pure forward auth session, and separated
+by client. This means it cannot be replayed, is still bound to the main session under the hood,
+and a malicious forward auth app cannot replay the same cookie against other forward auth apps.
+
+Existing Forward Auth sessions need to log in once more after the update.
+
+**If you use Forward Auth, invalidate all sessions after upgrading** (Admin UI > Sessions, or
+`DELETE /auth/v1/sessions`). Forward Auth cookies issued before this release still hold the bare
+session id and can be replayed as a Rauthy session until that session ends. Logging in again does
+not rotate the session, so only invalidating it closes the window. Rauthy does not do this
+automatically, because it would log out every user on every instance, including the ones that
+never used Forward Auth.
+
+### Changes
+
+#### Always Show *Password Forgotten*
+
+The 'Password forgotten?' link on the login page only shows up after a failed login. With the new
+`access.password_reset_link_always` (`PASSWORD_RESET_LINK_ALWAYS`) set to `true`, it is visible
+from the start, even before the password input is shown. The default is `false`, which keeps the
+current behavior.
+Older versions refuse to start with an unknown config key, so in a mixed-version cluster set it
+via `PASSWORD_RESET_LINK_ALWAYS` until every node is upgraded.
+
+#### Password Reset Redirect Timeout
+
+After a successful password reset, the reset page redirected after a fixed 5 seconds, so a user
+who missed the confirmation could think the reset had sent them back to where they started. The
+new `user_values.password_reset_redirect_timeout` (`PASSWORD_RESET_REDIRECT_TIMEOUT`) sets the
+timeout in seconds, and `0` disables the redirect, which keeps the confirmation visible with a
+link to continue. That link now reads *Continue to sign in* when it leads back to the client, and
+the message shows the actual number of seconds. The default is `5`, which keeps the current
+behavior.
+
+```toml
+[user_values]
+# Seconds after a successful password reset until the reset
+# page redirects the user, either to the `redirect_uri` of the
+# reset request or to the account dashboard. Set to `0` to
+# disable the redirect: the success message then stays visible
+# with a link to continue.
+#
+# default: 5
+# overwritten by: PASSWORD_RESET_REDIRECT_TIMEOUT
+password_reset_redirect_timeout = 5
+```
+
+[#1722](https://github.com/sebadob/rauthy/issues/1722)
+
+#### Opt-in Bootstrap Reconcile
+
+The bootstrap `groups.json`, `roles.json`, `scopes.json` and `clients.json` can be re-applied on
+every start, and not only against an empty database. Check the
+[book](https://sebadob.github.io/rauthy/config/bootstrap.html) for the details.
+
+```toml
+[bootstrap]
+# If set to `true`, the `clients.json`, `groups.json`,
+# `roles.json` and `scopes.json` inside `bootstrap_dir` are
+# re-applied on every start, and not only against an empty
+# database. Missing entries are created, changed entries are
+# updated, and nothing is ever deleted. Only the primary node
+# does this. Changes to the files need a restart to be applied.
+# Check the book for the details.
+#
+# default: false
+# overwritten by: BOOTSTRAP_RECONCILE
+reconcile = false
+```
+
+[#1847](https://github.com/sebadob/rauthy/issues/1847)
+
+#### Read-only LDAP Server
+
+Rauthy can now serve apps that can only log in with an LDAP bind, like the Jellyfin LDAP plugin,
+with a minimal, read-only LDAPS server. It is disabled by default and configured in the new
+`[ldap]` section. Each LDAP app is a client with the `password` flow enabled and gets its own
+subtree at `cn=<client_id>,ou=clients,<base_dn>`. User binds run the same checks as the `password`
+grant. See the book chapter *LDAP* for details.
+
+Apps send the binds of all users from a single IP. If the LDAPS port is only reachable for your
+apps, `disable_ip_brute_force_protection` makes user binds skip the per-IP checks, so a few failed
+logins do not block the app's IP for everyone. It is disabled by default.
+
+If a reverse proxy terminates TLS for LDAP as well, `plain_text` serves plain LDAP instead. It
+requires `server.proxy_mode = true`.
+
+Each user who should log in via LDAP needs a PAM username, which is published as their `uid`. PAM
+usernames are always lowercase and therefore unique for the case-insensitive LDAP `uid`. Users
+without one are not part of the directory.
+
+For a confidential client, a user bind only succeeds on a connection that did a successful service
+bind with the client secret before. Public clients accept user binds right away. Each successful
+user bind creates a new `LdapLogin` event:
+
+```toml
+[events]
+# The level for the generated Event after a successful
+# LDAP user bind.
+#
+# default: info
+# overwritten by: EVENT_LEVEL_LDAP_LOGIN
+level_ldap_login = 'info'
+```
+
+```toml
+[ldap]
+# Enables a minimal, read-only LDAPS server for clients that can
+# only log in via an LDAP bind, like the Jellyfin LDAP plugin.
+# Only implicit TLS (LDAPS) is supported, no StartTLS.
+# See the book chapter "LDAP" for the directory layout.
+#
+# default: false
+# overwritten by: LDAP_ENABLE
+enable = false
+
+# The address the LDAPS server listens on.
+#
+# default: '0.0.0.0'
+# overwritten by: LDAP_LISTEN_ADDRESS
+listen_address = '0.0.0.0'
+
+# The port the LDAPS server listens on.
+#
+# default: 6360
+# overwritten by: LDAP_PORT
+port = 6360
+
+# The base DN of the directory. Each client gets its own subtree
+# below it at `cn=<client_id>,ou=clients,<base_dn>`.
+#
+# default: 'dc=rauthy,dc=local'
+# overwritten by: LDAP_BASE_DN
+base_dn = 'dc=rauthy,dc=local'
+
+# TLS certificate and key for the LDAPS server, in PEM format.
+# Both must be set together. If not set, the `[tls]` certificate
+# is used. Set them when Rauthy itself runs plain HTTP behind a
+# reverse proxy that does not terminate TLS for LDAP as well.
+# They are hot-reloaded like the `[tls]` certificate and use
+# `tls.poll_watch_interval` as well.
+#
+# overwritten by: LDAP_TLS_CERT, LDAP_TLS_KEY
+#cert_path = 'tls/ldap.crt'
+#key_path = 'tls/ldap.key'
+
+# Serves plain LDAP without TLS instead of LDAPS, for a reverse
+# proxy that terminates TLS and forwards the raw TCP stream. As a
+# safeguard, this requires `server.proxy_mode = true`. Rauthy
+# then sees the proxy's IP for every LDAP connection, so the
+# per-IP brute-force protection applies to the proxy as a whole.
+# Never expose the plain LDAP port to anything but the proxy.
+#
+# default: false
+# overwritten by: LDAP_PLAIN_TEXT
+plain_text = false
+
+# Disables the per-IP brute-force protection for LDAP user binds:
+# no credential stuffing detection, no per-IP failed login counter
+# and no IP blacklisting because of failed user binds. Apps like
+# Jellyfin send the binds of all users from a single IP, so a few
+# failed logins from different users would otherwise block the
+# app's IP for everyone. The per-user failed login counter and its
+# login delays still apply, and an already blacklisted IP is still
+# refused. Service binds keep the per-IP protection.
+# CAUTION: a client connecting directly to the LDAPS port can then
+# try passwords across many users without an IP limit. Only enable
+# it when the LDAPS port is reachable for your apps only.
+#
+# default: false
+# overwritten by: LDAP_DISABLE_IP_BRUTE_FORCE_PROTECTION
+disable_ip_brute_force_protection = false
+
+# The maximum number of open LDAP connections. Further ones wait
+# until a connection is closed.
+#
+# default: 1000
+# overwritten by: LDAP_MAX_CONNECTIONS
+max_connections = 1000
+```
+
+[#1851](https://github.com/sebadob/rauthy/issues/1851)
+
+#### Externally Provisioned Client Secrets
+
+`PUT /clients/{id}/secret` accepts an optional `secret` in its payload. When given, this value is
+stored (encrypted with the active `ENC_KEY`) instead of generating a new random secret. This makes
+continuous declarative provisioning of clients against a running instance possible, which the
+bootstrap `Plain` secret cannot do, since the bootstrap only runs on an empty database. When
+`secret` is not given, the behavior is unchanged and a new random secret is generated, so existing
+callers (like the Admin UI) are not affected.
+
+#### Open Native Apps after MFA Login
+
+When a client uses a custom scheme `redirect_uri` for a native App (RFC 8252), like
+`myapp://callback`, and the login requires a Passkey, the browser silently blocked the final
+redirect to the App: external protocols require a user activation, which the Passkey ceremony
+consumed. The MFA *Acknowledged* page now shows an *Open the App to continue* link for non-http
+locations in this case. A click provides a fresh user activation, and the App receives the
+authorization code. Http(s) redirects are unchanged and remain automatic.
+
+[#1827](https://github.com/sebadob/rauthy/pull/1827)
+
+#### Concurrent User Deletes
+
+When the same user is deleted by two requests at the same time, the one that loses the race now
+gets a `404` instead of succeeding a second time.
+
+### Bugfix
+
+- Changing the password from the account page cleared the given and family name and all user
+  values, like phone, address and timezone, because the request only contained the password and
+  the self-update replaces the whole profile with the request. The password form now sends the
+  current profile values along with the new password.
+  [#1866](https://github.com/sebadob/rauthy/issues/1866)
+- Registering an email OTP from the account page showed the activation code input without ever
+  creating the OTP, and therefore without sending the email, whenever the MFA modification token
+  was obtained through the re-authentication modal. The pending registration is now resumed after
+  a successful re-authentication, and it is dropped when that re-authentication is aborted, so an
+  interrupted flow cannot trigger an action on a later, unrelated fetch.
+  [#1846](https://github.com/sebadob/rauthy/issues/1846)
+- Typing the activation code of an email OTP could send the activation twice, because the
+  auto-submit that runs once the code has the expected length also re-ran on other changes. It now
+  only runs when the code itself changes to a complete value, so each action sends a single request
+  and the manual submit is unaffected.
+- An invalid `lifetimes.jwk_autorotate_cron` or `geo.maxmind_update_cron`, or one without a future
+  occurrence, made its scheduler silently die after boot. Rauthy now refuses to start instead.
+  [#1857](https://github.com/sebadob/rauthy/pull/1857)
+
 ## v0.37.2
 
 ### Security

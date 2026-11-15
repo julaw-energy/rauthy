@@ -251,12 +251,18 @@ impl LogoutToken<'_> {
         let now = Utc::now().timestamp();
 
         let iat_limit = now - token_lifetime - allow_clock_skew;
-        let exp_limit = now + allow_clock_skew;
+        let exp_limit = now - allow_clock_skew;
 
         if self.iat < iat_limit {
             return Err(ErrorResponse::new(
                 ErrorResponseType::BadRequest,
                 "`iat` is too long ago",
+            ));
+        }
+        if self.iat > now + allow_clock_skew {
+            return Err(ErrorResponse::new(
+                ErrorResponseType::BadRequest,
+                "`iat` is in the future",
             ));
         }
         if self.exp < exp_limit {
@@ -388,8 +394,7 @@ mod tests {
         let mut buf = Vec::with_capacity(256);
 
         let (header, lt) = LogoutToken::build_from_str(&token, &mut buf).unwrap();
-        lt.validate_claims_with(header, lifetime as i64, skew)
-            .unwrap();
+        lt.validate_claims_with(header, lifetime, skew).unwrap();
         assert_eq!(lt.typ.unwrap().as_str(), "logout+jwt");
         assert_eq!(lt.aud, aud);
         assert_eq!(lt.sub.unwrap(), sub);
@@ -402,8 +407,7 @@ mod tests {
 
         buf.clear();
         let (header, lt) = LogoutToken::build_from_str(&token, &mut buf).unwrap();
-        lt.validate_claims_with(header, lifetime as i64, skew)
-            .unwrap();
+        lt.validate_claims_with(header, lifetime, skew).unwrap();
         assert_eq!(lt.sid.unwrap(), sid);
         assert!(lt.sub.is_none());
 
@@ -413,16 +417,14 @@ mod tests {
             .unwrap();
         buf.clear();
         let (header, lt) = LogoutToken::build_from_str(&token, &mut buf).unwrap();
-        lt.validate_claims_with(header, lifetime as i64, skew)
-            .unwrap();
+        lt.validate_claims_with(header, lifetime, skew).unwrap();
 
         let token = LogoutToken::new(iss, aud, None, Some(sid), lifetime)
             .into_token_with_kp(&kp_512)
             .unwrap();
         buf.clear();
         let (header, lt) = LogoutToken::build_from_str(&token, &mut buf).unwrap();
-        lt.validate_claims_with(header, lifetime as i64, skew)
-            .unwrap();
+        lt.validate_claims_with(header, lifetime, skew).unwrap();
 
         // no sub + sid - expect failure
         let token = LogoutToken::new(iss, aud, None, None, lifetime)
@@ -430,7 +432,40 @@ mod tests {
             .unwrap();
         buf.clear();
         let (header, lt) = LogoutToken::build_from_str(&token, &mut buf).unwrap();
-        lt.validate_claims_with(header, lifetime as i64, skew)
+        lt.validate_claims_with(header, lifetime, skew)
             .expect_err("empty sub and sid");
+
+        // clock skew must make `exp` more lenient, not stricter
+        let token = LogoutToken::new(iss, aud, Some(sub), None, lifetime)
+            .into_token_with_kp(&kp_25519)
+            .unwrap();
+        buf.clear();
+        let (header, mut lt) = LogoutToken::build_from_str(&token, &mut buf).unwrap();
+        let now = Utc::now().timestamp();
+        lt.iat = now - 10;
+        lt.exp = now + 1;
+        lt.validate_claims_with(header.clone(), lifetime, skew)
+            .expect("exp within the skew must be accepted");
+        lt.exp = now - 2;
+        lt.validate_claims_with(header.clone(), lifetime, skew)
+            .expect("exp expired within the skew must be accepted");
+        lt.exp = now - skew - 1;
+        lt.validate_claims_with(header.clone(), lifetime, skew)
+            .expect_err("exp beyond the skew must be rejected");
+
+        // `iat` must not lie in the future beyond the skew
+        lt.iat = now + skew;
+        lt.exp = lt.iat + lifetime;
+        lt.validate_claims_with(header.clone(), lifetime, skew)
+            .expect("iat in the future within the skew must be accepted");
+        // providers like Authentik issue `exp = iat + 1h`, which must keep working
+        lt.iat = now;
+        lt.exp = now + 3600;
+        lt.validate_claims_with(header.clone(), lifetime, skew)
+            .expect("a long `exp` with a fresh `iat` must be accepted");
+        lt.iat = now + 3600;
+        lt.exp = now + 3660;
+        lt.validate_claims_with(header, lifetime, skew)
+            .expect_err("iat in the future beyond the skew must be rejected");
     }
 }

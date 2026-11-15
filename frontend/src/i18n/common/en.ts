@@ -159,6 +159,21 @@ export const I18nEn: I18n = {
             notAvailable: 'This name is not available.',
             preferredUsername: 'Preferred Username',
         },
+        privacy: {
+            clientId: 'Client ID',
+            connectedApps: 'Connected Apps',
+            connectedAppsDesc: 'Applications you have given consent to access your account.',
+            granted: 'Granted',
+            noConnectedApps: 'No application has been granted access yet.',
+            privacy: 'Privacy',
+            resource: 'Resource',
+            revoke: 'Revoke Access',
+            revokeDesc:
+                'Revoking removes the consent and the application can no longer renew its access. Access tokens issued with the deleted refresh tokens are revoked at userinfo and introspection. Applications that validate their tokens themselves can still accept them until they expire. The application has to ask for your consent again.',
+            scopes: 'Scopes',
+            updated: 'Updated',
+            userAgent: 'User Agent',
+        },
         providerLink: 'Federate Account',
         providerLinkDesc: `You can link this account to one of the following login providers.\nAfter 
             activating this function, you will be redirected to the login page of the chosen one.\n
@@ -200,10 +215,12 @@ export const I18nEn: I18n = {
         invalidKeyUsed: 'Invalid Key',
         login: 'Login',
         mfaAck: 'Acknowledged',
+        mfaOpenApp: 'Open the App to continue',
         navigateToAccount: 'Account Dashboard',
         needsUserUpdate: `Some information for this account is missing. You need to update these 
             values before you can proceed with the login.`,
         orLoginWith: 'or login with',
+        passkey: 'Passkey',
         passkeyNotDiscovered: `Passkeys not added as a Resident Key can't be found this way. Enter
             your E-Mail instead.`,
         password: 'Password',
@@ -324,6 +341,7 @@ export const I18nEn: I18n = {
     passwordReset: {
         accountLogin: 'Account Login',
         badFormat: 'Bad Format',
+        continueSignIn: 'Continue to sign in',
         fidoLink: 'https://fidoalliance.org/fido2',
         generate: 'Generate',
         newAccDesc1:
@@ -341,7 +359,7 @@ export const I18nEn: I18n = {
         required: 'Required',
         save: 'Save',
         success1: 'The password has been updated successfully.',
-        success2: 'You will be redirected shortly.',
+        success2: 'You will be redirected in {{ secs }} seconds.',
         success3: 'If you are not being redirected, please click here:',
         successPasskey1: 'Your new passkey has been registered successfully.',
         successPasskey2: `Please log into your account and register a second backup key as\nsoon as 

@@ -3,7 +3,9 @@ use crate::entity::auth_providers::ProviderMfaLogin;
 use crate::entity::clients_dyn::ClientDyn;
 use crate::entity::clients_scim::ClientScim;
 use crate::entity::jwk::JwkKeyPairAlg;
+use crate::entity::refresh_tokens::PgDeletedJtis;
 use crate::entity::scopes::Scope;
+use crate::entity::user_consents::SQL_CONSENT_DELETE_BY_CLIENT;
 use crate::entity::users::User;
 use crate::http_client::fetch_bounded;
 use crate::rauthy_config::{RauthyConfig, VarsEphemeralClients};
@@ -20,9 +22,11 @@ use rauthy_api_types::clients::{
     NewClientRequest, ScimClientRequestResponse,
 };
 use rauthy_api_types::oidc::GrantType;
+#[cfg(debug_assertions)]
+use rauthy_common::constants::RAUTHY_VERSION;
 use rauthy_common::constants::{CACHE_TTL_APP, SECRET_LEN_CLIENTS};
 use rauthy_common::is_hiqlite;
-use rauthy_common::utils::{get_rand, real_ip_from_req};
+use rauthy_common::utils::{csv_remove, get_rand, real_ip_from_req};
 use rauthy_common::validation::validate_redirect_uri;
 use rauthy_derive::FromPgRow;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
@@ -39,6 +43,15 @@ use std::str::FromStr;
 use tracing::{debug, error, trace, warn};
 use validator::Validate;
 use zeroize::Zeroize;
+
+pub const SQL_INSERT: &str = r#"
+INSERT INTO clients (id, name, enabled, confidential, secret, secret_kid, redirect_uris,
+post_logout_redirect_uris, allowed_origins, flows_enabled, access_token_alg, id_token_alg,
+auth_code_lifetime, access_token_lifetime, scopes, default_scopes, challenge, force_mfa,
+client_uri, contacts, backchannel_logout_uri, restrict_group_prefix, allowed_resources,
+default_aud, created_micros)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+$18, $19, $20, $21, $22, $23, $24, $25)"#;
 
 static SQL_SAVE: &str = r#"
 UPDATE clients
@@ -98,6 +111,11 @@ pub struct Client {
     pub allowed_resources: Option<String>,
     /// Audiences always added to this client's tokens, independent of any request (CSV).
     pub default_aud: Option<String>,
+    /// Creation time of this client, never changed afterward. Tells a client apart from a
+    /// deleted one with the same `id`, everything issued to a client carries a copy of it.
+    /// Micros, because a client may be deleted and recreated within the same second.
+    /// `None` for clients created before this field existed.
+    pub created_micros: Option<i64>,
 }
 
 impl Debug for Client {
@@ -109,8 +127,8 @@ impl Debug for Client {
         flows_enabled: {}, access_token_alg: {}, id_token_alg: {}, auth_code_lifetime: {}, \
         access_token_lifetime: {}, scopes: {}, default_scopes: {}, challenge: {:?}, force_mfa: {}, \
         client_uri: {:?}, contacts: {:?}, backchannel_logout_uri: {:?}, restrict_group_prefix: {:?}, \
-        claims: {:?}, claims_at_root: {}, allowed_resources: {:?}, default_aud: {:?} \
-        }}",
+        claims: {:?}, claims_at_root: {}, allowed_resources: {:?}, default_aud: {:?}, \
+        created_micros: {:?} }}",
             self.id,
             self.name,
             self.enabled,
@@ -135,6 +153,7 @@ impl Debug for Client {
             self.claims_at_root,
             self.allowed_resources,
             self.default_aud,
+            self.created_micros,
         )
     }
 }
@@ -157,20 +176,12 @@ impl Client {
         };
         let mut client = Client::try_from(client_req)?;
         client.secret_kid = kid;
-
-        let sql = r#"
-INSERT INTO clients (id, name, enabled, confidential, secret, secret_kid, redirect_uris,
-post_logout_redirect_uris, allowed_origins, flows_enabled, access_token_alg, id_token_alg,
-auth_code_lifetime, access_token_lifetime, scopes, default_scopes, challenge, force_mfa,
-client_uri, contacts, backchannel_logout_uri, restrict_group_prefix, allowed_resources,
-default_aud)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-$18, $19, $20, $21, $22, $23, $24)"#;
+        client.created_micros = Some(Utc::now().timestamp_micros());
 
         if is_hiqlite() {
             DB::hql()
                 .execute(
-                    sql,
+                    SQL_INSERT,
                     params!(
                         &client.id,
                         &client.name,
@@ -195,13 +206,14 @@ $18, $19, $20, $21, $22, $23, $24)"#;
                         &client.backchannel_logout_uri,
                         &client.restrict_group_prefix,
                         &client.allowed_resources,
-                        &client.default_aud
+                        &client.default_aud,
+                        client.created_micros
                     ),
                 )
                 .await?;
         } else {
             DB::pg_execute(
-                sql,
+                SQL_INSERT,
                 &[
                     &client.id,
                     &client.name,
@@ -227,10 +239,12 @@ $18, $19, $20, $21, $22, $23, $24)"#;
                     &client.restrict_group_prefix,
                     &client.allowed_resources,
                     &client.default_aud,
+                    &client.created_micros,
                 ],
             )
             .await?;
         }
+        Self::delete_cache_for(&client.id).await?;
 
         Ok(client)
     }
@@ -244,18 +258,12 @@ $18, $19, $20, $21, $22, $23, $24)"#;
             .clone()
             .unwrap_or_else(|| "client_secret_basic".to_string());
 
-        let client = Self::try_from_dyn_reg(client_req, origin_header)?;
+        let mut client = Self::try_from_dyn_reg(client_req, origin_header)?;
+        client.created_micros = Some(Utc::now().timestamp_micros());
 
         let created = Utc::now().timestamp();
         let (_secret_plain, registration_token) = Self::generate_new_secret()?;
 
-        let sql_1 = r#"
-INSERT INTO clients (id, name, enabled, confidential, secret, secret_kid, redirect_uris,
-post_logout_redirect_uris, allowed_origins, flows_enabled, access_token_alg, id_token_alg,
-auth_code_lifetime, access_token_lifetime, scopes, default_scopes, challenge, force_mfa,
-client_uri, contacts, backchannel_logout_uri, restrict_group_prefix)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-$21, $22)"#;
         let sql_2 = r#"
 INSERT INTO
 clients_dyn (id, created, registration_token, token_endpoint_auth_method)
@@ -265,7 +273,7 @@ VALUES ($1, $2, $3, $4)"#;
             DB::hql()
                 .txn([
                     (
-                        sql_1,
+                        SQL_INSERT,
                         params!(
                             &client.id,
                             &client.name,
@@ -288,7 +296,10 @@ VALUES ($1, $2, $3, $4)"#;
                             &client.client_uri,
                             &client.contacts,
                             &client.backchannel_logout_uri,
-                            &client.restrict_group_prefix
+                            &client.restrict_group_prefix,
+                            &client.allowed_resources,
+                            &client.default_aud,
+                            client.created_micros
                         ),
                     ),
                     (
@@ -308,7 +319,7 @@ VALUES ($1, $2, $3, $4)"#;
 
             DB::pg_txn_append(
                 &txn,
-                sql_1,
+                SQL_INSERT,
                 &[
                     &client.id,
                     &client.name,
@@ -332,6 +343,9 @@ VALUES ($1, $2, $3, $4)"#;
                     &client.contacts,
                     &client.backchannel_logout_uri,
                     &client.restrict_group_prefix,
+                    &client.allowed_resources,
+                    &client.default_aud,
+                    &client.created_micros,
                 ],
             )
             .await?;
@@ -349,6 +363,7 @@ VALUES ($1, $2, $3, $4)"#;
 
             txn.commit().await?;
         };
+        Self::delete_cache_for(&client.id).await?;
 
         let client_dyn = ClientDyn {
             id: client.id.clone(),
@@ -361,13 +376,17 @@ VALUES ($1, $2, $3, $4)"#;
         client.into_dynamic_client_response(client_dyn, true)
     }
 
-    // Deletes a client
+    /// Deletes the client with its refresh tokens and user consents, with `consent.enable` also
+    /// all legacy refresh tokens (`client_id` NULL) of all users, and revokes the access tokens
+    /// of the deleted refresh tokens.
     pub async fn delete(&self) -> Result<(), ErrorResponse> {
-        let sql = "DELETE FROM clients WHERE id = $1";
-        if is_hiqlite() {
-            DB::hql().execute(sql, params!(&self.id)).await?;
-        } else {
-            DB::pg_execute(sql, &[&self.id]).await?;
+        #[cfg(debug_assertions)]
+        if !RAUTHY_VERSION.starts_with("0.37.") && !RAUTHY_VERSION.starts_with("0.38.") {
+            todo!(
+                "Remove legacy refresh tokens (`client_id` NULL) as a whole: delete them with a \
+                migration, then drop the cleanup in Client::delete() and their acceptance in \
+                validate_and_refresh_token() and RefreshToken::is_for_client()"
+            );
         }
 
         self.delete_cache().await?;
@@ -376,7 +395,44 @@ VALUES ($1, $2, $3, $4)"#;
         crate::entity::client_required_fields::ClientRequiredFields::delete_cache(&self.id).await?;
         crate::entity::client_access_rules::ClientAccessRules::delete_cache(&self.id).await?;
 
-        // We only clean up the cache. The database uses foreign key a cascade.
+        let drop_legacy = RauthyConfig::get().vars.consent.enable;
+        if is_hiqlite() {
+            let stmts = hql_delete_statements(drop_legacy)
+                .into_iter()
+                .map(|(sql, binds_id)| {
+                    if binds_id {
+                        (sql, params!(self.id.as_str()))
+                    } else {
+                        (sql, params!())
+                    }
+                })
+                .collect::<Vec<_>>();
+            for res in DB::hql().txn(stmts).await? {
+                res?;
+            }
+        } else {
+            let mut cl = DB::pg().await?;
+            // read committed, like `UserConsent::revoke`, whose lock order this follows
+            let txn = cl
+                .build_transaction()
+                .isolation_level(tokio_postgres::IsolationLevel::ReadCommitted)
+                .start()
+                .await?;
+            let mut jtis = PgDeletedJtis::default();
+            for (sql, binds_id) in pg_delete_statements(drop_legacy) {
+                if binds_id {
+                    jtis.delete(&txn, sql, &[&self.id]).await?;
+                } else {
+                    jtis.delete(&txn, sql, &[]).await?;
+                }
+            }
+            jtis.revoke(&txn).await?;
+            txn.commit().await?;
+        }
+
+        self.delete_cache().await?;
+        self.delete_cached_secrets().await?;
+        // `clients_dyn` cascades in the database
         if self.is_dynamic() {
             ClientDyn::delete_from_cache(&self.id).await?;
         }
@@ -399,19 +455,18 @@ VALUES ($1, $2, $3, $4)"#;
 
     // Returns a client by id without its secret.
     pub async fn find(id: String) -> Result<Self, ErrorResponse> {
-        let client = DB::hql();
-        if let Some(slf) = client.get(Cache::App, Self::cache_idx(&id)).await? {
+        if let Some(slf) = DB::hql().get(Cache::App, Self::cache_idx(&id)).await? {
             return Ok(slf);
         };
 
         let sql = "SELECT * FROM clients WHERE id = $1";
         let slf: Self = if is_hiqlite() {
-            client.query_as_one(sql, params!(id)).await?
+            DB::hql().query_as_one(sql, params!(id)).await?
         } else {
             DB::pg_query_one(sql, &[&id]).await?
         };
 
-        client
+        DB::hql()
             .put(Cache::App, Self::cache_idx(&slf.id), &slf, CACHE_TTL_APP)
             .await?;
 
@@ -511,11 +566,18 @@ VALUES ($1, $2, $3, $4)"#;
         let like = format!("%{scope_name}%");
         let sql = "SELECT * FROM clients WHERE scopes LIKE $1 OR default_scopes LIKE $1";
 
-        let clients = if is_hiqlite() {
+        let mut clients: Vec<Self> = if is_hiqlite() {
             DB::hql().query_as(sql, params!(like)).await?
         } else {
             DB::pg_query(sql, &[&like], 0).await?
         };
+        // LIKE matches substrings - keep only real members
+        clients.retain(|c| {
+            c.scopes
+                .split(',')
+                .chain(c.default_scopes.split(','))
+                .any(|s| s == scope_name)
+        });
 
         Ok(clients)
     }
@@ -621,13 +683,6 @@ VALUES ($1, $2, $3, $4)"#;
         Ok(())
     }
 
-    pub async fn save_cache(&self) -> Result<(), ErrorResponse> {
-        DB::hql()
-            .put(Cache::App, Client::cache_idx(&self.id), self, CACHE_TTL_APP)
-            .await?;
-        Ok(())
-    }
-
     pub async fn save(&self) -> Result<(), ErrorResponse> {
         let allowed_origins = self.allowed_origins.clone().filter(|o| !o.is_empty());
         let contacts = self.contacts.clone().filter(|c| !c.is_empty());
@@ -710,10 +765,8 @@ VALUES ($1, $2, $3, $4)"#;
             )
             .await?;
         }
-
-        DB::hql()
-            .put(Cache::App, Client::cache_idx(&self.id), self, CACHE_TTL_APP)
-            .await?;
+        // `self` may be stale, e.g. from before a delete and recreate of the same id
+        self.delete_cache().await?;
 
         Ok(())
     }
@@ -823,7 +876,7 @@ WHERE id = $4"#;
             txn.commit().await?;
         }
 
-        new_client.save_cache().await?;
+        new_client.delete_cache().await?;
         let ttl = RauthyConfig::get()
             .vars
             .dynamic_clients
@@ -851,6 +904,21 @@ WHERE id = $4"#;
         if let Some(hours) = cache_current_hours
             && let Some(plain) = self.get_secret_cleartext()?
         {
+            let ttl = hours as i64;
+            // Remember the secret under the client id as well, so that `delete()` can remove it.
+            // Otherwise, it would authenticate a client recreated with the same id.
+            let idx = Self::cached_secrets_idx(&self.id);
+            let now = Utc::now().timestamp();
+            let (exp, mut secrets) = DB::hql()
+                .get::<_, _, (i64, Vec<String>)>(Cache::ClientSecret, idx.clone())
+                .await?
+                .unwrap_or_default();
+            let exp = exp.max(now + ttl);
+            secrets.push(plain.clone());
+            DB::hql()
+                .put(Cache::ClientSecret, idx, &(exp, secrets), Some(exp - now))
+                .await?;
+
             // The original idea was to save secrets hashed. However, since the secrets are used as
             // a key, the HashMap inside the `hiqlite` cache handler will take care of this for us,
             // to they could not be read from memory at runtime.
@@ -859,11 +927,32 @@ WHERE id = $4"#;
                     Cache::ClientSecret,
                     plain,
                     self.id.as_bytes().to_vec(),
-                    Some(hours as i64),
+                    Some(ttl),
                 )
                 .await?;
         }
         Ok(())
+    }
+
+    /// Deletes all secrets cached for this client by `cache_current_secret()`.
+    async fn delete_cached_secrets(&self) -> Result<(), ErrorResponse> {
+        let idx = Self::cached_secrets_idx(&self.id);
+        if let Some((_, secrets)) = DB::hql()
+            .get::<_, _, (i64, Vec<String>)>(Cache::ClientSecret, idx.clone())
+            .await?
+        {
+            for secret in secrets {
+                DB::hql().delete(Cache::ClientSecret, secret).await?;
+            }
+            DB::hql().delete(Cache::ClientSecret, idx).await?;
+        }
+        Ok(())
+    }
+
+    /// Generated secrets are alphanumeric, so this key never collides with a cached secret.
+    #[inline]
+    fn cached_secrets_idx(id: &str) -> String {
+        format!("client:{id}")
     }
 
     pub async fn validate_cached_secret(
@@ -899,45 +988,9 @@ impl Client {
         self.is_flow_enabled(GrantType::RefreshToken)
     }
 
-    // TODO make a generic 'delete_from_csv' function out of this and re-use it in some other places
     pub fn delete_scope(&mut self, scope: &str) {
-        // find the scope via index in the string
-        // first entry: delete scope + ',' if it exists
-        // last entry: delete scope + ',' in front if it exists
-        // middle: delete scope + ',' in front if it exists
-        // --> 2 cases: first entry or else
-        if let Some(i) = self.scopes.find(scope) {
-            if i == 0 {
-                // the scope is the first entry
-                if self.scopes.len() > scope.len() {
-                    let s = format!("{scope},");
-                    self.scopes = self.scopes.replace(&s, "");
-                } else {
-                    self.scopes = String::default();
-                }
-            } else {
-                // the scope is at the end or in the middle
-                let s = format!(",{scope}");
-                self.scopes = self.scopes.replace(&s, "");
-            }
-        }
-
-        // check if the to-be-deleted scope is in the default scopes
-        if let Some(i) = self.default_scopes.find(scope) {
-            if i == 0 {
-                // the scope is the first entry
-                if self.default_scopes.len() > scope.len() {
-                    let s = format!("{scope},");
-                    self.default_scopes = self.default_scopes.replace(&s, "");
-                } else {
-                    self.default_scopes = String::default();
-                }
-            } else {
-                // the scope is at the end or in the middle
-                let s = format!(",{scope}");
-                self.default_scopes = self.default_scopes.replace(&s, "");
-            }
-        }
+        self.scopes = csv_remove(&self.scopes, scope);
+        self.default_scopes = csv_remove(&self.default_scopes, scope);
     }
 
     /// Generates a new random 64 character long client secret and returns the cleartext and
@@ -1635,9 +1688,22 @@ impl Client {
     #[inline]
     pub async fn validate_secret(
         &self,
-        mut secret: String,
+        secret: String,
         req: &HttpRequest,
     ) -> Result<(), ErrorResponse> {
+        let res = self.check_secret(secret).await;
+        if res.is_err() {
+            warn!(
+                "Invalid login for client '{}' from '{}'",
+                self.id,
+                real_ip_from_req(req)?
+            );
+        }
+        res
+    }
+
+    /// Validates the `client_secret` without logging, for callers without an `HttpRequest`.
+    pub async fn check_secret(&self, mut secret: String) -> Result<(), ErrorResponse> {
         if !self.confidential {
             error!("Cannot validate 'client_secret' for public client");
             return Err(ErrorResponse::new(
@@ -1662,7 +1728,7 @@ impl Client {
         let cleartext = EncValue::try_from(secret_enc.clone())?.decrypt()?;
 
         // make sure this function is updated if the secret length ever changes
-        debug_assert_eq!(cleartext.len(), SECRET_LEN_CLIENTS);
+        debug_assert!(cleartext.len() >= SECRET_LEN_CLIENTS);
 
         let a = <&[u8; 64]>::try_from(cleartext.as_ref()).unwrap();
         let b = <&[u8; 64]>::try_from(secret.as_bytes()).unwrap();
@@ -1674,12 +1740,6 @@ impl Client {
             secret.zeroize();
             return Ok(());
         }
-
-        warn!(
-            "Invalid login for client '{}' from '{}'",
-            self.id,
-            real_ip_from_req(req)?
-        );
 
         Err(ErrorResponse::new(
             ErrorResponseType::Unauthorized,
@@ -1702,6 +1762,92 @@ impl Client {
             Ok(())
         }
     }
+}
+
+const SQL_CLIENT_DELETE: &str = "DELETE FROM clients WHERE id = $1";
+
+/// The statements of [`Client::delete`] on Postgres in order, each with `true` if it binds the
+/// client id as `$1`. `refresh_tokens.client_id` and `user_consents.client_id` have no FK. Legacy
+/// refresh tokens (`client_id` NULL) cannot be attributed and would be accepted by a recreated
+/// client with the same id, so with `drop_legacy` (`consent.enable`) all of them go.
+///
+/// The tables come in the order a consent revoke (`UserConsent::revoke`) takes their row locks:
+/// user consents, device refresh tokens, legacy refresh tokens, refresh tokens of the client.
+/// With the opposite order, a revoke and a delete of the same client running at the same time
+/// could each wait for a row the other one holds, and Postgres would abort one of them as a
+/// deadlock. The device refresh tokens are deleted explicitly for the same reason, instead of
+/// with the cascade of the client delete at the end.
+///
+/// The refresh token deletes return the `access_token_jti` of their rows, which
+/// [`PgDeletedJtis::revoke`] revokes after these statements, in the same transaction, like the
+/// consent revoke does last. A discard of one of these refresh tokens that runs at the same time
+/// and finds its row deleted leaves the access token to this transaction.
+pub(crate) fn pg_delete_statements(drop_legacy: bool) -> Vec<(&'static str, bool)> {
+    let mut stmts = vec![
+        (SQL_CONSENT_DELETE_BY_CLIENT, true),
+        (
+            r#"
+DELETE FROM refresh_tokens_devices
+WHERE device_id IN (SELECT id FROM devices WHERE client_id = $1)
+RETURNING access_token_jti"#,
+            true,
+        ),
+    ];
+    if drop_legacy {
+        stmts.push((
+            "DELETE FROM refresh_tokens WHERE client_id IS NULL RETURNING access_token_jti",
+            false,
+        ));
+    }
+    stmts.push((
+        "DELETE FROM refresh_tokens WHERE client_id = $1 RETURNING access_token_jti",
+        true,
+    ));
+    stmts.push((SQL_CLIENT_DELETE, true));
+    stmts
+}
+
+/// The statements of [`Client::delete`] on hiqlite: those of [`pg_delete_statements`], with the
+/// access tokens of each refresh token table revoked right before it is deleted. hiqlite applies
+/// the transaction as one raft log entry, so no other write sees a part of it.
+pub(crate) fn hql_delete_statements(drop_legacy: bool) -> Vec<(&'static str, bool)> {
+    // Each revoke runs before its delete, while the rows still name the access tokens.
+    let mut stmts = vec![
+        (SQL_CONSENT_DELETE_BY_CLIENT, true),
+        (
+            r#"
+UPDATE issued_tokens SET revoked = true
+WHERE jti IN (
+    SELECT access_token_jti FROM refresh_tokens_devices
+    WHERE device_id IN (SELECT id FROM devices WHERE client_id = $1)
+)"#,
+            true,
+        ),
+        (
+            r#"
+DELETE FROM refresh_tokens_devices
+WHERE device_id IN (SELECT id FROM devices WHERE client_id = $1)"#,
+            true,
+        ),
+    ];
+    if drop_legacy {
+        stmts.push((
+            r#"
+UPDATE issued_tokens SET revoked = true
+WHERE jti IN (SELECT access_token_jti FROM refresh_tokens WHERE client_id IS NULL)"#,
+            false,
+        ));
+        stmts.push(("DELETE FROM refresh_tokens WHERE client_id IS NULL", false));
+    }
+    stmts.push((
+        r#"
+UPDATE issued_tokens SET revoked = true
+WHERE jti IN (SELECT access_token_jti FROM refresh_tokens WHERE client_id = $1)"#,
+        true,
+    ));
+    stmts.push(("DELETE FROM refresh_tokens WHERE client_id = $1", true));
+    stmts.push((SQL_CLIENT_DELETE, true));
+    stmts
 }
 
 /// Validates a dynamic-client redirect URI.
@@ -1964,6 +2110,8 @@ impl Client {
             claims_at_root: false,
             allowed_resources: value.allowed_resources.map(|r| r.join(",")),
             default_aud: None,
+            // never stored, so there is no row that could be deleted and recreated
+            created_micros: None,
         })
     }
 }
@@ -2007,6 +2155,7 @@ impl Default for Client {
             claims_at_root: false,
             allowed_resources: None,
             default_aud: None,
+            created_micros: None,
         }
     }
 }
@@ -2078,6 +2227,7 @@ impl Client {
         self.claims_at_root = current.claims_at_root;
         self.allowed_resources = current.allowed_resources;
         self.default_aud = current.default_aud;
+        self.created_micros = current.created_micros;
     }
 
     /// RFC 7592 self-update: the client may keep or narrow its grant types, but not add one
@@ -2342,6 +2492,121 @@ pub(crate) mod tests {
     }
     use pretty_assertions::assert_eq;
 
+    /// All hiqlite migrations, in order.
+    fn sqlite_full_schema() -> rusqlite::Connection {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations/hiqlite");
+        let mut files = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .map(|p| {
+                let name = p.file_name().unwrap().to_str().unwrap();
+                let nr: u32 = name.split('_').next().unwrap().parse().unwrap();
+                (nr, p)
+            })
+            .collect::<Vec<_>>();
+        files.sort();
+
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        for (_, path) in files {
+            conn.execute_batch(&std::fs::read_to_string(path).unwrap())
+                .unwrap();
+        }
+        conn
+    }
+
+    /// The hiqlite transaction of `Client::delete` against the full schema: a client recreated
+    /// with the same id inherits neither the user consents nor the refresh tokens of the old one,
+    /// and the access tokens of the deleted refresh tokens are revoked.
+    #[test]
+    fn delete_and_recreate_leaves_no_consent() {
+        for drop_legacy in [false, true] {
+            let mut conn = sqlite_full_schema();
+            conn.execute_batch(
+                r#"
+CREATE TEMP TABLE tu AS SELECT * FROM users LIMIT 1;
+UPDATE tu SET id = 'u1', email = 'u1@example.com';
+INSERT INTO users SELECT * FROM tu;
+CREATE TEMP TABLE tc AS SELECT * FROM clients LIMIT 1;
+UPDATE tc SET id = 'c1';
+INSERT INTO clients SELECT * FROM tc;
+UPDATE tc SET id = 'c2';
+INSERT INTO clients SELECT * FROM tc;
+INSERT INTO user_consents
+    (user_id, client_id, resource, scopes, content_hash, created, updated, ip)
+VALUES ('u1', 'c1', '', 'openid', 'h', 1, 1, '127.0.0.1'),
+       ('u1', 'c1', 'https://api.example.com', 'openid', 'h', 1, 1, '127.0.0.1'),
+       ('u1', 'c2', '', 'openid', 'h', 1, 1, '127.0.0.1');
+INSERT INTO refresh_tokens (id, user_id, nbf, exp, access_token_jti, client_id)
+VALUES ('rt_c1', 'u1', 1, 2, 'j_c1', 'c1'),
+       ('rt_legacy', 'u1', 1, 2, 'j_legacy', NULL),
+       ('rt_c2', 'u1', 1, 2, 'j_c2', 'c2');
+INSERT INTO devices (id, client_id, user_id, created, access_exp, peer_ip, name)
+VALUES ('d1', 'c1', 'u1', 1, 2, '127.0.0.1', 'd1'),
+       ('d2', 'c2', 'u1', 1, 2, '127.0.0.1', 'd2');
+INSERT INTO refresh_tokens_devices (id, device_id, user_id, nbf, exp, access_token_jti)
+VALUES ('rtd_c1', 'd1', 'u1', 1, 2, 'j_d1'),
+       ('rtd_c2', 'd2', 'u1', 1, 2, 'j_d2');
+INSERT INTO issued_tokens (jti, user_id, exp)
+VALUES ('j_c1', 'u1', 2), ('j_legacy', 'u1', 2), ('j_c2', 'u1', 2),
+       ('j_d1', 'u1', 2), ('j_d2', 'u1', 2);
+"#,
+            )
+            .unwrap();
+
+            let txn = conn.transaction().unwrap();
+            for (sql, binds_id) in hql_delete_statements(drop_legacy) {
+                if binds_id {
+                    txn.execute(sql, ["c1"]).unwrap();
+                } else {
+                    txn.execute(sql, []).unwrap();
+                }
+            }
+            txn.commit().unwrap();
+            conn.execute_batch("UPDATE tc SET id = 'c1'; INSERT INTO clients SELECT * FROM tc;")
+                .unwrap();
+
+            let ids = |sql: &str| -> Vec<String> {
+                let mut stmt = conn.prepare(sql).unwrap();
+                stmt.query_map([], |r| r.get::<_, String>(0))
+                    .unwrap()
+                    .map(|r| r.unwrap())
+                    .collect()
+            };
+            assert_eq!(
+                ids("SELECT client_id FROM user_consents ORDER BY client_id"),
+                vec!["c2".to_string()]
+            );
+            let mut expected_rt = vec!["rt_c2".to_string()];
+            if !drop_legacy {
+                expected_rt.push("rt_legacy".to_string());
+            }
+            assert_eq!(
+                ids("SELECT id FROM refresh_tokens ORDER BY id"),
+                expected_rt,
+                "drop_legacy: {drop_legacy}"
+            );
+            assert_eq!(
+                ids("SELECT id FROM clients WHERE id IN ('c1', 'c2') ORDER BY id"),
+                vec!["c1".to_string(), "c2".to_string()]
+            );
+            assert_eq!(
+                ids("SELECT id FROM refresh_tokens_devices ORDER BY id"),
+                vec!["rtd_c2".to_string()]
+            );
+            // the access tokens of the deleted refresh tokens are revoked, the others are not
+            let mut revoked = vec!["j_c1".to_string(), "j_d1".to_string()];
+            if drop_legacy {
+                revoked.push("j_legacy".to_string());
+            }
+            assert_eq!(
+                ids("SELECT jti FROM issued_tokens WHERE revoked ORDER BY jti"),
+                revoked,
+                "drop_legacy: {drop_legacy}"
+            );
+        }
+    }
+
     #[test]
     fn retain_supported_grant_types_strips_unknown() {
         // #1644: an ephemeral/CIMD document advertising an unsupported grant (claude.ai's
@@ -2532,6 +2797,7 @@ pub(crate) mod tests {
             claims_at_root: false,
             allowed_resources: None,
             default_aud: None,
+            created_micros: None,
         };
 
         assert_eq!(client.get_access_token_alg().unwrap(), JwkKeyPairAlg::EdDSA);
@@ -2995,6 +3261,7 @@ pub(crate) mod tests {
             claims_at_root: false,
             allowed_resources: None,
             default_aud: None,
+            created_micros: None,
         }
     }
 
@@ -3121,6 +3388,23 @@ pub(crate) mod tests {
         assert_eq!(&client.default_scopes, "openid");
     }
 
+    #[test]
+    fn test_delete_client_scope_substring() {
+        let mut client = Client {
+            scopes: "openid,profile,email,pro".to_string(),
+            default_scopes: "openid,pro,profile".to_string(),
+            ..Default::default()
+        };
+
+        client.delete_scope("pro");
+        assert_eq!(&client.scopes, "openid,profile,email");
+        assert_eq!(&client.default_scopes, "openid,profile");
+
+        // not a member -> unchanged
+        client.delete_scope("mail");
+        assert_eq!(&client.scopes, "openid,profile,email");
+    }
+
     /// The stored client as an admin left it: every admin-set / internal field differs from
     /// what `try_from_dyn_reg` would produce.
     fn dyn_client_admin_modified() -> Client {
@@ -3151,6 +3435,7 @@ pub(crate) mod tests {
             claims_at_root: true,
             allowed_resources: Some("https://api.example.com".to_string()),
             default_aud: Some("https://aud.example.com".to_string()),
+            created_micros: Some(1),
         }
     }
 
@@ -3204,6 +3489,7 @@ pub(crate) mod tests {
         assert_eq!(new_client.claims_at_root, current.claims_at_root);
         assert_eq!(new_client.allowed_resources, current.allowed_resources);
         assert_eq!(new_client.default_aud, current.default_aud);
+        assert_eq!(new_client.created_micros, current.created_micros);
         // still public -> the admin's PKCE setting is kept
         assert_eq!(new_client.challenge, current.challenge);
 

@@ -197,6 +197,9 @@ pub async fn get_authorize(
     templates.push(HtmlTemplate::IsRegOpen(
         RauthyConfig::get().vars.user_registration.enable,
     ));
+    templates.push(HtmlTemplate::PasswordResetLinkAlways(
+        RauthyConfig::get().vars.access.password_reset_link_always,
+    ));
     templates.push(HtmlTemplate::PasskeyRegType);
     if RauthyConfig::get().vars.atproto.enable {
         let provider_atproto = AuthProvider::find_by_iss(PROVIDER_ATPROTO.to_string()).await?;
@@ -411,8 +414,15 @@ pub async fn post_authorize_handle(
     };
 
     let ip = real_ip_from_req(&req)?;
-    login_delay::handle_login_delay(ip, start, res, has_password_been_hashed, user_failed_logins)
-        .await
+    login_delay::handle_login_delay(
+        ip,
+        start,
+        res,
+        has_password_been_hashed,
+        user_failed_logins,
+        true,
+    )
+    .await
 }
 
 /// Immediate login refresh with valid session
@@ -638,17 +648,35 @@ pub async fn post_device_auth(
         }
     }
 
+    // RFC 8707: validated like on `/oidc/authorize` and bound to the device code
+    if let Some(resource) = payload.resource.as_deref()
+        && let Err(err) = client.validate_resource_request(resource)
+    {
+        return HttpResponse::BadRequest().json(OAuth2ErrorResponse {
+            error: OAuth2ErrorTypeResponse::InvalidTarget,
+            error_description: Some(err.message),
+        });
+    }
+
     // we are good - create the code
-    let code =
-        match DeviceAuthCode::new(scopes, client.id, payload.client_secret, payload.nonce).await {
-            Ok(code) => code,
-            Err(err) => {
-                return HttpResponse::InternalServerError().json(OAuth2ErrorResponse {
-                    error: OAuth2ErrorTypeResponse::InvalidRequest,
-                    error_description: Some(err.message),
-                });
-            }
-        };
+    let code = match DeviceAuthCode::new(
+        scopes,
+        client.id,
+        client.created_micros,
+        payload.client_secret,
+        payload.nonce,
+        payload.resource,
+    )
+    .await
+    {
+        Ok(code) => code,
+        Err(err) => {
+            return HttpResponse::InternalServerError().json(OAuth2ErrorResponse {
+                error: OAuth2ErrorTypeResponse::InvalidRequest,
+                error_description: Some(err.message),
+            });
+        }
+    };
 
     let user_code = code.user_code();
     let verification_uri = code.verification_uri();
@@ -709,6 +737,15 @@ pub async fn post_device_verify(
 
     match payload.device_accepted {
         DeviceAcceptedRequest::Accept => {
+            // The session tells whether this login actually used MFA, the device poll cannot.
+            let client = Client::find(device_code.client_id.clone()).await?;
+            if client.force_mfa && !principal.has_mfa_active() {
+                return Err(ErrorResponse::new(
+                    ErrorResponseType::MfaRequired,
+                    "MFA is required for this client",
+                ));
+            }
+
             device_code.verified_by = Some(principal.user_id()?.to_string());
             device_code.save().await?;
 
@@ -1067,8 +1104,15 @@ pub async fn post_token(
         }
     };
 
-    login_delay::handle_login_delay(ip, start, res, has_password_been_hashed, user_failed_logins)
-        .await
+    login_delay::handle_login_delay(
+        ip,
+        start,
+        res,
+        has_password_been_hashed,
+        user_failed_logins,
+        true,
+    )
+    .await
 }
 
 #[utoipa::path(

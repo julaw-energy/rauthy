@@ -10,6 +10,11 @@ rollout), not only what changed.
 
 ---
 
+## Unreleased
+
+- `tools/upgrade/ldap_smoke.py`: tests the LDAP server of an image end to end (off by default, group prefix and our access
+  rules apply to binds, own-entry search). Tooling only, no change to the image.
+
 ## v0.37.2-custom.9 (2026-11-16)
 
 UI only, no migration and no config change. A build of custom.8 can be replaced by this one without any step.

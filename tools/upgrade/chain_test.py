@@ -147,6 +147,8 @@ def log_problems():
         low = ln.lower()
         if "panicked" in low:
             bad.append(ln.strip()[:200])
+        elif "bincode" in low:
+            bad.append(ln.strip()[:200])
         elif (" ERROR " in ln or " WARN " in ln) and ("migrat" in low or "schema" in low) \
                 and "dev data" not in low and "found already applied migration" not in low \
                 and "adopting the fork migration" not in low:
@@ -245,6 +247,9 @@ def main():
             print(f"[{hop}] {image}", flush=True)
             start(image, data, conf, args.db)
             ok, why = wait_healthy()
+            if ok:
+                api("GET", "/clients/rauthy")  # puts the client into the on-disk cache for the next hop
+                time.sleep(3)
             problems = [] if ok else [why]
             if ok and hop == 0:
                 try:

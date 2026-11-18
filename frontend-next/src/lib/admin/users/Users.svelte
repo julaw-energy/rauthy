@@ -22,6 +22,7 @@
     import IconEnvelope from '$icons/IconEnvelope.svelte';
     import DataTable from '$lib/components/data-table/data-table.svelte';
     import { isSystemUserId } from '$lib5/admin/audit/system';
+    import CollapsibleSearch from '$lib/CollapsibleSearch.svelte';
     import DeletedUsers from '$lib5/admin/audit/DeletedUsers.svelte';
     import { componentCol, dateCol, textCol } from '$lib/components/data-table/columns';
     import type { FeaturedColumnDef } from '$lib/components/data-table/data-table-features';
@@ -101,6 +102,7 @@
 
     let session = useSession('admin');
     // the list of deleted users, with what is kept of them and a way to wipe it
+    let searchOpen = $state(true);
     let showDeleted = $state(false);
     // deleting users stays full-admin only (like in the details); nobody deletes their own account here
     const remove: RowDeletion<UserResponseSimple> = {
@@ -315,14 +317,13 @@
                 </Button>
             {/snippet}
             {#snippet toolbar()}
-                <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                    <div class="relative w-full min-w-48 sm:w-72">
-                        <Search class="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-                        <Input class="h-8 pl-8" placeholder={t.common.search} aria-label={t.common.search} bind:value={searchValue} />
-                    </div>
-                    <div class="w-28">
-                        <Options ariaLabel={t.common.search} options={searchOptions} bind:value={searchOption} />
-                    </div>
+                <div class="flex min-w-0 items-center gap-2 sm:basis-auto sm:flex-1 sm:flex-wrap {searchOpen ? 'basis-full' : ''}">
+                    <CollapsibleSearch class="flex-1 sm:w-72 sm:flex-none" placeholder={t.common.search} bind:value={searchValue} bind:expanded={searchOpen} />
+                    {#if searchOpen}
+                        <div class="w-28 shrink-0">
+                            <Options ariaLabel={t.common.search} options={searchOptions} bind:value={searchOption} />
+                        </div>
+                    {/if}
                 </div>
                 <div class="flex items-center gap-1">
                     <Button variant="ghost" size="icon" aria-label={ta.email.sendMail} title={ta.email.sendMail} onclick={() => emailTo([])}>
@@ -330,8 +331,8 @@
                     </Button>
                     <EmailJobs />
                     {#if session.isAdmin()}
-                        <Button variant="outline" size="sm" onclick={() => (showDeleted = true)}>
-                            <UserX class="size-4" />Deleted users
+                        <Button variant="outline" size="sm" aria-label="Deleted users" title="Deleted users" onclick={() => (showDeleted = true)}>
+                            <UserX class="size-4" /><span class="hidden sm:inline">Deleted users</span>
                         </Button>
                     {/if}
                     <ButtonAddModal bind:ref={refAddNew} level={roles.length === 0 ? 1 : 2} bind:closeModal alignRight>

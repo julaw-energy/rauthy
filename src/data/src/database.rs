@@ -304,6 +304,9 @@ impl DB {
             migrate_dev_data().await.expect("Migrating DEV DATA");
         }
 
+        // cached copies from another build may not be readable, see `fork_cache`
+        crate::migration::fork_cache::clear_if_build_changed().await;
+
         if let Err(err) = anti_lockout::anti_lockout().await {
             error!(?err, "applying anti-lockout check");
         }

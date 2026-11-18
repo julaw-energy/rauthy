@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { brand } from '$lib5/appName.svelte';
     import { onMount } from 'svelte';
     import { fetchGet } from '$api/fetch';
     import type { ChannelSettingsResponse, SettingsResponse } from '$api/types/settings';
@@ -35,7 +36,7 @@
         </p>
         <p class="text-muted-foreground text-sm">
             A channel delivers through <b>SMTP</b> (the built-in mailer, or its own server with its own
-            credentials), a <b>webhook</b> (Rauthy's signed format, for a communication agent you run) or
+            credentials), a <b>webhook</b> ({brand.name}'s signed format, for a communication agent you run) or
             <b>HTTP</b> (you describe the call to any provider). Everything, including the system emails,
             follows the channel, so the SMTP server can be swapped for an agent without touching anything
             else. Changes apply immediately.

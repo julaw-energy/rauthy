@@ -22,7 +22,7 @@
 
 <div class={absolute ? 'absolute top-2 left-2 z-10' : ''}>
     <div aria-live="polite" class="sr-only">{t.common.activeTheme}: {activeTheme}</div>
-    <Button ariaLabel={t.common.changeTheme.replaceAll('{{ CURRENT }}', activeTheme)} invisible onclick={toggleMode}>
+    <Button ariaLabel={t.common.changeTheme.replaceAll('{{ CURRENT }}', activeTheme)} invisible class="size-9! p-0!" onclick={toggleMode}>
         {#if activeTheme === 'dark'}<Moon class="size-5" />{:else}<Sun class="size-5" />{/if}
     </Button>
 </div>

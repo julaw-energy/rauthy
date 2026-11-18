@@ -132,6 +132,9 @@ LABEL org.opencontainers.image.version="$VERSION"
 
 USER $TARGET_USER
 
+# tells the app which build it is, the cache is dropped when it changes
+ENV RAUTHY_BUILD_ID="$VERSION"
+
 # default jemalloc tuning suitable for most deployments
 ENV MALLOC_CONF="abort_conf:true,narenas:8,tcache_max:4096,dirty_decay_ms:5000,muzzy_decay_ms:5000"
 

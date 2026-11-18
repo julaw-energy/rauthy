@@ -47,7 +47,7 @@
             <p class="text-muted-foreground text-sm">No user has been deleted since the audit log exists.</p>
         {:else}
             <div class="overflow-x-auto">
-                <table class="w-full text-left text-sm">
+                <table class="w-full text-left text-sm whitespace-nowrap">
                     <thead class="text-muted-foreground border-b text-xs uppercase">
                         <tr>
                             <th class="py-2 pr-3">Deleted</th>
@@ -63,11 +63,11 @@
                         {#each users as u (u.id)}
                             <tr class="border-b align-top last:border-0">
                                 <td class="py-2 pr-3 whitespace-nowrap">{when(u.deleted_at)}</td>
-                                <td class="py-2 pr-3 break-all">{u.email ?? ''}</td>
+                                <td class="py-2 pr-3">{u.email ?? ''}</td>
                                 <td class="py-2 pr-3">{name(u)}</td>
                                 <td class="py-2 pr-3">{u.preferred_username ?? ''}</td>
                                 <td class="py-2 pr-3">{u.phone ?? ''}</td>
-                                <td class="text-muted-foreground py-2 pr-3 font-mono text-xs break-all">{u.id}</td>
+                                <td class="text-muted-foreground py-2 pr-3 font-mono text-xs">{u.id}</td>
                                 <td class="py-2 text-right">
                                     {#if u.anonymized}
                                         <span class="text-muted-foreground text-xs">wiped</span>

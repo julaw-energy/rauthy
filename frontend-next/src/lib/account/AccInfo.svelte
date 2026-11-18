@@ -42,6 +42,8 @@
 
     let unlinkErr = $state(false);
     let showModal = $state(false);
+    let showUnlinkConfirm = $state(false);
+    let unlinking = $state(false);
 
     let isFederated = $derived(user.account_type?.startsWith('federated'));
     let accType = $derived(
@@ -124,7 +126,11 @@
     }
 
     async function unlinkProvider() {
+        unlinking = true;
+        unlinkErr = false;
         let res = await fetchDelete<UserResponse>('/auth/v1/providers/link');
+        unlinking = false;
+        showUnlinkConfirm = false;
         if (res.body) {
             user = res.body;
         } else {
@@ -179,11 +185,54 @@
                                 ariaLabel={t.account.providerUnlink}
                                 level={2}
                                 class="border-brand-orange rounded-[3px]"
-                                onclick={unlinkProvider}
+                                onclick={() => (showUnlinkConfirm = true)}
                             >
                                 {t.account.providerUnlink}
                             </Button>
                         </div>
+                        <Modal bind:showModal={showUnlinkConfirm}>
+                            <h3 class="text-lg font-semibold">{t.account.providerUnlink}?</h3>
+                            <div class="text-muted-foreground grid gap-2 text-sm">
+                                <p>
+                                    Your account will no longer be connected to
+                                    <b>{authProvider?.name || 'the provider'}</b>.
+                                </p>
+                                <ul class="list-disc space-y-1 pl-5">
+                                    <li>
+                                        You can no longer sign in with
+                                        {authProvider?.name || 'the provider'}. From now on you sign in
+                                        with your own password or passkey.
+                                    </li>
+                                    <li>
+                                        Anything the provider did for you, like its multi-factor check,
+                                        no longer applies. Only the security of your own password and
+                                        passkeys counts.
+                                    </li>
+                                    <li>
+                                        Your account and its data stay. If you want to connect a
+                                        provider again later, you can do it here.
+                                    </li>
+                                </ul>
+                                <p>
+                                    Make sure you know your password or have a passkey set up, or you
+                                    could lose access to your account.
+                                </p>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <Button
+                                    ariaLabel={t.account.providerUnlink}
+                                    level={2}
+                                    class="border-brand-orange rounded-[3px]"
+                                    isLoading={unlinking}
+                                    onclick={unlinkProvider}
+                                >
+                                    {t.account.providerUnlink}
+                                </Button>
+                                <Button level={3} onclick={() => (showUnlinkConfirm = false)}>
+                                    {t.common.cancel}
+                                </Button>
+                            </div>
+                        </Modal>
                         {#if unlinkErr}
                             <ErrorAlert err={t.account.providerUnlinkDesc} />
                         {/if}

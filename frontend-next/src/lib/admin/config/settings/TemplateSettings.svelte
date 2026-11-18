@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { brand } from '$lib5/appName.svelte';
     import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { onMount } from 'svelte';
     import { toast } from 'svelte-sonner';
@@ -185,7 +186,7 @@
     <div class="grid gap-2">
         <h3 class="text-xl font-semibold">Message templates</h3>
         <p class="text-muted-foreground text-sm">
-            The texts of the messages Rauthy sends. The look of an email stays as it is built in, the
+            The texts of the messages {brand.name} sends. The look of an email stays as it is built in, the
             wording is yours to change. A template is checked before it is saved: one with an error is
             refused and the one in use keeps working. Once saved, the next message uses it, no restart
             needed. Try a draft with <b>Preview</b> or send it to yourself with <b>Send a test to me</b>

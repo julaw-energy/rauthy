@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { brand } from '$lib5/appName.svelte';
     import { onMount } from 'svelte';
     import { toast } from 'svelte-sonner';
     import { fetchGet, fetchPost, fetchPut } from '$api/fetch';
@@ -118,8 +119,8 @@
     </div>
 
     <p class="text-muted-foreground text-sm">
-        The mail server Rauthy sends password resets, verification codes and admin messages through.
-        Rauthy starts and works without it; emails are only skipped until it is set up. Changes apply
+        The mail server {brand.name} sends password resets, verification codes and admin messages through.
+        {brand.name} starts and works without it; emails are only skipped until it is set up. Changes apply
         immediately, no restart needed.
     </p>
 

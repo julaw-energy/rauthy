@@ -20,8 +20,61 @@ use serde::{Deserialize, Serialize};
 use std::io::{self, Cursor};
 use std::string::ToString;
 use std::sync::LazyLock;
+use std::time::{Duration, Instant};
 use tokio::fs;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
+
+/// How often an S3 bucket that is not reachable is tried again
+const S3_WATCH_INTERVAL: Duration = Duration::from_secs(10);
+/// After this long without a connection, the log changes from a warning to an error
+const S3_WATCH_ESCALATE_AFTER: Duration = Duration::from_secs(5 * 60);
+
+/// Tries `check` until it succeeds, then returns. It never gives up and never panics: the
+/// bucket may come up at any time, a restart of Rauthy must not be needed for it. The first
+/// failure is a warning, one that is still going on after `escalate_after` becomes an error.
+async fn watch_s3_bucket<F, Fut>(mut check: F, interval: Duration, escalate_after: Duration)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
+    let started = Instant::now();
+    let mut attempts = 0u32;
+    loop {
+        attempts += 1;
+        match check().await {
+            Ok(()) => {
+                if attempts == 1 {
+                    info!("Using S3 bucket as User Picture Storage - connection test successful");
+                } else {
+                    info!(
+                        attempts,
+                        waited_secs = started.elapsed().as_secs(),
+                        "The S3 bucket of the User Pictures is reachable now"
+                    );
+                }
+                return;
+            }
+            Err(err) if started.elapsed() >= escalate_after => {
+                error!(
+                    attempts,
+                    waited_secs = started.elapsed().as_secs(),
+                    err,
+                    "The S3 bucket of the User Pictures is still not reachable. Picture uploads \
+                    and downloads fail until it is. Rauthy keeps trying."
+                );
+            }
+            Err(err) => {
+                warn!(
+                    attempts,
+                    err,
+                    "The S3 bucket of the User Pictures is not reachable (yet). Rauthy keeps \
+                    trying, only picture requests fail meanwhile."
+                );
+            }
+        }
+        tokio::time::sleep(interval).await;
+    }
+}
 
 const CACHE_CTRL_PICTURE: &str = "max-age=31104000, stale-while-revalidate=2592000";
 const PICTURE_SIZE_PX: u32 = 192;
@@ -419,15 +472,26 @@ impl UserPicture {
                 );
             }
             PictureStorage::S3 => {
-                // make sure the S3 bucket is configured properly
-                PICTURE_S3_BUCKET
-                    .list("", None)
-                    .await
-                    .expect("Cannot list User Picture S3 Bucket");
-                info!(
-                    bucket = PICTURE_S3_BUCKET.name,
-                    "Using S3 bucket as User Picture Storage - connection test successful",
-                );
+                // A wrong configuration (missing URL, key, ...) must still stop the start, so the
+                // bucket is built here. This does not touch the network.
+                LazyLock::force(&PICTURE_S3_BUCKET);
+
+                // An S3 server that is not reachable yet must NOT stop or delay the start. A
+                // typical case: MinIO needs the OIDC discovery of Rauthy to start, and Rauthy
+                // needs MinIO for the pictures. If both waited for each other, neither would ever
+                // come up. So the connection is checked in the background, and until it works,
+                // only the picture requests fail.
+                tokio::spawn(watch_s3_bucket(
+                    || async {
+                        PICTURE_S3_BUCKET
+                            .list("", None)
+                            .await
+                            .map(|_| ())
+                            .map_err(|err| err.to_string())
+                    },
+                    S3_WATCH_INTERVAL,
+                    S3_WATCH_ESCALATE_AFTER,
+                ));
             }
             PictureStorage::Disabled => {
                 info!("User Picture upload disabled");
@@ -442,6 +506,43 @@ impl UserPicture {
 mod tests {
     use super::*;
     use std::cell::RefCell;
+
+    #[tokio::test]
+    async fn s3_watch_keeps_trying_until_the_bucket_is_there() {
+        let attempts = std::sync::atomic::AtomicU32::new(0);
+        watch_s3_bucket(
+            || {
+                let n = attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                async move {
+                    if n < 4 {
+                        Err(format!("connection refused (try {n})"))
+                    } else {
+                        Ok(())
+                    }
+                }
+            },
+            Duration::from_millis(5),
+            Duration::from_millis(12),
+        )
+        .await;
+        // 3 failures, the last of them already past the escalation time, then success
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test]
+    async fn s3_watch_returns_at_once_when_the_bucket_is_there() {
+        let attempts = std::sync::atomic::AtomicU32::new(0);
+        watch_s3_bucket(
+            || {
+                attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                async { Ok(()) }
+            },
+            Duration::from_secs(3600),
+            Duration::from_secs(3600),
+        )
+        .await;
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
 
     fn picture(storage: &str) -> UserPicture {
         UserPicture {

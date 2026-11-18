@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { brand } from '$lib5/appName.svelte';
     import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { toast } from 'svelte-sonner';
     import { Plus, X } from '@lucide/svelte';
@@ -93,7 +94,7 @@
         ...(isEmail ? [{ value: 'smtp', label: 'Built-in mailer (the server under Email (SMTP))' }] : []),
         ...(!builtin ? [{ value: 'smtp', label: 'Email through its own SMTP server' }] : []),
         { value: 'http', label: 'HTTP: describe the call to a provider' },
-        { value: 'webhook', label: 'Webhook: Rauthy\'s own signed format' },
+        { value: 'webhook', label: `Webhook: ${brand.name}'s own signed format` },
     ]);
 
     const recipientItems = $derived([
@@ -376,8 +377,8 @@
                 </div>
             {/if}
             <span class="text-muted-foreground text-xs">
-                Rauthy POSTs one fixed JSON format and signs the body with this secret in
-                <code>X-Rauthy-Signature</code>. Your agent never needs a provider password from Rauthy.
+                {brand.name} POSTs one fixed JSON format and signs the body with this secret in
+                <code>X-Rauthy-Signature</code>. Your agent never needs a provider password from {brand.name}.
             </span>
         </div>
     {:else if d.driver === 'http'}

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import CollapsibleSearch from '$lib/CollapsibleSearch.svelte';
     import ErrorAlert from '$lib5/ErrorAlert.svelte';
     import { onMount } from 'svelte';
     import { redirectToLogin } from '$utils/helpers';
@@ -38,6 +39,7 @@
 
     const searchOptions = ['User ID', 'Session ID', 'IP'];
     let searchOption = $state(searchOptions[0]);
+    let searchOpen = $state(true);
     let searchValue = $state('');
 
     const columns: FeaturedColumnDef<SessionResponse>[] = [
@@ -139,14 +141,13 @@
             initialSorting={[{ id: 'last_seen', desc: true }]}
         >
             {#snippet toolbar()}
-                <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                    <div class="relative w-full min-w-48 sm:w-72">
-                        <Search class="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-                        <Input class="h-8 pl-8" placeholder={t.common.search} aria-label={t.common.search} bind:value={searchValue} />
-                    </div>
-                    <div class="w-32">
-                        <Options bind:ref={refOpts} ariaLabel={t.common.search} options={searchOptions} bind:value={searchOption} />
-                    </div>
+                <div class="flex min-w-0 items-center gap-2 sm:basis-auto sm:flex-1 sm:flex-wrap {searchOpen ? 'basis-full' : ''}">
+                    <CollapsibleSearch class="flex-1 sm:w-72 sm:flex-none" placeholder={t.common.search} bind:value={searchValue} bind:expanded={searchOpen} />
+                    {#if searchOpen}
+                        <div class="w-32 shrink-0">
+                            <Options bind:ref={refOpts} ariaLabel={t.common.search} options={searchOptions} bind:value={searchOption} />
+                        </div>
+                    {/if}
                 </div>
                 {#if isAdmin}
                     <Button level={-1} onclick={invalidateSessions}>

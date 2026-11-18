@@ -201,10 +201,10 @@
             {`${user.given_name || ''} ${user.family_name || ''}`}
         </h1>
 
-        <div class="flex flex-wrap items-center gap-1">
+        <div class="flex flex-wrap items-center gap-0.5">
             <DateFormatSelect />
             <ThemeSwitch />
-            <div class="w-28"><LangSelector openTop borderless={false} updateBackend /></div>
+            <LangSelector borderless={false} updateBackend />
             {#if showAdminLink}
                 <A href="/auth/v1/admin/users" hideUnderline>
                     <span title={t.account.navBackToAdmin} class="flex items-center gap-1 text-sm">

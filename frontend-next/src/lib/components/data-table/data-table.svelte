@@ -4,6 +4,7 @@
     //  - otherwise (server mode) paging is manual and driven by `paginationData` + `handleFetch`
     //  - optional built-in `search`, `onRowClick`, `toolbar` / `rowActions` snippets, row deletion
     import {tick, untrack, type Snippet} from "svelte";
+    import CollapsibleSearch from '$lib/CollapsibleSearch.svelte';
     import {
         type ColumnDef,
         type RowData,
@@ -536,16 +537,13 @@
             </Button>
         {/if}
         {#if searchable}
-            <div class="relative w-full min-w-40 sm:w-64">
-                <Search class="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2"/>
-                <Input class="h-8 pl-8" placeholder={searchPlaceholder} bind:value={search} aria-label={searchPlaceholder}/>
-            </div>
+            <CollapsibleSearch class="w-full sm:w-64" placeholder={searchPlaceholder} bind:value={search}/>
         {/if}
         <DropdownMenu.Root>
             <DropdownMenu.Trigger>
                 {#snippet child({props})}
                     <Button {...props} size="sm" variant="outline" aria-label="Copy as CSV" title="Copy as CSV">
-                        <Copy class="size-4"/>CSV
+                        <Copy class="size-4"/><span class="hidden sm:inline">CSV</span>
                     </Button>
                 {/snippet}
             </DropdownMenu.Trigger>

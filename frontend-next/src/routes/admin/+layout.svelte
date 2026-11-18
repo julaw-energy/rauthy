@@ -204,11 +204,11 @@
                 <h1 class="min-w-0 flex-1 truncate text-base font-semibold capitalize">{title}</h1>
                 <!-- same controls, same order as the account page; icon buttons share one 36px box so they line up -->
                 <div
-                    class="flex shrink-0 items-center gap-1 [&_button:not([data-slot=select-trigger])]:size-9! [&_button:not([data-slot=select-trigger])]:p-0!"
+                    class="flex shrink-0 items-center gap-0.5 [&_button:not([data-slot=select-trigger])]:size-9! [&_button:not([data-slot=select-trigger])]:p-0!"
                 >
                     <DateFormatSelect />
                     <ThemeSwitch />
-                    <div class="w-24 sm:w-28"><LangSelector borderless={false} /></div>
+                    <LangSelector borderless={false} />
                     <A href="/auth/v1/account" hideUnderline>
                         <span class="inline-flex size-9 items-center justify-center">
                             <Tooltip text="Account"><IconUserCircle width="1.4rem" /></Tooltip>

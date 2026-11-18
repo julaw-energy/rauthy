@@ -25,8 +25,12 @@
     });
 </script>
 
-<div bind:this={ref} class="max-w-full overflow-x-auto overflow-y-hidden {center ? 'flex justify-center' : ''}" style:width={width !== 'inherit' ? width : undefined}>
-    <Tabs.Root bind:value={selected}>
+<!--
+`mx-auto w-max` instead of `flex justify-center`: centering with flex cuts off the START of a row
+that is wider than the screen, and that part can not be scrolled to (the first tabs were lost on phones)
+-->
+<div bind:this={ref} class="max-w-full overflow-x-auto overflow-y-hidden" style:width={width !== 'inherit' ? width : undefined}>
+    <Tabs.Root bind:value={selected} class={center ? 'mx-auto w-max' : ''}>
         <Tabs.List>
             {#each tabs as tab (tab)}
                 <Tabs.Trigger value={tab} onkeydown={(ev) => ev.code === 'ArrowDown' && onDown?.()}>{tab}</Tabs.Trigger>

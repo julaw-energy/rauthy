@@ -65,7 +65,7 @@
 </svelte:head>
 
 <Main>
-    <ContentCenter>
+    <ContentCenter top>
         {#if isReady && session && user}
             <AccMain bind:user bind:webIdData />
         {/if}

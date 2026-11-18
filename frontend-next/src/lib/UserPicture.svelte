@@ -1,5 +1,6 @@
 <script lang="ts">
-    import IconUpload from '$icons/IconUpload.svelte';
+    import { Pencil } from '@lucide/svelte';
+    import Modal from '$lib/Modal.svelte';
     import { useI18n } from '$state/i18n.svelte';
     import { genKey, getCsrfToken } from '$utils/helpers';
     import type { ErrorResponse } from '$api/types/error.ts';
@@ -37,7 +38,7 @@
     let errFileSize = $state('');
     let timer: undefined | number;
 
-    let showUpload = $state(false);
+    let showView = $state(false);
     let isUploading = $state(false);
     let files: undefined | FileList = $state();
 
@@ -77,6 +78,7 @@
 
     $effect(() => {
         if (files && files.length > 0) {
+            showView = false;
             upload(files);
         }
     });
@@ -89,22 +91,10 @@
         return `hsl(${hue}, 50%, 50%)`;
     }
 
-    function ondrop(ev: DragEvent) {
-        files = ev.dataTransfer?.files;
-    }
-
     function onerror(ev: Event & { currentTarget: EventTarget & Element }) {
         if (ev.type === 'error') {
             err = 'Input Error';
         }
-    }
-
-    function onmouseenter() {
-        showUpload = true;
-    }
-
-    function onmouseleave() {
-        showUpload = false;
     }
 
     /// Converts the given string to a random hue.
@@ -212,58 +202,81 @@
 {/snippet}
 
 <div class="flex items-center gap-1">
-    {#if config?.upload_allowed && !disableUpload}
-        <form
-            class="relative shrink-0 overflow-hidden rounded-full"
-            aria-dropeffect="move"
-            aria-label="Upload"
-            style:background-color={color}
-            style:width
-            style:height={width}
-            {onmouseenter}
-            {onmouseleave}
-        >
+    <div class="relative shrink-0">
+        {#if size === 'large' && pictureId && !err}
+            <!-- a tap only shows the picture bigger; changing it is the pencil -->
+            <button
+                type="button"
+                class="relative block cursor-zoom-in overflow-hidden rounded-full"
+                style:background-color={color}
+                style:width
+                style:height={width}
+                aria-label="View picture"
+                title="View picture"
+                onclick={() => (showView = true)}
+            >
+                {@render avatar()}
+            </button>
+        {:else}
+            <span class="relative block overflow-hidden rounded-full" style:background-color={color} style:width style:height={width}>
+                {@render avatar()}
+            </span>
+        {/if}
+
+        {#if config?.upload_allowed && !disableUpload}
             <label
                 for={id}
                 aria-controls={id}
                 aria-disabled={isUploading}
-                class="absolute inset-0 z-10 flex cursor-pointer items-center justify-center bg-black/50 text-white transition-opacity {!isUploading && showUpload ? 'opacity-100' : 'opacity-0'}"
+                title="Change picture"
+                class="bg-background text-foreground hover:bg-accent absolute -right-1 -bottom-1 z-10 flex size-8 cursor-pointer items-center justify-center rounded-full border shadow {isUploading ? 'opacity-50' : ''}"
             >
-                <IconUpload width="50%" />
+                <Pencil class="size-4" />
+                <span class="sr-only">Change picture</span>
             </label>
             <input
-                tabindex="0"
                 {id}
                 type="file"
                 class="sr-only"
                 disabled={isUploading}
                 aria-label="Upload Picture"
                 aria-disabled={isUploading}
-                onfocusin={() => (showUpload = true)}
-                onfocusout={() => (showUpload = false)}
                 {accept}
                 bind:files
             />
-
             {#if errFileSize}
-                <div class="bg-destructive text-destructive-foreground absolute inset-x-0 bottom-0 z-20 p-1 text-center text-[10px]">
+                <div class="bg-destructive text-destructive-foreground absolute inset-x-0 bottom-0 z-20 rounded-b-full p-1 text-center text-[10px]">
                     {errFileSize}
                 </div>
             {/if}
-
-            {@render avatar()}
-        </form>
-
-        {#if size === 'large' && pictureId && !isExternal}
-            <Button bind:ref={refDel} invisible level={-3} onclick={deletePicture}>
-                <span title={t.common.delete}>
-                    <IconStop width="1.2rem" />
-                </span>
-            </Button>
         {/if}
-    {:else}
-        <span class="relative shrink-0 overflow-hidden rounded-full" style:background-color={color} style:width style:height={width}>
-            {@render avatar()}
-        </span>
+    </div>
+
+    {#if config?.upload_allowed && !disableUpload && size === 'large' && pictureId && !isExternal}
+        <Button bind:ref={refDel} invisible level={-3} onclick={deletePicture}>
+            <span title={t.common.delete}>
+                <IconStop width="1.2rem" />
+            </span>
+        </Button>
     {/if}
 </div>
+
+<Modal bind:showModal={showView}>
+    <h3 class="sr-only">Picture</h3>
+    {#if pictureId && !err}
+        <img
+            src={isExternal ? pictureId : `/auth/v1/users/${userId}/picture/${pictureId}`}
+            referrerpolicy="no-referrer"
+            alt=""
+            class="mx-auto aspect-square w-full max-w-sm rounded-2xl object-cover"
+        />
+    {/if}
+    {#if config?.upload_allowed && !disableUpload}
+        <label
+            for={id}
+            class="bg-secondary hover:bg-accent mx-auto inline-flex cursor-pointer items-center gap-2 rounded-full px-4 py-2 text-sm font-medium"
+        >
+            <Pencil class="size-4" />Change picture
+        </label>
+    {/if}
+</Modal>

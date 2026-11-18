@@ -10,10 +10,49 @@ rollout), not only what changed.
 
 ---
 
-## Unreleased
+## v0.37.2-custom.10 (2026-11-17)
 
+No migration. Fixes a start order problem with S3 and an error after an upgrade; "Unlink" asks first.
+
+### Bugfix
+
+- **An S3 server that is not reachable at startup no longer stops Rauthy.** With `user_pictures.storage_type = 's3'`
+  Rauthy listed the bucket at boot and panicked when that failed, so a MinIO that itself needs the OIDC discovery of
+  Rauthy to start (and Rauthy needing MinIO) could never come up. Rauthy starts and serves at once now. The bucket is
+  checked in the background: a warning every 10 seconds, an error after 5 minutes, it keeps trying and uses the bucket
+  as soon as it is there, no restart needed. Only the picture requests fail meanwhile. A wrong configuration (missing
+  URL, key, bucket name) still stops the start. Hiqlite's own S3 use (backups) does not touch the network at startup.
+
+- **No more `Bincode: invalid length 26, expected struct Client with 27 elements` after an upgrade.** The cache is kept
+  on disk (`cache_storage_disk`), and after an upgrade the old cached copies of a changed struct could not be read, which
+  logged an ERROR at the first start and skipped the anti-lockout check once. The cache only holds copies of the
+  database, so it is now dropped once whenever the build changes (the image carries `RAUTHY_BUILD_ID`, our version). The
+  log says `Build changed from ... to ..., clearing the cache`. Nothing to do for you; the first start of this release
+  does it, so the error does not show up.
+
+### Changes
+
+- **Phones (new UI):** the account page tabs were centered in a way that cut off the first ones when they did not fit
+  (the "Info" tab and the MFA tab could not be reached); they scroll from the start now. The date format and the language
+  pickers are icons on a narrow screen, the "CSV" and "Deleted users" buttons too, and the search of the user list has its
+  own line. Dialogs keep a margin to the screen edge and no longer push their content out of the box.
+- **More phone and header work (new UI):** a search box is only an icon on a phone until it is tapped (lists of users,
+  sessions and every table with a search); the date format and language pickers open a small popup with the choices on
+  a phone, and the language picker has a globe icon everywhere; the controls in the header are closer together; the tick
+  in the pickers is closer to its text; the account page stays at the top while you switch tabs instead of moving to the
+  middle of the screen; the id in "Deleted users" stays on one line (the table scrolls sideways).
+- **Profile picture:** tapping it only shows it bigger (no more upload prompt); the picture is changed with the pencil
+  on its corner, or with "Change picture" in the enlarged view.
+- **The service name** (`server.app_name`, "Julaw Accounts" for you) now also shows in the (i) explanations and in the
+  help texts of the settings pages, where they said "Rauthy".
+- **Explanations (i):** a small info icon explains a static setting. On a computer it shows on hover or keyboard focus, on
+  a touch screen it opens on a tap (there is no hover there). The component (`InfoTip`) can be used anywhere.
+- **"Unlink federation" asks first.** The button opens a dialog that says what happens: no more sign-in with the
+  provider, only your own password or passkey is left, the provider's own MFA no longer counts, the account stays. The
+  unlink only runs after "Unlink" in the dialog.
+- `tools/upgrade/chain_test.py` warms the cache before every hop and fails on `Bincode` errors.
 - `tools/upgrade/ldap_smoke.py`: tests the LDAP server of an image end to end (off by default, group prefix and our access
-  rules apply to binds, own-entry search). Tooling only, no change to the image.
+  rules apply to binds, own-entry search). Tooling only.
 
 ## v0.37.2-custom.9 (2026-11-16)
 

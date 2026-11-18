@@ -3,7 +3,8 @@
     import { page } from '$app/state';
     import { useI18n } from '$state/i18n.svelte';
     import { getCookie } from '$utils/helpers';
-    import Options from '$lib5/Options.svelte';
+    import HeaderPicker from '$lib/HeaderPicker.svelte';
+    import { Globe } from '@lucide/svelte';
     import { fetchPost } from '$api/fetch';
     import type { Language } from '$api/types/i18n.ts';
     import { useI18nConfig } from '$state/i18n_config.svelte';
@@ -57,7 +58,15 @@
 </script>
 
 {#if languages}
-    <div class={absolute ? 'absolute top-2 right-2 z-10 w-24' : 'w-24'}>
-        <Options ariaLabel={t.common.selectI18n} options={languages} {borderless} bind:value={selected} />
+    <div class={absolute ? 'absolute top-2 right-2 z-10' : ''}>
+        <HeaderPicker
+            icon={Globe}
+            ariaLabel={t.common.selectI18n}
+            options={languages.map((l) => ({ value: l, label: l }))}
+            value={selected}
+            onChange={(v) => (selected = v as typeof selected)}
+            label={selected.toUpperCase()}
+            class={borderless ? 'border-transparent bg-transparent shadow-none' : ''}
+        />
     </div>
 {/if}

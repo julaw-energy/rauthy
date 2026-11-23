@@ -65,6 +65,8 @@
     const idDatalist = genKey();
 
     let value = $state('');
+    // the box only looks like an input, and its typing part only opens, while it has the focus
+    let focused = $state(false);
     let validateErr = $state('');
     let list = $derived(datalist && datalist.length > 0 ? idDatalist : undefined);
 
@@ -108,7 +110,13 @@
     {/if}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <div
-        class="border-input focus-within:ring-ring/30 focus-within:border-ring flex min-h-9 flex-wrap items-center gap-1.5 overflow-auto rounded-xl border px-2 py-1.5 focus-within:ring-3 {isError ? 'border-destructive' : ''}"
+        class="border-input relative flex min-h-9 cursor-text flex-wrap items-center gap-1.5 overflow-auto rounded-3xl border bg-white px-3 py-1.5 transition-[box-shadow,border-color] dark:border-foreground/20 dark:bg-foreground/[0.07] {focused
+            ? 'border-ring ring-ring/30 ring-3'
+            : ''} {isError ? 'border-destructive' : ''}"
+        onfocusin={() => (focused = true)}
+        onfocusout={(ev) => {
+            if (!ev.currentTarget.contains(ev.relatedTarget as Node | null)) focused = false;
+        }}
         style:max-height={maxHeightList}
         onclick={() => ref?.focus()}
     >
@@ -120,6 +128,9 @@
                 </button>
             </Badge>
         {/each}
+        {#if !focused && values.length === 0}
+            <span class="text-muted-foreground text-sm">{placeholder || 'Click to add'}</span>
+        {/if}
         <input
             bind:this={ref}
             type={typ}
@@ -137,7 +148,7 @@
             min={min || undefined}
             max={max || undefined}
             {pattern}
-            class="placeholder:text-muted-foreground min-w-24 flex-1 bg-transparent text-sm outline-none"
+            class="placeholder:text-muted-foreground bg-transparent text-sm outline-none {focused ? 'min-w-24 flex-1' : 'pointer-events-none absolute size-0 opacity-0'}"
             {onkeydown}
             oninput={() => {
                 isValid();

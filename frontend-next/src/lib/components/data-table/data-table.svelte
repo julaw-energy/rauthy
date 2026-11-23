@@ -530,6 +530,23 @@
 
 <div class="flex h-full w-full max-w-full min-w-0 flex-col overflow-hidden {className}" {...restProps}>
     <div class="flex shrink-0 flex-wrap items-center gap-2 py-2">
+        <!-- the page size comes first, the other actions follow, the page's own buttons (Add new, ...) end the row -->
+        <div class="flex items-center gap-2">
+            <Label class="w-fit" for={tableId + "-pagesize"}>Entries</Label>
+            <Select.Root type="single" name="pageSize" value={String(internalPagination.pageSize)}
+                         onValueChange={(value) => {table.setPageSize(Number(value));}}>
+                <Select.Trigger class="w-fit" id={tableId + "-pagesize"}>
+                    {table.atoms.pagination.get().pageSize}
+                </Select.Trigger>
+                <Select.Content>
+                    <Select.Group>
+                        {#each pageSizes as size (size)}
+                            <Select.Item value={size.toString()} label={size.toString()}>{size}</Select.Item>
+                        {/each}
+                    </Select.Group>
+                </Select.Content>
+            </Select.Root>
+        </div>
         {#if onCreate}
             <Button size="sm" onclick={onCreate}>
                 <Plus class="size-4"/>
@@ -559,7 +576,6 @@
                 <RefreshCw class="size-4 {fetching ? 'animate-spin' : ''}"/>
             </Button>
         {/if}
-        {@render toolbar?.()}
         {#if editable && dirtyCells > 0}
             <div class="flex items-center gap-2 rounded-md border border-amber-500/60 bg-amber-500/10 px-2 py-1 text-sm">
                 <span>{dirtyCells} changed in {dirtyRows.length} row{dirtyRows.length === 1 ? '' : 's'}</span>
@@ -581,21 +597,8 @@
                 <Button size="sm" variant="outline" onclick={() => (selected = {})}>Clear</Button>
             </div>
         {/if}
-        <div class="ml-auto flex items-center gap-2">
-            <Label class="w-fit" for={tableId + "-pagesize"}>Entries</Label>
-            <Select.Root type="single" name="pageSize" value={String(internalPagination.pageSize)}
-                         onValueChange={(value) => {table.setPageSize(Number(value));}}>
-                <Select.Trigger class="w-fit" id={tableId + "-pagesize"}>
-                    {table.atoms.pagination.get().pageSize}
-                </Select.Trigger>
-                <Select.Content>
-                    <Select.Group>
-                        {#each pageSizes as size (size)}
-                            <Select.Item value={size.toString()} label={size.toString()}>{size}</Select.Item>
-                        {/each}
-                    </Select.Group>
-                </Select.Content>
-            </Select.Root>
+        <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
+        {@render toolbar?.()}
         </div>
     </div>
 

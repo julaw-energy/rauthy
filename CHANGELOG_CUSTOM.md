@@ -10,6 +10,35 @@ rollout), not only what changed.
 
 ---
 
+## Unreleased
+
+No migration. **Security: update soon.** Adds sign-in with no click (FedCM) for trusted apps.
+
+### Security
+
+- **One request with an empty or short cookie value stopped the whole server.** The encryption library panics when an
+  encrypted value is shorter than its 6 byte header, and Rauthy aborts on a panic. Anyone could send
+  `Cookie: __Host-RauthySession=` to any endpoint, with no login, and the process was gone until it was restarted. This is
+  an upstream bug that every earlier release has. All cookie, MFA cookie and forward auth values from a client go through a
+  length check now. Nothing to do for you but update.
+
+- **FedCM applies the same checks as the normal login.** Until now a FedCM token skipped the group prefix, `force_mfa`,
+  required user data and access rules of a client, so FedCM was a way around them. These are refused now. A token also
+  needs a nonce from the app, carries the real `sid`, `auth_time` and `amr` of the session, and origins are matched exactly
+  (the old matching accepted a prefix or a suffix). Confidential clients get no FedCM token unless you list them in
+  `[fedcm] confidential_client_ids`. `/fed_cm/status` refuses cross-site requests.
+
+### Changes
+
+- **Sign in with no click (FedCM) for trusted apps.** List an app in `[fedcm] silent_client_ids` and the browser signs the
+  user in without a prompt, once that user has signed in to it. Removing an app in *Connected apps* ends it. The well-known
+  file now has `accounts_endpoint` and `login_url` (Chrome 145), and the nonce may come in `params`. See the book,
+  *Sign in With No Click (FedCM)*. `tools/signin-lab` is a test app for it.
+
+- Removing an app in *Connected apps* also removes it from that list until the user signs in to it again.
+
+---
+
 ## v0.37.2-custom.10 (2026-11-17)
 
 No migration. Fixes a start order problem with S3 and an error after an upgrade; "Unlink" asks first.

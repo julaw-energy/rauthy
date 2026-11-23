@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign-in lab</title>
+<style>
+  :root { color-scheme: dark }
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 60rem; margin: 1.5rem auto; padding: 0 1rem; background:#111; color:#eee }
+  h1 { margin: 0 0 .25rem } h2 { font-size: 1rem; margin: 0 0 .3rem; color:#fbbf24 }
+  button { font: inherit; padding: .4rem .9rem; border-radius: .5rem; border: 0; background: #f59e0b; color: #111; cursor: pointer }
+  button.ghost { background:#2a2a2a; color:#eee }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(18rem,1fr)); gap:.8rem; margin:1rem 0 }
+  .card { border:1px solid #333; border-radius:.6rem; padding:.8rem; display:flex; flex-direction:column; gap:.5rem }
+  .muted { color:#9ca3af; font-size:.9rem } code { color:#fbbf24 }
+  pre { background:#1c1c1c; padding:.8rem; border-radius:.5rem; overflow:auto; white-space:pre-wrap; word-break:break-all; margin:0; font-size:.85rem }
+  #who { padding:.8rem 1rem; border-radius:.5rem; background:#1c1c1c; border-left:4px solid #555; font-weight:600 }
+  #who.in { border-color:#34d399 }
+  table { width:100%; border-collapse:collapse; font-size:.9rem } td,th { text-align:left; padding:.25rem .5rem; border-bottom:1px solid #2a2a2a }
+  .ok { color:#34d399 } .err { color:#f87171 }
+</style>
+</head>
+<body>
+<h1>Sign-in lab</h1>
+<div class="muted">Four ways to sign in to this page with <code id="iss"></code>. Each one is timed from the click until
+this page's own backend has verified the ID token and opened a session.</div>
+
+<p id="who">Not signed in on this page</p>
+<p><button class="ghost" id="logout">Sign out of this page (not of the IdP)</button></p>
+
+<div class="grid">
+  <div class="card"><h2>1. Redirect</h2>
+    <div class="muted">The classic way: the whole page goes to the IdP and comes back. The baseline.</div>
+    <button data-m="redirect">Sign in (redirect)</button></div>
+  <div class="card"><h2>2. Silent redirect</h2>
+    <div class="muted"><code>prompt=none</code>: with an IdP session the page leaves and returns by itself, nothing shown. Without one: <code>login_required</code>.</div>
+    <button data-m="silent">Try silently</button></div>
+  <div class="card"><h2>3. Popup</h2>
+    <div class="muted">A small window runs the code flow and posts the result back. This page never navigates.</div>
+    <button data-m="popup">Sign in (popup)</button></div>
+  <div class="card"><h2>4. FedCM</h2>
+    <div class="muted">The browser asks the IdP who is signed in and shows its own "Continue as …" prompt. Chrome/Edge; HTTPS; needs <code>[fedcm] experimental_enable</code>.</div>
+    <button data-m="fedcm">Sign in (FedCM)</button></div>
+</div>
+
+<h2>Timings</h2>
+<table><thead><tr><th>method</th><th>outcome</th><th>total ms</th><th>of which backend verify</th></tr></thead><tbody id="rows"></tbody></table>
+<h2 style="margin-top:1rem">Log</h2>
+<pre id="log"></pre>
+
+<script>
+const $ = s => document.querySelector(s);
+const log = (...a) => { $('#log').textContent += a.join(' ') + '\n'; console.log(...a); };
+let CFG;
+const redirectUri = () => location.origin + '/';
+
+function b64url(buf) { return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+const rand = n => b64url(crypto.getRandomValues(new Uint8Array(n)));
+async function challenge(v) { return b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v))); }
+
+function row(method, outcome, total, verify) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${method}</td><td class="${outcome==='signed in'?'ok':'err'}">${outcome}</td><td>${total ?? ''}</td><td>${verify ?? ''}</td>`;
+  $('#rows').prepend(tr);
+  const saved = JSON.parse(sessionStorage.getItem('rows') || '[]');
+  saved.unshift([method, outcome, total, verify]); sessionStorage.setItem('rows', JSON.stringify(saved.slice(0, 30)));
+}
+
+async function authorizeUrl(extra) {
+  const verifier = rand(48), state = rand(16), nonce = rand(16);
+  sessionStorage.setItem('flow', JSON.stringify({ verifier, state, nonce, ...extra }));
+  const p = new URLSearchParams({
+    client_id: CFG.client_id, redirect_uri: redirectUri(), response_type: 'code', scope: 'openid email profile',
+    code_challenge: await challenge(verifier), code_challenge_method: 'S256', state, nonce, ...(extra.prompt ? { prompt: extra.prompt } : {}),
+  });
+  return `${CFG.issuer}/oidc/authorize?${p}`;
+}
+
+// code -> tokens (public client + PKCE, straight from the browser) -> our backend
+async function finish(method, code, flow, t0) {
+  const tok = await fetch(`${CFG.issuer}/oidc/token`, {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri(), client_id: CFG.client_id, code_verifier: flow.verifier }),
+  });
+  if (!tok.ok) throw new Error('token endpoint ' + tok.status + ' ' + (await tok.text()).slice(0, 200));
+  return verifyOnBackend(method, (await tok.json()).id_token, flow.nonce, t0);
+}
+async function verifyOnBackend(method, id_token, nonce, t0) {
+  const r = await fetch('/verify', { method: 'POST', body: JSON.stringify({ id_token, nonce }) });
+  const j = await r.json();
+  if (!r.ok) throw new Error('backend: ' + j.error);
+  row(method, 'signed in', Math.round(performance.now() - t0), j.verify_ms);
+  await refreshWho();
+}
+
+async function refreshWho() {
+  const r = await fetch('/me'), j = await r.json();
+  $('#who').className = j.signed_in ? 'in' : '';
+  $('#who').textContent = j.signed_in ? `Signed in on this page as ${j.claims.email || j.claims.sub}` : 'Not signed in on this page';
+}
+
+const methods = {
+  async redirect() { sessionStorage.setItem('t0', Date.now()); location.href = await authorizeUrl({ method: 'redirect' }); },
+  async silent()   { sessionStorage.setItem('t0', Date.now()); location.href = await authorizeUrl({ method: 'silent', prompt: 'none' }); },
+  async popup() {
+    const t0 = performance.now();
+    const url = await authorizeUrl({ method: 'popup' });
+    const flow = JSON.parse(sessionStorage.getItem('flow'));
+    const w = window.open(url, 'lab_popup', 'width=480,height=700');
+    if (!w) return log('popup blocked by the browser');
+    const got = new Promise((res, rej) => {
+      const onMsg = e => {
+        if (e.origin !== location.origin || e.data?.type !== 'lab-code') return;
+        window.removeEventListener('message', onMsg); res(e.data);
+      };
+      window.addEventListener('message', onMsg);
+      const iv = setInterval(() => { if (w.closed) { clearInterval(iv); rej(new Error('popup closed before finishing')); } }, 500);
+    });
+    try {
+      const m = await got;
+      if (m.state !== flow.state) throw new Error('state mismatch');
+      if (m.error) { row('popup', m.error, Math.round(performance.now() - t0)); return; }
+      await finish('popup', m.code, flow, t0);
+    } catch (e) { log('popup:', e.message); row('popup', e.message, Math.round(performance.now() - t0)); }
+  },
+  async fedcm() {
+    const t0 = performance.now();
+    if (!('IdentityCredential' in window)) { log('this browser has no FedCM'); return row('fedcm', 'not supported', 0); }
+    const nonce = rand(16);
+    try {
+      const cred = await navigator.credentials.get({
+        identity: { providers: [{ configURL: `${CFG.issuer}/fed_cm/config`, clientId: CFG.client_id, params: { nonce } }] },
+        mediation: 'optional',
+      });
+      await verifyOnBackend('fedcm', cred.token, nonce, t0);
+    } catch (e) { log('fedcm:', e.name, e.message); row('fedcm', e.name + ': ' + e.message, Math.round(performance.now() - t0)); }
+  },
+};
+
+async function main() {
+  CFG = await (await fetch('/config.json')).json();
+  $('#iss').textContent = CFG.issuer;
+  for (const r of JSON.parse(sessionStorage.getItem('rows') || '[]').reverse()) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r[0]}</td><td class="${r[1]==='signed in'?'ok':'err'}">${r[1]}</td><td>${r[2] ?? ''}</td><td>${r[3] ?? ''}</td>`;
+    $('#rows').prepend(tr);
+  }
+  document.querySelectorAll('button[data-m]').forEach(b => b.onclick = () => methods[b.dataset.m]());
+  $('#logout').onclick = async () => { await fetch('/logout', { method: 'POST', body: '{}' }); refreshWho(); };
+
+  // we are back from the IdP (or we are the popup)
+  const q = new URLSearchParams(location.search);
+  const flow = JSON.parse(sessionStorage.getItem('flow') || 'null');
+  if (q.has('code') || q.has('error')) {
+    if (window.opener && flow?.method === 'popup') {
+      window.opener.postMessage({ type: 'lab-code', code: q.get('code'), error: q.get('error'), state: q.get('state') }, location.origin);
+      window.close(); return;
+    }
+    history.replaceState(null, '', '/');
+    const t0 = performance.now() - (Date.now() - Number(sessionStorage.getItem('t0') || Date.now()));
+    const name = flow?.method || 'redirect';
+    try {
+      if (q.get('state') !== flow?.state) throw new Error('state mismatch');
+      if (q.has('error')) row(name, q.get('error'), Math.round(performance.now() - t0));
+      else await finish(name, q.get('code'), flow, t0);
+    } catch (e) { log(name + ':', e.message); row(name, e.message, null); }
+  }
+  refreshWho();
+}
+main();
+</script>
+</body>
+</html>

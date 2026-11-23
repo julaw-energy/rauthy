@@ -46,6 +46,7 @@
   - [Delegated Group Admins](work/group_admins.md)
   - [Adding and Removing One Group](work/user_groups.md)
   - [Ephemeral Clients](work/ephemeral_clients.md)
+  - [Sign in With No Click (FedCM)](work/fedcm_silent_signin.md)
   - [Resource Indicators (RFC 8707)](work/resource_indicators.md)
   - [Token Exchange (RFC 8693)](work/token_exchange.md)
   - [E-Mail Templates](work/email_templates.md)

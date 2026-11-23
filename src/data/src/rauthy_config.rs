@@ -532,6 +532,8 @@ impl Default for Vars {
                 experimental_enable: false,
                 session_lifetime: 2592000,
                 session_timeout: 259200,
+                confidential_client_ids: Vec::default(),
+                silent_client_ids: Vec::default(),
             },
             geo: ConfigVarsGeo {
                 block_is_whitelist: None,
@@ -2944,6 +2946,22 @@ impl Vars {
         ) {
             self.fedcm.session_timeout = v;
         }
+        if let Some(v) = t_str_vec(
+            &mut table,
+            "fedcm",
+            "confidential_client_ids",
+            "FED_CM_CONFIDENTIAL_CLIENT_IDS",
+        ) {
+            self.fedcm.confidential_client_ids = v;
+        }
+        if let Some(v) = t_str_vec(
+            &mut table,
+            "fedcm",
+            "silent_client_ids",
+            "FED_CM_SILENT_CLIENT_IDS",
+        ) {
+            self.fedcm.silent_client_ids = v;
+        }
 
         check_table_empty(table, "fedcm");
     }
@@ -4732,6 +4750,11 @@ pub struct ConfigVarsFedCM {
     pub experimental_enable: bool,
     pub session_lifetime: u32,
     pub session_timeout: u32,
+    /// Fork: confidential clients that may get FedCM tokens. Empty by default.
+    pub confidential_client_ids: Vec<String>,
+    /// Trusted clients that may sign a user in without any prompt (FedCM auto re-authentication),
+    /// but only after that user has signed in to them before.
+    pub silent_client_ids: Vec<String>,
 }
 
 #[derive(Debug)]

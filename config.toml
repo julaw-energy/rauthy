@@ -1990,6 +1990,28 @@ disable_app_version_check = false
 # overwritten by: SESSION_TIMEOUT_FED_CM
 #session_timeout = 259200
 
+# Fork: confidential clients that may get FedCM tokens. A confidential client
+# proves itself with a secret on the normal code flow. With FedCM the token goes
+# to the browser page, and nothing proves that the receiver is the client's
+# backend. So FedCM works for public clients, and a confidential client only gets
+# it when you list its ID here. The admin of a client cannot do this for their
+# own client, only you, in this file.
+#
+# default: []
+# overwritten by: FED_CM_CONFIDENTIAL_CLIENT_IDS (one ID per line)
+#confidential_client_ids = []
+
+# Fork: clients that may sign a user in with no prompt at all (FedCM auto
+# re-authentication). The user sees no "Continue as" button, the page just gets
+# signed in. This is only for apps you fully trust. It applies only after the user
+# has signed in to that client before, and every access check still runs. Any
+# client not listed keeps the prompt. A user's own browser can still turn this
+# off in its FedCM settings.
+#
+# default: []
+# overwritten by: FED_CM_SILENT_CLIENT_IDS (one ID per line)
+#silent_client_ids = []
+
 [geolocation]
 # If you have a configured and working Geolocation setup, you can
 # define if un-resolvable IP addresses should be blocked. By default,

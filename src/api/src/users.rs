@@ -1414,6 +1414,14 @@ pub async fn delete_user_consent(
         refresh_tokens_deleted,
     } = UserConsent::revoke(&user.id, &params.client_id, resource).await?;
 
+    // Fork: revoking the app also ends its FedCM silent sign-in. Without this the browser keeps
+    // being told the user approved it. Must not fail the revoke, which is already committed.
+    if resource.is_none()
+        && let Err(err) = UserClient::forget(&user.id, &params.client_id).await
+    {
+        error!(?err, "Cannot clear the signed-in-to record of the client");
+    }
+
     // the revoke is committed at this point, a failing event must not turn it into an error
     if (consent_deleted || refresh_tokens_deleted > 0)
         && let Err(err) = Event::consent_revoked(

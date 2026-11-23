@@ -2,13 +2,11 @@ use actix_web::http::header;
 use actix_web::http::header::{HeaderName, HeaderValue};
 use actix_web::web::{Form, Query};
 use actix_web::{HttpRequest, HttpResponse, get, post};
-use chrono::Utc;
 use rauthy_api_types::clients::EphemeralClientRequest;
 use rauthy_api_types::fed_cm::{FedCMAssertionRequest, FedCMClientMetadataRequest};
 use rauthy_api_types::oidc::GrantType;
 use rauthy_common::constants::{COOKIE_SESSION_FED_CM, HEADER_ALLOW_ALL_ORIGINS, HEADER_JSON};
 use rauthy_common::utils::real_ip_from_req;
-use rauthy_data::ListenScheme;
 use rauthy_data::api_cookie::ApiCookie;
 use rauthy_data::entity::clients::Client;
 use rauthy_data::entity::fed_cm::{
@@ -19,7 +17,10 @@ use rauthy_data::entity::sessions::Session;
 use rauthy_data::entity::users::User;
 use rauthy_data::rauthy_config::RauthyConfig;
 use rauthy_error::{ErrorResponse, ErrorResponseType};
-use rauthy_service::token_set::{AuthCodeFlow, AuthTime, DeviceCodeFlow, TokenNonce, TokenSet};
+use rauthy_service::oidc::client_gate::same_origin;
+use rauthy_service::token_set::{
+    AuthCodeFlow, AuthTime, DeviceCodeFlow, SessionId, TokenNonce, TokenSet,
+};
 use tracing::{debug, error, warn};
 use validator::Validate;
 
@@ -53,7 +54,7 @@ pub async fn get_fed_cm_accounts(req: HttpRequest) -> Result<HttpResponse, Error
     }
 
     let user = User::find_for_fed_cm_validated(user_id).await?;
-    let account = FedCMAccount::build(user);
+    let account = FedCMAccount::build(user).await?;
     let accounts = FedCMAccounts {
         accounts: vec![account],
     };
@@ -245,12 +246,29 @@ pub async fn post_fed_cm_token(
     is_web_identity_fetch(&req)?;
     payload.validate()?;
 
-    let (login_status, user_id) = login_status_from_req(&req).await;
-    if login_status == FedCMLoginStatus::LoggedOut {
+    // Fork: the nonce is optional in the FedCM spec, but without one a token that leaks (a log, a
+    // browser extension, a proxy) can be replayed to the app. The app must bring its own.
+    // Newer Chrome versions move it into the JSON `params`; the top-level one goes away.
+    let nonce = payload.nonce.clone().filter(|n| !n.is_empty()).or_else(|| {
+        let params = payload.params.as_deref()?;
+        let v: serde_json::Value = serde_json::from_str(params).ok()?;
+        let n = v.get("nonce")?.as_str()?;
+        (!n.is_empty() && n.len() <= 512 && n.chars().all(|c| c.is_ascii_graphic()))
+            .then(|| n.to_string())
+    });
+    let Some(nonce) = nonce else {
+        return Err(ErrorResponse::new(
+            ErrorResponseType::BadRequest,
+            "A `nonce` is required: pass it in the `identity` request of `navigator.credentials.get()`",
+        ));
+    };
+
+    let Some(session) = fed_cm_session_from_req(&req).await else {
         return Ok(HttpResponse::Unauthorized()
             .insert_header(FedCMLoginStatus::LoggedOut.as_header_pair())
             .finish());
-    }
+    };
+    let user_id = session.user_id.clone().unwrap_or_default();
 
     // find and check the client
     let client = match Client::find_maybe_ephemeral(payload.client_id).await {
@@ -287,17 +305,41 @@ pub async fn post_fed_cm_token(
         ));
     }
 
+    // Fork: confidential clients only when the server operator allows them
+    rauthy_service::oidc::client_gate::validate_fed_cm_client(
+        &client,
+        &RauthyConfig::get().vars.fedcm.confidential_client_ids,
+    )?;
+    // Fork: the same checks as the normal login (group, MFA, required data, access rules). FedCM has
+    // no page to send the user to, so anything the login would turn into a step is a refusal here.
+    rauthy_service::oidc::client_gate::validate_user_for_client(&client, &user, session.is_mfa)
+        .await?;
+
     // We are good - issue a TokenSet
+    //
+    // Fork: the token tells what really happened in this session:
+    // - `auth_time` is when this session was opened, not the user's last login anywhere
+    // - `sid` ties the token to the session, so an RP-initiated logout with this token as
+    //   `id_token_hint` ends the right session
+    // - `amr` is the one of the normal login when the session was opened with a second factor,
+    //   and `pwd` otherwise
+    let amr_flow = if session.is_mfa {
+        AuthCodeFlow::Yes
+    } else {
+        AuthCodeFlow::No
+    };
     let ts = TokenSet::from_user(
         &user,
         &client,
-        AuthTime::given(user.last_login.unwrap_or_else(|| Utc::now().timestamp())),
+        AuthTime::given(rauthy_service::oidc::client_gate::session_auth_time(
+            &session,
+        )),
         None,
-        payload.nonce.map(TokenNonce),
+        Some(TokenNonce(nonce)),
         None,
+        Some(SessionId(session.id.clone())),
         None,
-        None,
-        AuthCodeFlow::No,
+        amr_flow,
         DeviceCodeFlow::No,
     )
     .await?;
@@ -384,7 +426,8 @@ fn client_origin_header(
         HeaderValue::from_str(origin)?,
     );
 
-    if client.is_ephemeral() && client.id.starts_with(origin) {
+    // Fork: exact origin, a prefix would let `https://a.co` match a client at `https://a.com/...`
+    if client.is_ephemeral() && same_origin(&client.id, origin) {
         debug!("The client is ephemeral and its ID matches the origin");
         return Ok(header);
     }
@@ -392,10 +435,9 @@ fn client_origin_header(
     if let Some(allowed_origins) = &client.allowed_origins {
         for ao in allowed_origins.split(',') {
             debug!("Comparing Allowed Origin '{ao}' to origin '{origin}'");
-            if (RauthyConfig::get().listen_scheme == ListenScheme::HttpHttps
-                && ao.ends_with(origin))
-                || ao.eq(origin)
-            {
+            // Fork: exact origin. Upstream also accepted `ao.ends_with(origin)` with a combined
+            // HTTP/HTTPS listener, which lets a short `Origin` match the tail of a longer entry.
+            if same_origin(ao, origin) {
                 debug!("Found matching allowed_origin '{ao}' for origin: '{origin}'");
                 return Ok(header);
             }
@@ -405,7 +447,7 @@ fn client_origin_header(
     // in case we did not have a specific allowed origin, we can validate via allowed
     // `redirect_uri`s
     for uri in client.redirect_uris.split(',') {
-        if uri.starts_with(origin) {
+        if same_origin(uri, origin) {
             debug!("Found matching redirect_uri '{uri}' for origin: '{origin}'");
             return Ok(header);
         }
@@ -418,41 +460,39 @@ fn client_origin_header(
     ))
 }
 
+/// The valid FedCM session of the request, if there is one.
+async fn fed_cm_session_from_req(req: &HttpRequest) -> Option<Session> {
+    let Some(sid) = ApiCookie::from_req(req, COOKIE_SESSION_FED_CM) else {
+        debug!("FedCM session cookie not found -> user_id is logged-out",);
+        return None;
+    };
+    let Ok(session) = Session::find(sid).await else {
+        debug!("FedCM session not found -> user_id is logged-out",);
+        return None;
+    };
+
+    if session.is_valid(
+        RauthyConfig::get().vars.fedcm.session_timeout as i64,
+        real_ip_from_req(req).ok(),
+        req.path(),
+    ) {
+        Some(session)
+    } else {
+        debug!(
+            "FedCM session is invalid -> user_id {:?} is logged-out",
+            session.user_id
+        );
+        None
+    }
+}
+
 #[inline(always)]
 async fn login_status_from_req(req: &HttpRequest) -> (FedCMLoginStatus, String) {
-    match ApiCookie::from_req(req, COOKIE_SESSION_FED_CM) {
-        None => {
-            debug!("FedCM session cookie not found -> user_id is logged-out",);
-            (FedCMLoginStatus::LoggedOut, String::default())
-        }
-        Some(sid) => {
-            let session = match Session::find(sid).await {
-                Ok(s) => s,
-                Err(_) => {
-                    debug!("FedCM session not found -> user_id is logged-out",);
-                    return (FedCMLoginStatus::LoggedOut, String::default());
-                }
-            };
-
-            if session.is_valid(
-                RauthyConfig::get().vars.fedcm.session_timeout as i64,
-                real_ip_from_req(req).ok(),
-                req.path(),
-            ) {
-                (
-                    FedCMLoginStatus::LoggedIn,
-                    session.user_id.unwrap_or_default(),
-                )
-            } else {
-                debug!(
-                    "FedCM session is invalid -> user_id {:?} is logged-out",
-                    session.user_id
-                );
-                (
-                    FedCMLoginStatus::LoggedOut,
-                    session.user_id.unwrap_or_default(),
-                )
-            }
-        }
+    match fed_cm_session_from_req(req).await {
+        Some(session) => (
+            FedCMLoginStatus::LoggedIn,
+            session.user_id.unwrap_or_default(),
+        ),
+        None => (FedCMLoginStatus::LoggedOut, String::default()),
     }
 }

@@ -49,6 +49,18 @@ DO UPDATE SET last_at = $3, scope = $4, logins = user_clients.logins + 1"#;
         Ok(())
     }
 
+    /// Forgets that `user_id` has signed in to `client_id`, which also ends FedCM silent sign-in
+    /// for it until the user signs in to it again.
+    pub async fn forget(user_id: &str, client_id: &str) -> Result<(), ErrorResponse> {
+        let sql = "DELETE FROM user_clients WHERE user_id = $1 AND client_id = $2";
+        if is_hiqlite() {
+            DB::hql().execute(sql, params!(user_id, client_id)).await?;
+        } else {
+            DB::pg_execute(sql, &[&user_id, &client_id]).await?;
+        }
+        Ok(())
+    }
+
     pub async fn find_for_user(user_id: &str) -> Result<Vec<Self>, ErrorResponse> {
         let sql = r#"
 SELECT uc.client_id, c.name AS client_name, uc.first_at, uc.last_at, uc.scope, uc.logins

@@ -14,6 +14,9 @@ pub struct FedCMAssertionRequest {
     /// Validation: `[a-zA-Z0-9,.:/_-&?=~#!$'()*+%@]+$`
     #[validate(regex(path = "*RE_URI", code = "[a-zA-Z0-9,.:/_-&?=~#!$'()*+%@]+$"))]
     pub nonce: Option<String>,
+    /// Newer browsers pass the nonce inside this JSON object instead (`{"nonce": "..."}`)
+    #[validate(length(max = 2048))]
+    pub params: Option<String>,
     /// Validation: `[a-zA-Z0-9]`
     #[validate(regex(path = "*RE_ALNUM", code = "[a-zA-Z0-9]"))]
     pub account_id: String,

@@ -19,7 +19,7 @@ container_mailcrab := "rauthy-mailcrab"
 container_postgres := "rauthy-db-postgres"
 container_cargo_registry := "/usr/local/cargo/registry"
 file_test_pid := ".test_pid"
-test_env_vars := "PUB_URL=localhost:8081 RP_ORIGIN=http://localhost:8081"
+test_env_vars := "PUB_URL=localhost:8081 RP_ORIGIN=http://localhost:8081 EXPERIMENTAL_FED_CM_ENABLE=true FED_CM_CONFIDENTIAL_CLIENT_IDS=fedcm_gate_conf_ok FED_CM_SILENT_CLIENT_IDS=fedcm_gate_silent"
 jemalloc_conf := "MALLOC_CONF=abort_conf:true,narenas:8,tcache_max:4096,dirty_decay_ms:5000,muzzy_decay_ms:5000"
 postgres := "HIQLITE=false"
 

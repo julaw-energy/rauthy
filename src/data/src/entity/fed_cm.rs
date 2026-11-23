@@ -1,4 +1,5 @@
 use crate::entity::theme::ThemeCssFull;
+use crate::entity::user_clients::UserClient;
 use crate::entity::users::User;
 use crate::rauthy_config::RauthyConfig;
 use rauthy_error::ErrorResponse;
@@ -32,7 +33,25 @@ pub struct FedCMAccount {
 }
 
 impl FedCMAccount {
-    pub fn build(user: User) -> Self {
+    /// `approved_clients` is what lets the browser sign a user in without a prompt. Only clients
+    /// the admin marked in `[fedcm] silent_client_ids` AND that this user has signed in to before
+    /// are listed; every other client keeps the prompt.
+    pub async fn build(user: User) -> Result<Self, ErrorResponse> {
+        let trusted = &RauthyConfig::get().vars.fedcm.silent_client_ids;
+        let approved_clients = if trusted.is_empty() {
+            Vec::default()
+        } else {
+            UserClient::find_for_user(&user.id)
+                .await?
+                .into_iter()
+                .map(|uc| uc.client_id)
+                .filter(|id| trusted.contains(id))
+                .collect()
+        };
+        Ok(Self::build_with(user, approved_clients))
+    }
+
+    fn build_with(user: User, approved_clients: Vec<String>) -> Self {
         let name = user.email_recipient_name();
         let login_hint = format!("login_hint={}", user.email);
 
@@ -43,11 +62,7 @@ impl FedCMAccount {
             given_name: Some(user.given_name),
             // Rauthy does not store user pictures
             picture: None,
-            // TODO how should we decide which clients to return here? How to make this dynamic?
-            //  simply all of them? Or introduce a new flow to allow fedCm and filter?
-            // approved_clients: clients,
-            //  not sure if it produces errors and problems if we populate this value at all
-            approved_clients: Vec::default(),
+            approved_clients,
             login_hints: vec![login_hint, "state=fedcm".to_string()],
             domain_hints: vec![RauthyConfig::get().vars.server.pub_url.clone()],
         }
@@ -190,12 +205,18 @@ impl FedCMLoginStatus {
 #[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct WebIdentity {
     pub provider_urls: Vec<String>,
+    /// Required by Chrome whenever the IdP uses `client_metadata_endpoint` (hard requirement from
+    /// Chrome 145). Must resolve to the same URLs as the ones in the IdP config.
+    pub accounts_endpoint: String,
+    pub login_url: String,
 }
 
 impl Default for WebIdentity {
     fn default() -> Self {
         Self {
             provider_urls: vec![format!("{}fed_cm/config", RauthyConfig::get().issuer)],
+            accounts_endpoint: format!("{}fed_cm/accounts", RauthyConfig::get().issuer),
+            login_url: format!("{}account", RauthyConfig::get().issuer),
         }
     }
 }

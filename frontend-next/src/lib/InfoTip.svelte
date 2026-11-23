@@ -7,7 +7,11 @@
 
     // A small (i) that explains something. With a mouse it shows on hover (and on keyboard focus).
     // A touch screen has no hover, so there it opens on a tap and closes on a tap elsewhere.
-    let { text: raw, label = 'More information' }: { text: string; label?: string } = $props();
+    let {
+        text: raw,
+        label = 'More information',
+        html = false,
+    }: { text: string; label?: string; /** the text holds trusted HTML (<b>, <code>) */ html?: boolean } = $props();
     // the texts are written with the product name, show the name this service is branded with
     let text = $derived(raw.replace(/\bRauthy\b/g, () => brand.name));
 </script>
@@ -20,7 +24,9 @@
         >
             <Info class="size-3.5" />
         </Popover.Trigger>
-        <Popover.Content class="w-64 p-3 text-xs leading-relaxed">{text}</Popover.Content>
+        <Popover.Content class="max-h-[60vh] w-72 overflow-y-auto p-3 text-xs leading-relaxed">
+            {#if html}{@html text}{:else}{text}{/if}
+        </Popover.Content>
     </Popover.Root>
 {:else}
     <Tooltip.Provider delayDuration={150}>
@@ -31,7 +37,9 @@
             >
                 <Info class="size-3.5" />
             </Tooltip.Trigger>
-            <Tooltip.Content class="max-w-64 text-xs leading-relaxed">{text}</Tooltip.Content>
+            <Tooltip.Content class="max-w-80 text-xs leading-relaxed">
+                {#if html}{@html text}{:else}{text}{/if}
+            </Tooltip.Content>
         </Tooltip.Root>
     </Tooltip.Provider>
 {/if}

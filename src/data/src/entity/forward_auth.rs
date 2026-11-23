@@ -74,7 +74,7 @@ impl ForwardAuthSession {
     pub async fn from_cookie(req: &HttpRequest, danger_insecure: bool) -> Option<Self> {
         let cookie = req.cookie(Self::cookie_name(danger_insecure))?;
         let decoded = base64_decode(cookie.value()).ok()?;
-        let decrypted = EncValue::try_from_bytes(decoded).ok()?.decrypt().ok()?;
+        let decrypted = crate::api_cookie::enc_value_from_untrusted(decoded).ok()?.decrypt().ok()?;
         let plain = String::from_utf8_lossy(decrypted.as_ref());
         // an untagged value is a main session cookie, which is never accepted here
         let (client_id, sid) = untag_sid(&plain)?;
@@ -130,7 +130,7 @@ impl ForwardAuthSession {
             ));
         };
         let decoded = base64_decode(cookie.value())?;
-        let decrypted = EncValue::try_from_bytes(decoded)?.decrypt()?;
+        let decrypted = crate::api_cookie::enc_value_from_untrusted(decoded)?.decrypt()?;
         let token = String::from_utf8_lossy(decrypted.as_ref());
 
         if !constant_time_eq::constant_time_eq(token.as_bytes(), self.inner.csrf_token.as_bytes()) {
@@ -189,7 +189,7 @@ impl TryFrom<&str> for ForwardAuthCallbackState {
     #[inline]
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         let decoded = base64_url_no_pad_decode(s)?;
-        let decrypted = EncValue::try_from_bytes(decoded)?.decrypt()?;
+        let decrypted = crate::api_cookie::enc_value_from_untrusted(decoded)?.decrypt()?;
         deserialize(decrypted.as_ref())
     }
 }

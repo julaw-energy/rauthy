@@ -203,7 +203,14 @@ pub async fn get_fed_client_config() -> HttpResponse {
 #[tracing::instrument(level = "debug", skip_all)]
 #[get("/fed_cm/status")]
 pub async fn get_fed_cm_status(req: HttpRequest) -> HttpResponse {
-    if is_fed_cm_enabled().is_err() {
+    // Fork: the cookie is `SameSite=None`, so any site could make the browser send it here. A page
+    // must not be able to learn from the answer whether someone is signed in.
+    let cross_site = req
+        .headers()
+        .get("sec-fetch-site")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v == "cross-site" || v == "same-site");
+    if cross_site || is_fed_cm_enabled().is_err() {
         HttpResponse::Unauthorized()
             .insert_header(FedCMLoginStatus::LoggedOut.as_header_pair())
             .finish()
@@ -249,12 +256,14 @@ pub async fn post_fed_cm_token(
     // Fork: the nonce is optional in the FedCM spec, but without one a token that leaks (a log, a
     // browser extension, a proxy) can be replayed to the app. The app must bring its own.
     // Newer Chrome versions move it into the JSON `params`; the top-level one goes away.
-    let nonce = payload.nonce.clone().filter(|n| !n.is_empty()).or_else(|| {
+    // Either way it ends up inside a signed token, so it is bounded and plain ASCII.
+    let valid =
+        |n: &str| !n.is_empty() && n.len() <= 512 && n.chars().all(|c| c.is_ascii_graphic());
+    let nonce = payload.nonce.clone().filter(|n| valid(n)).or_else(|| {
         let params = payload.params.as_deref()?;
         let v: serde_json::Value = serde_json::from_str(params).ok()?;
         let n = v.get("nonce")?.as_str()?;
-        (!n.is_empty() && n.len() <= 512 && n.chars().all(|c| c.is_ascii_graphic()))
-            .then(|| n.to_string())
+        valid(n).then(|| n.to_string())
     });
     let Some(nonce) = nonce else {
         return Err(ErrorResponse::new(

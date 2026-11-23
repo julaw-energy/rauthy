@@ -48,7 +48,7 @@ impl MfaCookie {
         }
         let cookie = cookie.as_ref().unwrap();
         let bytes = base64_decode(cookie)?;
-        let dec = EncValue::try_from(bytes)?.decrypt()?;
+        let dec = crate::api_cookie::enc_value_from_untrusted(bytes)?.decrypt()?;
         let slf = deserialize::<Self>(&dec)?;
 
         if slf.exp < OffsetDateTime::now_utc() {

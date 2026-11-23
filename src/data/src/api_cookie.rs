@@ -2,12 +2,27 @@ use crate::rauthy_config::RauthyConfig;
 use actix_web::cookie::{Cookie, SameSite};
 use actix_web::dev::ServiceRequest;
 use actix_web::{HttpRequest, cookie};
-use cryptr::EncValue;
+use cryptr::{CryptrError, EncValue};
 use rauthy_common::constants::CookieMode;
 use rauthy_common::utils::{base64_decode, base64_encode};
 use std::borrow::Cow;
 use std::fmt::Display;
 use tracing::warn;
+
+/// Parses an encrypted value that came from a client (a cookie, a header, a query parameter).
+///
+/// Fork: `EncValue::try_from` reads the 6 byte header with `Buf::get_u8` / `get_u16` and PANICS
+/// when it is shorter. With `panic = abort`, one request with an empty or short cookie value
+/// stopped the whole server. Never call `EncValue::try_from` / `try_from_bytes` with input that
+/// is not from our own database or from our own encryption; use this instead.
+pub fn enc_value_from_untrusted(bytes: Vec<u8>) -> Result<EncValue, CryptrError> {
+    // version (1) + alg (1) + header length (2) + chunk size (2)
+    const MIN_HEADER: usize = 6;
+    if bytes.len() < MIN_HEADER {
+        return Err(CryptrError::HeaderInvalid("Encrypted value too short"));
+    }
+    EncValue::try_from_bytes(bytes)
+}
 
 pub struct ApiCookie;
 
@@ -91,7 +106,7 @@ impl ApiCookie {
             Some(cookie) => {
                 let val = cookie.value();
                 let bytes = base64_decode(val).ok()?;
-                let enc = EncValue::try_from(bytes).ok()?;
+                let enc = enc_value_from_untrusted(bytes).ok()?;
                 let dec = enc.decrypt().ok()?;
                 Some(String::from_utf8_lossy(dec.as_ref()).to_string())
             }

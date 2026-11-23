@@ -25,7 +25,7 @@
             <Info class="size-3.5" />
         </Popover.Trigger>
         <Popover.Content class="max-h-[60vh] w-72 overflow-y-auto p-3 text-xs leading-relaxed">
-            {#if html}{@html text}{:else}{text}{/if}
+            <div class="block">{#if html}{@html text}{:else}{text}{/if}</div>
         </Popover.Content>
     </Popover.Root>
 {:else}
@@ -38,7 +38,7 @@
                 <Info class="size-3.5" />
             </Tooltip.Trigger>
             <Tooltip.Content class="max-w-80 text-xs leading-relaxed">
-                {#if html}{@html text}{:else}{text}{/if}
+                <div class="block">{#if html}{@html text}{:else}{text}{/if}</div>
             </Tooltip.Content>
         </Tooltip.Root>
     </Tooltip.Provider>

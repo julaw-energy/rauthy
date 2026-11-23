@@ -47,6 +47,11 @@ apps, an S3 server that is down no longer stops the start, "Unlink" asks first.
 
 ### Changes
 
+- **UI.** Long section descriptions (access rules, redirect URIs, scopes, ...) are an (i) tip next to the title. Dark-mode
+  inputs, selects and text areas have a visible border and fill. On tables, *Entries* comes first and *Add new* sits at
+  the right edge. The multi-value input (redirect URIs, ...) keeps its outer border and shows its typing field only
+  while it has the focus.
+
 - **Sign in with no click (FedCM) for trusted apps.** List an app in `[fedcm] silent_client_ids` and the browser signs the
   user in without a prompt, once that user has signed in to it. Removing an app in *Connected apps* ends it. The well-known
   file now has `accounts_endpoint` and `login_url` (Chrome 145), and the nonce may come in `params`. See the book,

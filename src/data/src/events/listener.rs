@@ -310,13 +310,26 @@ impl EventListener {
                         let sent =
                             time::timeout(Duration::from_secs(5), client.tx.send(payload.clone()))
                                 .await;
-                        if !matches!(sent, Ok(Ok(()))) {
-                            error!(
-                                ?client_id,
-                                ?client.user_id,
-                                "sending the read marker to a client failed - removing client",
-                            );
-                            ids_to_remove.push(client_id.clone());
+                        match sent {
+                            Ok(Ok(())) => {}
+                            // the tab or device went away, that is normal
+                            Ok(Err(_)) => {
+                                debug!(
+                                    ?client_id,
+                                    ?client.user_id,
+                                    "read marker: the client connection is closed - removing client",
+                                );
+                                ids_to_remove.push(client_id.clone());
+                            }
+                            // still open but not reading
+                            Err(_) => {
+                                error!(
+                                    ?client_id,
+                                    ?client.user_id,
+                                    "timeout sending the read marker to a client - removing client",
+                                );
+                                ids_to_remove.push(client_id.clone());
+                            }
                         }
                     }
                     while let Some(id) = ids_to_remove.pop() {

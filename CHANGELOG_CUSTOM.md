@@ -47,6 +47,9 @@ apps, an S3 server that is down no longer stops the start, "Unlink" asks first.
 
 ### Changes
 
+- A closed browser tab no longer logs an ERROR when the read marker is sent to it (debug now). A client that stays open but
+  does not read still logs an error.
+
 - **UI.** Long section descriptions (access rules, redirect URIs, scopes, ...) are an (i) tip next to the title. Dark-mode
   inputs, selects and text areas have a visible border and fill. On tables, *Entries* comes first and *Add new* sits at
   the right edge. The multi-value input (redirect URIs, ...) keeps its outer border and shows its typing field only

@@ -5,6 +5,8 @@ Rauthy lets you say, **per client**, which user data must exist before a login f
 
 ## Set It Up
 
+![scopes and required user data of a client](img/required_data.png)
+
 1. Open the client in the Admin UI (`Clients` → the client).
 2. In the `Scopes` section, enable the scopes the client may use (allowed or default).
 3. The **Required user data** section below lists what those scopes release, grouped by scope:

@@ -8,6 +8,11 @@ This is a different thing than the login group prefix of a client, which looks a
 than [required user data](required_client_data.md), which asks users to fill something in. Access rules **refuse** a user
 who does not qualify.
 
+![access rules of a client](img/access_rules.png)
+
+Rules are tried from the top. The message of the first rule that fails is what the user sees, so put the most important
+rule first and give every rule its own message. The (i) next to the title explains the same in short.
+
 ## Rules
 
 A rule is a **field**, a **condition** and, for most conditions, a **value**. **All** rules of a client must hold.

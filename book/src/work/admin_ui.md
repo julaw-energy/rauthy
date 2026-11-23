@@ -15,6 +15,35 @@ Tailwind and shadcn-svelte.
 - `Config` pages for settings stored in the database: General, User fields, Sessions & tokens, Email (SMTP) and
   Channels, see [Settings in the Database](../config/settings_db.md)
 
+## Small Things That Help
+
+- **The (i) icons.** Long explanations are not printed under every title. A small (i) next to the title shows them: hover it
+  with a mouse or tab to it with the keyboard, on a touch screen tap it and tap elsewhere to close it.
+
+  ![an (i) explanation on a client](img/info_tip.png)
+
+- **Tables.** The top row starts with **Entries** (the page size), then search, CSV and refresh. **Add New** is always at
+  the right end of the row.
+- **Fields with several values** (redirect URIs, allowed origins, contacts) look like one box. Click it and a field to
+  type opens; press Enter or leave the field to add the value. The X on a value removes it.
+- **The service name** (`server.app_name`) is used in the page title, the header and the (i) texts.
+- **Phones.** Search boxes are an icon until you tap them, the date format and language pickers are icons that open a
+  small list, and tabs scroll sideways instead of being cut off.
+- **Profile picture.** Tapping it shows it bigger. The pencil on its corner, or *Change picture* in the big view, changes it.
+- **Unlink a provider.** The button asks first and says what happens: no more sign-in with that provider, only the
+  account's own password or passkey is left, the provider's own MFA no longer counts, and the account stays.
+
+## Connected Apps
+
+Every user has a **Connected apps** tab, in the account page and, for admins, in the user's panel. It lists the apps that
+received tokens for the account, with the first and last access, the number of logins and the scopes.
+
+![connected apps of a user](img/connected_apps.png)
+
+On the account page the user can remove an app. That revokes its consent (when [consents](../config/config.md) are on)
+and its refresh tokens, and it ends silent sign-in for that app, see
+[Sign in With No Click](fedcm_silent_signin.md). The app is listed again after the next sign-in to it.
+
 ## Building It
 
 ```bash

@@ -73,3 +73,11 @@ Every page carries a CSP. Its `img-src` is `'self' data: https:` so the browser 
 send data to any `https` host. If that is not acceptable, the alternative is a small avatar proxy in Rauthy (more code,
 and Rauthy would then fetch the provider's URL).
 ```
+
+## Pictures in S3
+
+With `user_pictures.storage_type = 's3'` the pictures are stored in a bucket. Rauthy does not need the bucket to start:
+it starts and serves at once, checks the bucket in the background (a warning every 10 seconds, an error after 5 minutes)
+and uses it as soon as it is reachable, with no restart. Only picture requests fail until then. A wrong configuration
+(missing URL, key or bucket name) still stops the start. This matters when your S3 server itself needs Rauthy for its
+OIDC login.

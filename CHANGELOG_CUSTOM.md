@@ -10,9 +10,10 @@ rollout), not only what changed.
 
 ---
 
-## Unreleased
+## v0.37.2-custom.10 (2026-11-23)
 
-No migration. **Security: update soon.** Adds sign-in with no click (FedCM) for trusted apps.
+No migration. **Security: update soon**, one request could stop the server. Also: sign-in with no click (FedCM) for trusted
+apps, an S3 server that is down no longer stops the start, "Unlink" asks first.
 
 ### Security
 
@@ -27,21 +28,6 @@ No migration. **Security: update soon.** Adds sign-in with no click (FedCM) for 
   needs a nonce from the app, carries the real `sid`, `auth_time` and `amr` of the session, and origins are matched exactly
   (the old matching accepted a prefix or a suffix). Confidential clients get no FedCM token unless you list them in
   `[fedcm] confidential_client_ids`. `/fed_cm/status` refuses cross-site requests.
-
-### Changes
-
-- **Sign in with no click (FedCM) for trusted apps.** List an app in `[fedcm] silent_client_ids` and the browser signs the
-  user in without a prompt, once that user has signed in to it. Removing an app in *Connected apps* ends it. The well-known
-  file now has `accounts_endpoint` and `login_url` (Chrome 145), and the nonce may come in `params`. See the book,
-  *Sign in With No Click (FedCM)*. `tools/signin-lab` is a test app for it.
-
-- Removing an app in *Connected apps* also removes it from that list until the user signs in to it again.
-
----
-
-## v0.37.2-custom.10 (2026-11-17)
-
-No migration. Fixes a start order problem with S3 and an error after an upgrade; "Unlink" asks first.
 
 ### Bugfix
 
@@ -60,6 +46,13 @@ No migration. Fixes a start order problem with S3 and an error after an upgrade;
   does it, so the error does not show up.
 
 ### Changes
+
+- **Sign in with no click (FedCM) for trusted apps.** List an app in `[fedcm] silent_client_ids` and the browser signs the
+  user in without a prompt, once that user has signed in to it. Removing an app in *Connected apps* ends it. The well-known
+  file now has `accounts_endpoint` and `login_url` (Chrome 145), and the nonce may come in `params`. See the book,
+  *Sign in With No Click (FedCM)*. `tools/signin-lab` is a test app for it.
+
+- Removing an app in *Connected apps* also removes it from that list until the user signs in to it again.
 
 - **Phones (new UI):** the account page tabs were centered in a way that cut off the first ones when they did not fit
   (the "Info" tab and the MFA tab could not be reached); they scroll from the start now. The date format and the language
